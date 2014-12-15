@@ -1,0 +1,312 @@
+/******************************************************************************
+* NLK - Neural Language Kit
+*
+* Copyright (c) 2014 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to 
+* deal in the Software without restriction, including without limitation the 
+* rights to use, copy, modify, merge, publish, distribute, sublicense, and/or 
+* sell copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
+*****************************************************************************/
+
+
+/** @file nlk_eval.c
+* Evaluation functions
+*/
+
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "nlk_text.h"
+#include "nlk_vocabulary.h"
+#include "nlk_array.h"
+#include "nlk_err.h"
+#include "nlk_eval.h"
+
+
+/** @fn bool __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, 
+ *                                    char *line, nlk_Analogy_Test *test)
+ * Parses a line of a word relation test set
+ *
+ * @param vocab         the vocabulary
+ * @param lower_words   convert words in test set to lower case
+ * @param line          the line string to parse
+ * @param test          the parsed test from the line - result if return = true
+ *
+ * @return false on failure, true on success
+ */
+bool
+__nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line, 
+                         nlk_Analogy_Test *test)
+{
+    char *word;
+    nlk_Vocab *vi;
+    size_t ii = 0;
+    printf("trying to read test line: %s\n", line);
+
+    do {
+        /* tokenize string */
+        if(ii == 0) {
+            word = strtok(line, " ");
+        } else {
+            word = strtok(NULL, " ");
+        }
+        if(word == NULL) {
+            return false;   /* something is wrong, fail */
+        }
+        
+        /* to lower case if necessary */
+        if(lower_words) {
+            nlk_text_lower(word); 
+        }
+        
+        /* find word in voculary */
+        vi = nlk_vocab_find(vocab, word); 
+        if(vi == NULL) {
+            return false;   /* if any word is not in vocabulary, fail */
+        }
+        
+        /* assign value to test structure */
+        if(ii < 3) {
+            test->question[ii] = vi; 
+        } else {
+            test->answer = vi;
+        }
+
+        ii++;
+    } while(ii < 4);
+    
+    return true;
+}
+
+/** @fn nlk_Analogy_Test *__nlk_read_analogy_test_file(const char *filepath, 
+ *                                                     nlk_Vocab **vocab,
+                                                       const bool lower_words, 
+                                                       size_t *total_tests)
+ * Read/Parse a word analogy test file
+ *
+ * @param filepath      file path of the test file
+ * @param vocab         the vocabulary
+ * @param lower_words   convert words in test set to lower case
+ * @param total_tests   will be overwritten with the total number of tests read    
+ *
+ * @return an array of word analogy tests
+ */
+nlk_Analogy_Test *
+__nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
+                             const bool lower_words, size_t *total_tests)
+{
+    char line[NLK_WORD_REL_MAX_LINE_SIZE];
+    char *fr;
+    nlk_Analogy_Test *tests;    /* array that will contain all test cases */
+    void *re_tests;
+    size_t alloc_size = 0;      /* allocated size of the tests array  */
+    size_t test_number;         /* number of tests read into array */
+
+    FILE *in = fopen(filepath, "rb");
+    if (in == NULL) {
+        NLK_ERROR_NULL(strerror(errno), errno);
+        /* unreachable */
+    }
+
+    /* alloc */
+    alloc_size = NLK_WORD_REL_DEFAULT_SIZE;
+    tests = (nlk_Analogy_Test *) calloc(alloc_size, sizeof(nlk_Analogy_Test));
+    if(tests == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for the test set", 
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    /* 
+     * read the entire file into memory first 
+     */
+    *total_tests = 0;
+    test_number = 0;
+    while(!feof(in)) {
+        /* read line */
+        fr = fgets(line, NLK_WORD_REL_MAX_LINE_SIZE, in);
+        if(fr == NULL) {
+            break;
+        }
+        if(line[0] == ':') { /* 'header' line */
+            continue;
+        }
+
+        /* parse a single test case, if successful add to tests array */
+        if(__nlk_read_question_line(vocab, lower_words, line,
+                                    &tests[test_number])) {
+            test_number++;
+        }
+
+        /* check if we need more memory for tests */
+        if(test_number == alloc_size) {
+            re_tests = realloc(tests, 2 * alloc_size);
+            if(re_tests == NULL) {
+                free(tests);
+                NLK_ERROR_NULL("failed to allocate memory for the test set", 
+                               NLK_ENOMEM);
+                /* unreachable */
+            }
+        } /* memory reallocated if it was necessary */
+    }
+
+    fclose(in);
+    printf("read %zu tests\n", test_number);
+    *total_tests = test_number;
+    return tests;
+}
+
+
+/** @fn int nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
+                                  const nlk_Array *weights, const size_t limit, 
+                                  const bool randomize, const bool lower_words, 
+                                  nlk_real *accuracy)
+ * Uses a word relation test set to evaluate the quality of word vectors.
+ *
+ * The test is described in
+ *
+ * "Efficient Estimation of Word Representations in Vector Space. 
+ * Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean.
+ * In Proceedings of Workshop at ICLR, 2013. 
+ *
+ * And a test set is available at https://code.google.com/p/word2vec/
+ *
+ * @param filepath      file path of the test file
+ * @param vocab         the vocabulary
+ * @param weights       the weights matrix containing the representation of the
+ *                      words in the vocabulary
+ * @param limit         limit for the number of tests, 0 means no limit
+ * @param random        if true and if limit is not zero, selects test subset 
+ *                      randomly
+ * @param lower_words   convert words in test set to lower case
+ * @param accuracy      the total accuracy (return value)
+ *
+ * @return NLK_SUCCESS or NLK_FAILURE
+ *
+ * @note
+ * This function ignores tests with OOV words. It is mostly meant to be 
+ * used to monitor the progress of training a word representation.
+ * @endnote
+ */
+int
+nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
+                      const nlk_Array *weights, const size_t limit, 
+                      const bool randomize, const bool lower_words, 
+                      nlk_real *accuracy)
+{
+    size_t word_index;
+    char *word;
+
+    nlk_Analogy_Test *tests;    /* array that will contain all test cases */
+    nlk_Analogy_Test *test;     /* iteration test case*/
+    size_t total_tests;
+    size_t test_number;
+
+    nlk_Array *weights_norm;    /* for the normalized copy of the weights */
+    nlk_Array *word_vector;     /* view for individual word vectors */
+    nlk_real  similarity;
+    nlk_real  best_similarity;
+    size_t most_similar;
+    size_t correct = 0;
+
+    nlk_Array *predicted = nlk_array_create(weights->cols, 1);
+    nlk_Array *sub = nlk_array_create(weights->cols, 1);
+    nlk_Array *add = nlk_array_create(weights->cols, 1);
+
+    /* read file */
+    tests = __nlk_read_analogy_test_file(filepath, vocab, lower_words, 
+                                         &total_tests);
+    if(tests == NULL) {
+        return NLK_FAILURE;
+    }
+    
+    /* normalize weights to make distance calculations easier */
+    weights_norm = nlk_array_create_copy(weights);
+    nlk_array_normalize_row_vectors(weights_norm);
+
+
+    /*
+     * perform the tests 
+     */
+    *accuracy = 0;
+    if(limit != 0 && limit < total_tests) {
+        total_tests = limit;
+    }
+    printf("eval on %zu tests\n", total_tests);
+    word_vector = nlk_array_create(weights->cols, 1);
+    for(test_number = 0; test_number < total_tests; test_number++) {
+        if(random) {
+            test = &tests[nlk_random_uint() % total_tests];
+        } else {
+            test = &tests[test_number];
+        }
+        /* word_vector1 */
+        nlk_array_copy_row(predicted, 0, weights, test->question[0]->index);
+
+        /* word_vector1 - word_vector2 */
+        nlk_array_copy_row(sub, 0, weights, test->question[1]->index);
+        nlk_array_scale(-1.0, sub);
+        nlk_array_add(sub, predicted);
+        
+        /* word_vector1 - word_vector2 + word_vector3 */
+        nlk_array_copy_row(add, 0, weights, test->question[2]->index);
+        nlk_array_add(add, predicted);
+        nlk_array_normalize_vector(predicted);
+        
+        /* find the closest vector to *predicted* in the weights matrix */
+        similarity = 0;
+        best_similarity = 0;
+        most_similar = 0;
+        for(word_index = 0; word_index < weights->rows; word_index++) {
+            /* ignore words in the test */
+            if(word_index == test->question[0]->index
+               || word_index == test->question[1]->index 
+               || word_index == test->question[2]->index) {
+                continue;
+            }
+            /* compute similarity *
+            word_vector->data = &weights_norm->data[word_index 
+                                                    * weights->cols];
+            similarity = nlk_array_dot(word_vector, predicted);
+            */
+            similarity = 0;
+            /* check if it is better than previous best */
+            if(similarity > best_similarity) {
+                best_similarity = similarity;
+                most_similar = word_index;
+            }
+        }   /* end of find closes word */
+        /* check to see of the closest word found is the target word */
+        if(test->answer->index == most_similar) {
+            correct++;
+        }
+    }
+    printf("correct = %zu\t", correct);
+
+    /* result */
+    *accuracy = correct / (nlk_real) test_number;
+
+    /* cleanup */
+    free(tests);
+    free(word_vector);
+    free(weights_norm);
+    return NLK_SUCCESS;
+}
+
