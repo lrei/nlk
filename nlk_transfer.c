@@ -135,3 +135,34 @@ nlk_sigmoid_backprop(const nlk_Array *output, const nlk_Array *grad_out,
 
     return NLK_SUCCESS;
 }
+
+/** @fn nlk_average(const nlk_Array *input, nlk_Array *output)
+ * Averaging layer: takes matrix where each row represents an input and
+ * averages the rows, writting it to the output.
+ *
+ * @param input     the input matrix
+ * @param n_rows    the number of rows to average (first n_rows)
+ * @param output    the output array (overwritten)
+ *
+ */
+int
+nlk_average(const nlk_Array *input, size_t n_rows, nlk_Array *output) 
+{
+    size_t ii;
+
+    if(input->cols != output->rows) {
+        NLK_ERROR("number of input matrix columns must be equal to the number "
+                  "of output rows", NLK_EBADLEN);
+        /* unreachable */
+    }
+
+    nlk_array_zero(output);
+
+    /* add the rows */
+    for(ii = 0; ii < n_rows; ii++) {
+        nlk_row_add_vector(input, ii, output);
+    }
+
+    /* average */
+    nlk_array_scale(1.0/(nlk_real) n_rows, output);
+}

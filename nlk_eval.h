@@ -57,8 +57,7 @@ struct nlk_analogy_test {
 typedef struct nlk_analogy_test nlk_Analogy_Test;
 
 int nlk_eval_on_questions(const char *, nlk_Vocab **, const nlk_Array *, 
-                          const size_t, const bool, const bool, 
-                          nlk_real *accuracy);
+                          const size_t, const bool, nlk_real *accuracy);
 
 __END_DECLS
 #endif /* __NLK_EVAL_H__ */

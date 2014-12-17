@@ -41,7 +41,8 @@ time_t __nlk_time_start;
 
 
 /** @fn nlk_tic(char *msg)
- * Prints the current time, the elapsed time since the last call and a message
+ * Prints the current time, the elapsed time since the first call/last call to 
+ * nlk_toc() and a message
  *
  * @param msg   a message string that will be printed, use NULL for none.
  */
@@ -75,13 +76,19 @@ nlk_tic(char *msg, bool newline)
     time_diff = difftime(time_now, __nlk_time_start);
 
     if(msg != NULL) {
-        printf("\rnlk tic %.f (elapsed %.5f): %s", time_diff , tic_diff, msg);
+        printf("\rnlk tic %.fs (elapsed %.5f): %s", time_diff , tic_diff, msg);
         if(newline) {
             printf("\n");
         }
     }
-    __nlk_tic_start = clock();
     fflush(stdout);
+}
+
+void
+nlk_toc(char *msg, bool newline) {
+
+    nlk_tic(msg, newline);
+    __nlk_tic_start = clock();
 }
 
 void nlk_tic_reset()

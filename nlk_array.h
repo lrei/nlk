@@ -51,12 +51,9 @@
 #endif
 __BEGIN_DECLS
 
-#define NLK_MAX_EXP 6
-#define NLK_SIGMOID_TABLE_SIZE 10000
-
-extern tinymt32_t __tinymt; /* random number generator state */
-extern int __seed;          /* current seed */
-
+#define NLK_MAX_EXP             6
+#define NLK_SIGMOID_TABLE_SIZE  10000
+#define NLK_RAND_POOL_SIZE      1000000
 
 /* @enum NLK_OPTS
  * transpose options
@@ -92,6 +89,7 @@ struct nlk_table {
     size_t size;
     nlk_real max;
     nlk_real min;
+    size_t pos;
 };
 typedef struct nlk_table nlk_Table;
 
@@ -102,6 +100,7 @@ typedef struct nlk_table nlk_Table;
 nlk_Array *nlk_array_create(const size_t, const size_t);
 
 void nlk_set_seed(const int);
+int nlk_get_seed();
 
 uint32_t nlk_random_uint();
 
@@ -124,11 +123,19 @@ void nlk_print_array(const nlk_Array *, const size_t, const size_t);
  */
 void nlk_array_init_wity_carray(nlk_Array *, const nlk_real *);
 
-void nlk_array_init_uniform(nlk_Array *, const nlk_real, const nlk_real);
-
 void nlk_array_init_sigmoid(nlk_Array *, const uint8_t);
 
 void nlk_array_zero(nlk_Array *);
+
+/*
+ * Random numbers
+ */
+void nlk_array_init_uniform(nlk_Array *, const nlk_real, const nlk_real);
+nlk_Table *nlk_random_pool_create(size_t, const uint32_t);
+void nlk_random_pool_reset(nlk_Table *);
+uint32_t nlk_random_pool_get(nlk_Table *);
+
+
 
 /*
  * Free Array
@@ -149,13 +156,14 @@ void nlk_array_normalize_row_vectors(nlk_Array *);
 void nlk_array_normalize_vector(nlk_Array *);
 
 /* vector dot product */
-nlk_real nlk_array_dot(const nlk_Array *, nlk_Array *);
+nlk_real nlk_array_dot(const nlk_Array *, nlk_Array *, uint8_t);
 nlk_real nlk_array_dot_carray(const nlk_Array *, nlk_real *);
 
 /* elementwise addition */
 int nlk_array_add(const nlk_Array *, nlk_Array *);
 void nlk_array_add_carray(const nlk_Array *, nlk_real *);
 int nlk_vector_add_row(const nlk_Array *, nlk_Array *, size_t);
+int nlk_row_add_vector(const nlk_Array *, size_t, nlk_Array *);
 
 /* elementwise multiplication */
 int nlk_array_mul(const nlk_Array *, nlk_Array *);
@@ -179,8 +187,8 @@ int nlk_matrix_vector_multiply_add(const nlk_Array *, const NLK_OPTS,
 /*
  * Math for transfer functions
  */
-nlk_Table *nlk_table_sigmoid_create();
-
+nlk_Table *nlk_table_sigmoid_create(const size_t, const nlk_real);
+void nlk_table_free(nlk_Table *);
 nlk_real nlk_sigmoid_table(const nlk_Table *, const double);
 int nlk_array_sigmoid_table(const nlk_Table *, nlk_Array *);
 void nlk_array_sigmoid_approx(nlk_Array *);

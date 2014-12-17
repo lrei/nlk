@@ -29,7 +29,11 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <ctype.h>
+#include <inttypes.h>
+
+#include "MurmurHash3.h"
 
 #include "nlk_err.h"
 #include "nlk_text.h"
@@ -40,6 +44,7 @@ Read a word from a file
  * @param file            FILE object to read from
  * @param word            char pointer where the word will be stored
  * @param max_word_size   maximum size of a word (including null terminator)
+ * @param lower           convert uppercase chars to lowercase
  *
  * @return integer of the word separator (terminator), EOF or NLK_ETRUNC
  *
@@ -55,7 +60,8 @@ Read a word from a file
  * @endnote
  */
 int
-nlk_read_word(FILE *file, char *word, const size_t max_word_size)
+nlk_read_word(FILE *file, char *word, const size_t max_word_size,
+              const bool lower)
 {
     int ch;
     size_t len = 0;
@@ -72,7 +78,7 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size)
             return ch;
         }
 
-        word[len] = ch;
+        word[len] = tolower(ch);
         len++;
 
         if(len == max_word_size - 2) {
@@ -89,6 +95,7 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size)
  * @param max_word_size   maximum size of a word (including null terminator)
  * @param max_line_size   maximum size of a line in number of words (including 
  *                        null terminator)
+ * @param lower_words     conver uppercase chars to lowercase
  *
  * @return integer of the sentence separator '\n', EOF or NLK_ETRUNC
  *
@@ -113,13 +120,13 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size)
  */
 int
 nlk_read_line(FILE *file, char **line, const size_t max_word_size, 
-              const size_t max_line_size)
+              const size_t max_line_size, const bool lower_words)
 {
     int term;               /* word terminator, on return, line terminator */
     size_t word_idx = 0;    /* word in line index */
 
     while(!feof(file)) {
-        term = nlk_read_word(file, line[word_idx], max_word_size);
+        term = nlk_read_word(file, line[word_idx], max_word_size, lower_words);
         
         word_idx++;
 
@@ -150,3 +157,39 @@ nlk_text_lower(char *word) {
         *wp = tolower(*wp);
     }
 }
+
+/** @fn void nlk_text_concat_hash
+ * Turns an arbitraly large sequence of strings into a single (128bit) hash 
+ * stored as a string in key.
+ *
+ * @param line  the sequence of strings
+ * @param tmp   tempory memory for the concatenated strings
+ *              must be at least (size(string) + 1) * size(seq)
+ * @param key   the resulting hash in string form
+ */
+void
+nlk_text_concat_hash(const char **line, char *tmp, char *key)
+{
+    size_t ii;
+    size_t jj;
+    size_t pos = 0;
+    uint64_t hash[2];
+
+    /* loop through words */
+    for(ii = 0; *line[ii] != '\0'; ii++) {  
+        /* loop through chars */
+        for(jj = 0; line[ii][jj] != '\0'; jj++) {
+            tmp[pos] = line[ii][jj];
+            pos++;
+        }
+        tmp[pos] = ' '; /* space separate words */
+        pos++;
+    }
+    tmp[pos] = '\0'; /* replace final space with null terminator */
+
+    /* hash and convert to hexadecimal string */
+    MurmurHash3_x64_128(tmp, pos, 1, hash);
+    sprintf(key, "0x%"PRIX64 "%"PRIX64, hash[0], hash[1]);
+}
+
+

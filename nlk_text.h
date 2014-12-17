@@ -32,6 +32,7 @@
 
 
 #include <stdio.h>
+#include <stdbool.h>
 
 
 #undef __BEGIN_DECLS
@@ -45,11 +46,15 @@
 #endif
 __BEGIN_DECLS
 
+#define NLK_LM_MAX_WORD_SIZE    128
+#define NLK_LM_MAX_LINE_SIZE    1024
+#define NLK_LM_MAX_DOC_SIZE     500000
 
-int nlk_read_word(FILE *, char *, const size_t);
-int nlk_read_line(FILE *, char **, const size_t, const size_t);
+
+int nlk_read_word(FILE *, char *, const size_t, const bool);
+int nlk_read_line(FILE *, char **, const size_t, const size_t, const bool);
 void nlk_text_lower(char *);
-
+void nlk_text_concat_hash(const char **, char *, char *);
 
 __END_DECLS
 #endif /* __NLK_TEXT_H__ */

@@ -58,14 +58,19 @@ __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line,
     char *word;
     nlk_Vocab *vi;
     size_t ii = 0;
-    printf("trying to read test line: %s\n", line);
+
+    if(vocab == NULL) {
+        return false;
+    }
 
     do {
         /* tokenize string */
         if(ii == 0) {
             word = strtok(line, " ");
-        } else {
+        } else if(ii < 3) {
             word = strtok(NULL, " ");
+        } else {
+            word = strtok(NULL, "\n");
         }
         if(word == NULL) {
             return false;   /* something is wrong, fail */
@@ -168,7 +173,6 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
     }
 
     fclose(in);
-    printf("read %zu tests\n", test_number);
     *total_tests = test_number;
     return tests;
 }
@@ -192,9 +196,7 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
  * @param vocab         the vocabulary
  * @param weights       the weights matrix containing the representation of the
  *                      words in the vocabulary
- * @param limit         limit for the number of tests, 0 means no limit
- * @param random        if true and if limit is not zero, selects test subset 
- *                      randomly
+ * @param limit         limit for the number of words in the vocabulary
  * @param lower_words   convert words in test set to lower case
  * @param accuracy      the total accuracy (return value)
  *
@@ -208,27 +210,15 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
 int
 nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
                       const nlk_Array *weights, const size_t limit, 
-                      const bool randomize, const bool lower_words, 
-                      nlk_real *accuracy)
+                      const bool lower_words, nlk_real *accuracy)
 {
-    size_t word_index;
-    char *word;
-
     nlk_Analogy_Test *tests;    /* array that will contain all test cases */
-    nlk_Analogy_Test *test;     /* iteration test case*/
     size_t total_tests;
-    size_t test_number;
 
+    size_t _limit;
     nlk_Array *weights_norm;    /* for the normalized copy of the weights */
-    nlk_Array *word_vector;     /* view for individual word vectors */
-    nlk_real  similarity;
-    nlk_real  best_similarity;
-    size_t most_similar;
     size_t correct = 0;
-
-    nlk_Array *predicted = nlk_array_create(weights->cols, 1);
-    nlk_Array *sub = nlk_array_create(weights->cols, 1);
-    nlk_Array *add = nlk_array_create(weights->cols, 1);
+    size_t executed = 0;
 
     /* read file */
     tests = __nlk_read_analogy_test_file(filepath, vocab, lower_words, 
@@ -236,57 +226,72 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
     if(tests == NULL) {
         return NLK_FAILURE;
     }
-    
+
     /* normalize weights to make distance calculations easier */
     weights_norm = nlk_array_create_copy(weights);
     nlk_array_normalize_row_vectors(weights_norm);
 
 
+    *accuracy = 0;
+    if(limit == 0) {
+        _limit = weights_norm->rows;
+    } else {
+        _limit = limit;
+    }
+
     /*
      * perform the tests 
      */
-    *accuracy = 0;
-    if(limit != 0 && limit < total_tests) {
-        total_tests = limit;
-    }
-    printf("eval on %zu tests\n", total_tests);
-    word_vector = nlk_array_create(weights->cols, 1);
-    for(test_number = 0; test_number < total_tests; test_number++) {
-        if(random) {
-            test = &tests[nlk_random_uint() % total_tests];
-        } else {
-            test = &tests[test_number];
-        }
-        /* word_vector1 */
-        nlk_array_copy_row(predicted, 0, weights, test->question[0]->index);
+#pragma omp parallel reduction(+ : correct) reduction(+ : executed)
+{
+    nlk_Array *predicted = nlk_array_create(1, weights->cols);
+    nlk_Array *sub = nlk_array_create(1, weights->cols);
+    nlk_Array *add = nlk_array_create(1, weights->cols);
+    nlk_Array *word_vector = nlk_array_create(1, weights->cols);
+    nlk_Analogy_Test *test;     /* iteration test case*/
+    
 
-        /* word_vector1 - word_vector2 */
-        nlk_array_copy_row(sub, 0, weights, test->question[1]->index);
+#pragma omp for 
+    for(size_t test_number = 0; test_number < total_tests; test_number++) {
+        nlk_real similarity = 0;
+        nlk_real best_similarity = 0;
+        size_t most_similar = 0;
+
+        test = &tests[test_number];
+
+        /* if any of the words is not in the limited vocab, skip */
+        if(test->answer->index > _limit
+           || test->question[0]->index > _limit
+           || test->question[1]->index > _limit
+           || test->question[2]->index > _limit) {
+            continue;
+        }
+
+        /* vector for the second word in test: word_vector2 */
+        nlk_array_copy_row(predicted, 0, weights_norm, test->question[1]->index);
+
+        /* word_vector1 (vector for first word)  */
+        nlk_array_copy_row(sub, 0, weights_norm, test->question[0]->index);
+        /* word_vector2 - word_vector1 */
         nlk_array_scale(-1.0, sub);
         nlk_array_add(sub, predicted);
         
-        /* word_vector1 - word_vector2 + word_vector3 */
-        nlk_array_copy_row(add, 0, weights, test->question[2]->index);
+        /* word_vector3 (vector for the third word) */
+        nlk_array_copy_row(add, 0, weights_norm, test->question[2]->index);
+        /* word_vector2 - word_vector1  + word_vector3 */
         nlk_array_add(add, predicted);
-        nlk_array_normalize_vector(predicted);
         
         /* find the closest vector to *predicted* in the weights matrix */
-        similarity = 0;
-        best_similarity = 0;
-        most_similar = 0;
-        for(word_index = 0; word_index < weights->rows; word_index++) {
+       for(size_t word_index = 0; word_index < _limit; word_index++) {
             /* ignore words in the test */
             if(word_index == test->question[0]->index
                || word_index == test->question[1]->index 
                || word_index == test->question[2]->index) {
                 continue;
             }
-            /* compute similarity *
-            word_vector->data = &weights_norm->data[word_index 
-                                                    * weights->cols];
-            similarity = nlk_array_dot(word_vector, predicted);
-            */
-            similarity = 0;
+            /* compute similarity */
+            nlk_array_copy_row(word_vector, 0, weights_norm, word_index);
+            similarity = nlk_array_dot(word_vector, predicted, 1);
             /* check if it is better than previous best */
             if(similarity > best_similarity) {
                 best_similarity = similarity;
@@ -294,19 +299,23 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
             }
         }   /* end of find closes word */
         /* check to see of the closest word found is the target word */
-        if(test->answer->index == most_similar) {
+       if(test->answer->index == most_similar) {
             correct++;
         }
+        executed++;
     }
-    printf("correct = %zu\t", correct);
-
-    /* result */
-    *accuracy = correct / (nlk_real) test_number;
 
     /* cleanup */
-    free(tests);
-    free(word_vector);
-    free(weights_norm);
+    nlk_array_free(word_vector);
+    nlk_array_free(predicted);
+    nlk_array_free(sub);
+    nlk_array_free(add);
+} /* END OF PARALLEL BLOCk */
+    free(tests); /* @TODO yeah change this */
+    nlk_array_free(weights_norm);
+
+    /* result */
+    *accuracy = correct / (nlk_real) executed;
+
     return NLK_SUCCESS;
 }
-

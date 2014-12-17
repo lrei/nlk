@@ -23,16 +23,14 @@
  *****************************************************************************/
 
 
-/** @file nlk_window.h
- * Input/Output Window and Context
+/** @file nlk_w2v.h
+ * Word2Vec: CBOW & Skipgram model definitions
  */
 
 
-#ifndef __NLK_WINDOW_H__
-#define __NLK_WINDOW_H__
+#ifndef __NLK_W2V_H__
+#define __NLK_W2V_H__
 
-
-#include "nlk_vocabulary.h"
 
 
 #undef __BEGIN_DECLS
@@ -46,22 +44,30 @@
 #endif
 __BEGIN_DECLS
 
-
-/** @struct nlk_context
- * The context window for a given word
+/** @enum NLK_LM_TYPE
+ * The type of the language model
  */
-struct nlk_context {
-    size_t size;                /**< size of the context words array */
-    nlk_Vocab *center;          /**< the vocab item that has this context */
-    nlk_Vocab **window;        /**< the context window */
+enum NLK_LM_TYPE { 
+    NLK_CBOW      = 0, 
+    NLK_SKIPGRAM  = 1 
 };
-typedef struct nlk_context nlk_Context;
+typedef enum NLK_LM_TYPE nlk_Lm;
 
-size_t nlk_context_window(nlk_Vocab **, const size_t, const bool, const size_t,
-                          const size_t, const bool, nlk_Table *,
-                          nlk_Vocab *vocab_par,  bool center_paragraph,
-                          nlk_Context **);
-nlk_Context *nlk_context_create(size_t); 
-void nlk_context_free(nlk_Context *);
+void nlk_word2vec(nlk_Lm, char *, nlk_Vocab **, size_t, size_t, float, size_t, 
+                  nlk_real, unsigned int, unsigned int, int, char *, 
+                  nlk_Format);
+
+void *nlk_word2vec_thread(void *);
+
+void nlk_skipgram_for_contexts(nlk_Context **, size_t, nlk_Array *,
+                               nlk_Array *, nlk_Array *, nlk_Array *, 
+                               nlk_Array *);
+
+void nlk_cbow_for_contexts(nlk_Context **, size_t, size_t *ctx_ids, 
+                           nlk_Array *, nlk_Array *, nlk_Array *, nlk_Array *, 
+                           nlk_Array *);
+
+
+
 __END_DECLS
-#endif /* __NLK_WINDOW__ */
+#endif /* __NLK_W2V_H__ */

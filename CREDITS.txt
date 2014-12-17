@@ -1,0 +1,18 @@
+## TinyMT ##
+Version 1.0.3
+http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/TINYMT/index.html
+Copyright (c) 2011, 2013 Mutsuo Saito, Makoto Matsumoto,
+Hiroshima University and The University of Tokyo.
+License: 3-clause BSD
+
+## uthash ##
+Version 1.9.9, November 2014
+http://troydhanson.github.com/uthash/
+Copyright (c) 2003-2014, Troy D. Hanson 
+License: revised BSD
+
+## MinUnit ##
+Version 28 November 2014
+http://www.jera.com/techinfo/jtns/jtn002.html
+Copyright (c) Jera Design
+License: public domain / no warranty

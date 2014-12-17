@@ -1,0 +1,244 @@
+# C Coding Style
+Luis Rei, 2014
+
+This style style guid applies only to C source code.
+This document is written in a style similar to markdown but is not meant to be 
+interpreted as markdown (.
+
+## Prelude
+
+K&R with 1TBS (One True Brace Style). 
+When not specified consult the Linux Kernel Coding Style on which this is
+heavily based. Another resource on which this style is based 
+on is Python's [PEP8](https://www.python.org/dev/peps/pep-0008/) by virtue of 
+the years I spent programming in Python.
+
+Use a good programming font such as Source Code Pro. The upper case "I" and 
+lower case "l" ("L") should look different. Still, try to avoid using them.
+
+Do your eyes and head a favor and do not use unnecessarily small font sizes.
+
+
+## Chapter 1: Naming Convention
+
+Be descriptive and make things easy to read. Separate words inside identifiers 
+with underscores. Try not to abbreviate names. Variables and function are 
+always lower case.
+
+    size_t network_size;
+    count_network_layers();
+
+No silly hungarian notations or other crazy stuff that causes brain and eye
+damage. Bad:
+ 
+    int ntwksz;
+    CntLrs();
+    /* 
+     * abbreviations are not preferred unless it's:
+     *  - very obvious
+     *  - otherwise variable name would be too long
+     *  - loop indexing variables
+     */
+    int net_size; 
+
+Using for(ii = 0; ...) is ok if it is a small loop and in the 
+context it is clear what 'ii' is. Use 'ii', 'jj', 'kk' etc instead of 'i',
+'j' etc. This makes highligthing and search easier when using an editor.
+
+Do not encode types into variables (Hungarian crazyness), types belong in 
+declarations not names. Duplicating that information leads to no good.
+
+
+Function names are lower case and words in them are separated by an underscore
+e.g. nlk_set_error_handler(...). 
+
+
+Macros and enums are full upper case e.g. NLK_FAILURE.
+
+
+### Typedefs
+
+My feelings on Typedefs are mixed. Excessive typedefing is a nightmare. 
+
+First, typedefing standard types is wrong. nlk_real is an exception which I'm 
+unsure about. The rationale is that this could be switched to double precision 
+in the future if necessary.
+
+Standard library typedefs are obviously ok and preferred when they make sense
+e.g. size_t for lengths.
+
+Linux kernel style typedefs i.e. typedef uint32_t u32; are not ok. A name of a 
+type should mean something. size_t is a typedef but it means something. u32 just
+means you type faster than you think. There's no reason for both u32 and 
+uint32_t to coexist in 
+
+
+Second, typedefing structures... yes. Structures are typedefed. I would prefer 
+not to but GSL and others do this so it would be weird not to. It also makes 
+things easier for non-C-natives. This is contrary to the Linux kernel style.
+
+
+Typedefs are capitalized (not camel case) as in K&R:
+
+    Treenode or Tree_Huffman_Node
+
+    not
+
+    TreeNode or treeNode or TREENODE or whatever
+
+Adding a _t to types is unnecessary.
+
+    
+Function typedefs which are all lower case (like functions themselves). In 
+function typedefs adding a _t suffix is actually preferred since they are not 
+capitalized and the concept of a function type is kind of weird and poorly 
+implementedin C.
+
+
+### Prefixing
+
+All library functions are prefixed with *nlk_*. The *nlk_* prefix is always 
+lower case. Non-library functions have no prefix.
+
+Global variables (and functions) are pre-prefixed with two underscores meant to 
+indicate "private" i.e. the variable should only be set by calling functions 
+directly defined in that file. E.g.
+
+    nlk_error_handler_t *__nlk_error_handler = NULL;
+
+I realise this makes things harder to read in many places specially when the 
+variable is preceeded by '*'. Global variables should be rare enough to make 
+it a non issue. This is python convention. I've adopted it because it makes it
+clearer when global variables are set inside a function.
+
+
+## Chapter 2: Lines, Indention & Spacing
+
+Maximum line lenght is 80 columns.
+
+Indention uses the space character (soft tab). Each indention is 4 spaces.
+In this regard, it is the same as specified in PEP8 but different from the 
+Linux kernel. I rarely have any issue groking 2-space indention, 4-space
+indention is safe. I recommend setting the editor font at a size of 13 or
+greater.
+
+Use visual idention (again, a python concept):
+
+    void func(long list of parameters
+              continuation  of parameter list);
+
+Absolutely no multiple statements or assignments in one line!
+
+No superflous spaces are to be inserted in functions or keywords:
+
+    void func(type param);
+    func(param);
+    while(true) {...
+
+The parantheses character is separation enough. Use a larger font if you can't 
+see parentheses clearly.
+
+When declaring pointer data or a function that returns a pointer type, the '*' 
+is adjacent to the data name or function name and not adjacent to the type name.
+
+	nlk_Bock *block;
+	nlk_Real *nlk_func(nlk_Real *s);
+
+Use one space around (on each side of) binary and ternary operators but not
+around unary operators
+
+    result = x * y;
+    result++;
+    value = !opposite;
+
+The exception are the '.' '->' operators:
+
+    b->size;
+    b.size;
+
+For casts:
+
+    (int *) calloc(sizeof(int) * n);
+
+
+## Chapter 3: Braces
+
+K&R One True Brace Style.
+
+Again, different from the Linux kernel. Braces are mandatory! Lack of propper
+braces has caused a lot of bugs that would've been avoided otherwise.
+
+if(cond) {
+    do_something();
+} else {
+    do_something_else();
+}
+
+
+## Chapter 4: Centralized exiting of functions
+
+No goto. Structure your if-elses correctly, duplicate minimal code if necessary.
+
+## Chapter 5: Functions
+
+Declarations do not include parameter names.
+Output parameters are always the last parameters in the function.
+
+Unlike variables, functions include type information: they are prefixed with 
+the type they operate on. The reason for this is obvious: there can't be two 
+functions with the same name (no overloading) in C. Since this is necessary in 
+many cases, I find it preferable to always do this for functions that on 
+operate on my own structures. The added benifit is this makes (ab)using 
+auto-completion easier :) 
+
+
+## Chapter 6: Comments & Documentation
+
+No, code is not it's own documentation. And it's certainly not it's own 
+commentary. That makes no sense. It's like saying watching a sports match is 
+it's own commentary. It's a dumb assertion.
+
+Code is instructions to a computer. The computer (fortunately/unfortunaly) never
+asks "why" and does not need to know. People do. 
+
+
+"Generally, you want your comments to tell WHAT your code does, not HOW." 
+- Linux Kernel Coding Style
+
+
+Assume the person reading the code actually knows how to program and thus
+
+    layer_count++;  /* increment layer counter */
+
+Is an unnecessary comment. 
+
+That said, it's nice if things that can be easily missed are pointed out and 
+it's nice if people who don't know the language can figure out an algorithm 
+without having to learn the language.
+
+SPECIFICALLY WARN about unexpected behavior such as when a function you call 
+calls abort or when a macro returns for the function it is called in. This stuff
+happends in NLK_ERROR and code that follows it is unreachable and should be 
+marked as such.
+
+Err on the side of caution, it's always easier for another person to remove a 
+bunch of comments than to add them correctly.
+
+
+Comments can also serve as summaries. If instead of reading 20 lines of code 
+that call functions I might not know, I can read 2 lines of comments, it allows 
+me to read through a source code file much faster.
+
+
+No C99 // comments because reasons.
+
+
+### Function Headers
+
+
+### Regular Multi-line Blocks
+
+
+## Chapter 6: Macros
+
+

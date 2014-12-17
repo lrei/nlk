@@ -36,6 +36,7 @@
 #include <stdbool.h>
 #include "uthash.h"
 
+#include "nlk_array.h"
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS
@@ -54,6 +55,17 @@ __BEGIN_DECLS
 #define NLK_MAX_CODE 40
 
 
+/** @enum NLK_VOCAB_TYPE
+ * The type of the vocabulary item
+ */
+enum NLK_VOCAB_TYPE { 
+    NLK_VOCAB_WORD      = 0, 
+    NLK_VOCAB_PAR       = 1 
+};
+typedef enum NLK_VOCAB_TYPE nlk_Vocab_Type;
+
+
+
 /** @struct nlk_vocab
  * Vocabulary structure - a hashmap from words to their huffman code and count
  *
@@ -66,20 +78,21 @@ __BEGIN_DECLS
  * @endnote
  */
 struct nlk_vocab {
-    char            *word;                  /**< the word string (key) */
-    size_t           id;                    /**< word id */
-    size_t           index;                 /**< sorted index position */
-    uint64_t         count;                 /**< word count */
-    size_t           code_length;           /**< length of *code array */
-    uint8_t          code[NLK_MAX_CODE];    /**< huffman code */
-    size_t           point[NLK_MAX_CODE];   /**< hierarchical softmax nodes */
-    UT_hash_handle   hh;                    /**< handle for hash table */
+    char            *word;          /**< the word string (key) */
+    nlk_Vocab_Type   type;          /**< vocab item type */
+    size_t           id;            /**< vocabulary item id */
+    size_t           index;         /**< sorted index position */
+    uint64_t         count;         /**< word count */
+    size_t           code_length;   /**< length of *code array */
+    uint8_t          *code;         /**< huffman code */
+    size_t           *point;        /**< hierarchical softmax nodes */
+    UT_hash_handle   hh;             /**< handle for hash table */
 };
 typedef struct nlk_vocab nlk_Vocab;
 
 
 
-nlk_Vocab *nlk_vocab_create(char *, const size_t); 
+nlk_Vocab *nlk_vocab_create(char *, const size_t, const size_t, const bool); 
 void nlk_vocab_sort(nlk_Vocab **);
 void nlk_vocab_free(nlk_Vocab **);
 size_t nlk_vocab_size(nlk_Vocab **);
@@ -91,10 +104,14 @@ void nlk_vocab_encode_huffman(nlk_Vocab **);
 int nlk_vocab_save(const char *, nlk_Vocab **);
 int nlk_vocab_load(const char *, const size_t, nlk_Vocab **);
 int nlk_vocab_save_full(const char *, nlk_Vocab **);
-size_t nlk_vocab_vocabularize(nlk_Vocab **, char **, nlk_Vocab *, bool,
-                              nlk_Vocab **);
+size_t nlk_vocab_vocabularize(nlk_Vocab **, const char **, const float sample, 
+                              nlk_Table *, nlk_Vocab *, 
+                              const bool, nlk_Vocab **, size_t *,
+                              nlk_Vocab *, char *, char *);
 nlk_Vocab *nlk_vocab_find(nlk_Vocab **, char *);
-
+nlk_Vocab *nlk_vocab_at_index(nlk_Vocab **, size_t);
+nlk_Vocab *nlk_vocab_find_paragraph(nlk_Vocab **, const char **, char *, 
+                                    char *);
 
 
 __END_DECLS

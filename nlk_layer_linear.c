@@ -47,7 +47,6 @@
  *
  * @param table_size    e.g. the size of the vocabulary 
  * @param layer_size    the size of this layer  
- * @param n_indices     maximum number of indices fed into this layer
  *
  * @return pointer to a Lookup_Layer or NULL if creation failed
  *
@@ -57,8 +56,7 @@
  * @endnote
  */
 nlk_Layer_Lookup *
-nlk_layer_lookup_create(const size_t table_size, const size_t layer_size,
-                        const size_t max_indices)
+nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
 {
     nlk_Layer_Lookup *layer;
    
@@ -73,7 +71,6 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size,
     }
 
     layer->weights = nlk_array_create(table_size, layer_size);
-    layer->max_indices = max_indices;
 
     if(layer->weights == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for lookup layer weights",
@@ -217,12 +214,15 @@ nlk_layer_lookup_backprop_acc(nlk_Layer_Lookup *layer, const nlk_Array *input,
 
 void
 nlk_layer_lookup_backprop_lookup(nlk_Layer_Lookup *layer, 
-                                 const size_t index, 
+                                 const size_t *indices, const size_t n_indices, 
                                  const nlk_Array *grad_out)
 {
+    size_t ii;
     /* update weights */
-    nlk_array_add_carray(grad_out,
-                         &layer->weights->data[index * layer->weights->cols]);
+    for(ii = 0; ii < n_indices; ii++) {
+        nlk_array_add_carray(grad_out,
+                &layer->weights->data[indices[ii] * layer->weights->cols]);
+    }
 
     /* no need to calc grad at input - 1st layer*/
 }
@@ -239,16 +239,19 @@ nlk_layer_lookup_free(nlk_Layer_Lookup *layer)
     free(layer);
 }
 
-/** @fn int nlk_layer_lookup_save(const char *filepath, const bool binary, 
+/** @fn int nlk_layer_lookup_save(const char *filepath,
+ *                                const nlk_Format format, 
  *                                const nlk_Layer_Lookup *layer)
  * Save a lookup layer to disk - word2vec compatible file
  *
  * @note
- * Haven't tested if it is indeed word2vec compatible
+ * I don't like the word2vec binary format because it needlessly mixes the 
+ * vocabulary with the weights making it far more complicated and to read than 
+ * it would otherwise be.
  * @endnote
  */
 int
-nlk_layer_lookup_save(char *filepath, const bool binary,
+nlk_layer_lookup_save(char *filepath, const nlk_Format format,
                       nlk_Vocab **vocab, nlk_Layer_Lookup *layer)
 {
     size_t w_idx;
@@ -263,27 +266,71 @@ nlk_layer_lookup_save(char *filepath, const bool binary,
         /* unreachable */
     }
 
+    /* print header */
     fprintf(out, "%zu %zu\n", vocab_size, layer_size);
 
-    for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        fprintf(out, "%s ", vi->word);
-        w_idx = vi->index;
-        
-        if(binary) {
-            for(cc = 0; cc < layer_size; cc++) {
-                fwrite(&layer->weights->data[w_idx * layer_size + cc], 
-                       sizeof(nlk_real), 1, out);
-            } /* end of word weight */
-        }
-        else {
-            for(cc = 0; cc < layer_size; cc++) {
-                fprintf(out, "%lf ", layer->weights->data[w_idx * layer_size +
-                                                         cc]);
+    if(format == NLK_FILE_W2V_TXT || format == NLK_FILE_W2V_BIN) {
+        for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+            fprintf(out, "%s ", vi->word);
+            w_idx = vi->index;
+            
+            if(format == NLK_FILE_W2V_BIN) {
+                for(cc = 0; cc < layer_size; cc++) {
+                    fwrite(&layer->weights->data[w_idx * layer_size + cc], 
+                           sizeof(nlk_real), 1, out);
+                } /* end of word weight */
             }
+            else {
+                for(cc = 0; cc < layer_size; cc++) {
+                    fprintf(out, "%lf ", layer->weights->data[w_idx * layer_size +
+                                                             cc]);
+                }
+            }
+            fprintf(out, "\n");
         }
-        fprintf(out, "\n");
+    } else {
+        fwrite(layer->weights->data, sizeof(nlk_real),
+               layer->weights->rows * layer->weights->cols, out);
     }
     fclose(out);
+}
+
+/** @fn nlk_Layer_Lookup *nlk_layer_lookup_load(char *filepath)
+ * Load lookup layer from a file (NLK_FILE_BIN)
+ *
+ * @param filepath  the path of the file
+ *
+ * @return the loaded layer
+ */
+nlk_Layer_Lookup * 
+nlk_layer_lookup_load(char *filepath)
+{
+    nlk_Layer_Lookup *layer;
+    size_t rows;
+    size_t cols;
+    size_t ret;
+
+    FILE *in = fopen(filepath, "rb");
+    if(in == NULL) {
+        NLK_ERROR_NULL(strerror(errno), errno);
+        /* unreachable */
+    }
+    
+    /* read header */
+    ret = fscanf(in, "%zu", &rows);
+    ret = fscanf(in, "%zu", &cols);
+    ret = fgetc(in); /* the newline */
+
+    layer = nlk_layer_lookup_create(rows, cols);
+
+    ret = fread(layer->weights->data, sizeof(nlk_real), rows * cols, in);
+    if(ret != rows * cols) {
+        NLK_ERROR_NULL("file length does not match header information",
+                        NLK_FAILURE);
+        /* unreachable */
+    }
+
+    return layer;
 }
 
 

@@ -48,8 +48,9 @@ __BEGIN_DECLS
 
 
 void nlk_transfer_concat_forward(const nlk_Array *, nlk_Array *);
-
 void nlk_transfer_concat_backprop(const nlk_Array *, nlk_Array *);
+
+int nlk_average(const nlk_Array *, size_t, nlk_Array *);
 
 void nlk_sigmoid_forward_table (const nlk_Table *, nlk_Array *);
 void nlk_sigmoid_forward(nlk_Array *input);

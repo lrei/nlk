@@ -33,6 +33,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <pthread.h>
+#include <float.h>
 
 #include <cblas.h>
 
@@ -41,8 +43,9 @@
 #include "tinymt32.h"
 
 
-tinymt32_t __tinymt; /* random number generator state */
-int __seed = -1;     /* current seed */
+tinymt32_t __tinymt;            /* random number generator state */
+pthread_mutex_t __rng_mutex;    /* PRNG mutex */
+int __seed = -1;                /* current seed */
 
 /** @fn nlk_Array *nlk_array_create(const size_t rows, const size_t cols)
  * Create and allocate an nlk_Array
@@ -104,8 +107,7 @@ nlk_array_create_copy(const nlk_Array *source)
         /* unreachable */
     }
 
-    memcpy(dest->data, source->data,
-           source->rows * source->cols * sizeof(nlk_real));
+    cblas_scopy(source->rows * source->cols, source->data, 1, dest->data, 1);
 
     return dest;
 }
@@ -186,20 +188,30 @@ nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
 }
 
 
-/* nlk_set_seed - set the seed for the random number generation 
+/** @fn void nlk_set_seed(const int seed)
+ * Set the seed for the random number generation 
  *
- * Params:
- *  seed - the seed
+ * @param seed the seed to set
  *
- * Returns:
- *  No return (void), global seed variable and random generator state are
- *  changed
+ * @return no return, global seed variable and random generator state 
+ *                    are changed
  */
 void 
 nlk_set_seed(const int seed)
 {
     __seed = seed;
     tinymt32_init(&__tinymt, seed);
+}
+
+/** @fn int nlk_get_seed()
+ * Get the current seed for the random number generation 
+ *
+ * @return  the current seed
+ */
+int
+nlk_get_seed()
+{
+    return __seed;
 }
 
 /** @fn uint32_t nlk_random_uint()
@@ -394,13 +406,22 @@ nlk_array_normalize_vector(nlk_Array *v)
  * Compute the dot product of two vectors
  */
 nlk_real
-nlk_array_dot(const nlk_Array *v1, nlk_Array *v2)
+nlk_array_dot(const nlk_Array *v1, nlk_Array *v2, uint8_t dim)
 {
-    if(v1->rows != v2->rows) {
+    if(dim == 0 && v1->rows != v2->rows) {
         NLK_ERROR("array dimensions (rows) do not match.", NLK_EBADLEN);
         /* unreachable */
+    } else if(dim == 0) {
+        return cblas_sdot(v1->rows, v1->data, 1, v2->data, 1);
+    } else if(dim == 1 && v1->cols != v2->cols) {
+        NLK_ERROR("array dimensions (cols) do not match.", NLK_EBADLEN);
+        /* unreachable */
+    } else if(dim == 1) {
+        return cblas_sdot(v1->cols, v1->data, 1, v2->data, 1);
+    } else {
+        NLK_ERROR("invalid array dimension", NLK_EINVAL);
     }
-    return cblas_sdot(v1->rows, v1->data, 1, v2->data, 1);
+
 }
 
 /** @fn nlk_real nlk_dot_array_carray(nlk_Array *v1, nlk_real *carr) 
@@ -457,6 +478,32 @@ nlk_vector_add_row(const nlk_Array *v, nlk_Array *m, size_t row)
     }
 
     cblas_saxpy(m->cols, 1, v->data, 1, &m->data[row * m->cols], 1); 
+
+    return NLK_SUCCESS;
+}
+
+/** @fn int nlk_row_add_vector(const nlk_Array *m, nlk_Array *v, size_t row)
+ * Adds a matrix row to a vector
+ * 
+ * @param m     a matrix
+ * @param v     a column vector, overwitten with the result
+ * @param row   the matrix row
+ *
+ * @return NLK_SUCCESS, NLK_EBADLEN, NLK_EINVAL
+ */
+int
+nlk_row_add_vector(const nlk_Array *m, size_t row, nlk_Array *v)
+{
+    if(v->rows != m->cols) {
+        NLK_ERROR("vector rows do not match matrix columns.", NLK_EBADLEN);
+        /* unreachable */
+    }
+    if(row > m->rows) {
+        NLK_ERROR("row outside of matrix bounds.", NLK_EINVAL);
+        /* unreachable */
+    }
+
+    cblas_saxpy(m->cols, 1, &m->data[row * m->cols], 1, v->data, 1); 
 
     return NLK_SUCCESS;
 }
@@ -709,7 +756,7 @@ nlk_array_init_sigmoid(nlk_Array *array, const uint8_t max_exp) {
  * @endnote
  */
 nlk_Table *
-nlk_table_sigmoid_create()
+nlk_table_sigmoid_create(const size_t table_size, const nlk_real max_exp)
 {
     nlk_Table *table;
     size_t ii;
@@ -723,20 +770,108 @@ nlk_table_sigmoid_create()
     }
 
     /* allocate array and set fields */
-    table->table = nlk_array_create(NLK_SIGMOID_TABLE_SIZE, 1);
+    table->table = nlk_array_create(table_size, 1);
     if(table->table == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for table array",
                        NLK_ENOMEM);
         /* unreachable */
     }
-    table->size = NLK_SIGMOID_TABLE_SIZE;
-    table->max =  NLK_MAX_EXP;
-    table->min = -NLK_MAX_EXP;
+    table->size = table_size;
+    table->max =  max_exp;
+    table->min = -max_exp;
 
     /* precompute the values */
-    nlk_array_init_sigmoid(table->table, NLK_MAX_EXP);
+    nlk_array_init_sigmoid(table->table, max_exp);
 
     return table;
+}
+
+/**
+ * Thread safe random pool creation (positive integers).
+ *
+ * @param table_size    the number of random numbers to generate
+ *
+ * @return the table (random pool)
+ *
+ * @note
+ * Values will be stored in nlk_reals and this should be limited to the type's
+ * range. 
+ * @endnote
+ */
+nlk_Table *
+nlk_random_pool_create(size_t table_size, const uint32_t max)
+{
+    nlk_Table *table;
+    size_t ii;
+    uint32_t r;
+
+    /* allocate structure */
+    table = (nlk_Table *) malloc(sizeof(nlk_Table));
+    if(table == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for table struct",
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    /* allocate array and set fields */
+    table->table = nlk_array_create(table_size, 1);
+    if(table->table == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for table array",
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+    table->max = max;
+    table->size = table_size;
+    table->pos = 0;
+
+    /* generate the numbers */
+    pthread_mutex_lock(&__rng_mutex);
+    for(ii = 0; ii < table->size; ii++) {
+        r = tinymt32_generate_uint32(&__tinymt) % (uint32_t) table->max;
+        table->table->data[ii] = r;
+    }
+    pthread_mutex_unlock(&__rng_mutex);
+
+    return table;
+}
+
+void
+nlk_random_pool_reset(nlk_Table *table)
+{
+    size_t ii;
+    uint32_t r;
+    table->pos = 0;
+
+    /* generate the numbers */
+    pthread_mutex_lock(&__rng_mutex);
+    for(ii = 0; ii < table->size; ii++) {
+        r = tinymt32_generate_uint32(&__tinymt) % (uint32_t) table->max;
+        table->table->data[ii] = r;
+    }
+    pthread_mutex_unlock(&__rng_mutex);
+}
+
+uint32_t
+nlk_random_pool_get(nlk_Table *table)
+{
+    if(table->pos >= table->size) {
+        nlk_random_pool_reset(table);
+    }
+    table->pos += 1;
+
+    return (uint32_t) table->table->data[table->pos - 1];
+}
+
+/** @fn nlk_table_free(nlk_Table *table)
+ * Free a table.
+ *
+ * @param table the table to free
+ */
+void
+nlk_table_free(nlk_Table *table)
+{
+    nlk_array_free(table->table);
+    free(table);
 }
 
 /** @fn nlk_real nlk_sigmoid_table(const nlk_Table *sigmoid_table, 

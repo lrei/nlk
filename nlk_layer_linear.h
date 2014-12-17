@@ -49,13 +49,22 @@
 #endif
 __BEGIN_DECLS
 
+/** @enum NLK_FORMAT
+ * File formats for saving weights
+ */
+enum NLK_FORMAT {
+    NLK_FILE_W2V_TXT = 0,
+    NLK_FILE_W2V_BIN = 1,
+    NLK_FILE_BIN = 2
+};
+typedef enum NLK_FORMAT nlk_Format;
+
 
 /** @struct nlk_layer_lookup
  * A lookup table layer is usually used to convert between a list of indexes 
  * and their corresponding vectors.
  */
 struct nlk_layer_lookup {
-    size_t      max_indices;        /**< number of input indices (maximum) */
     nlk_Array   *weights;           /**<  [table_size][layer_size] */
 };
 typedef struct nlk_layer_lookup nlk_Layer_Lookup;
@@ -84,8 +93,7 @@ void nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *);
  * Lookup Layer 
  */
 /* Create a Lookup Layer */
-nlk_Layer_Lookup *nlk_layer_lookup_create(const size_t, const size_t,
-                                          const size_t);
+nlk_Layer_Lookup *nlk_layer_lookup_create(const size_t, const size_t);
 
 /* Initialize the lookup layer */
 void nlk_layer_lookup_init(nlk_Layer_Lookup *);
@@ -96,8 +104,8 @@ void nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *, const size_t *,
 void nlk_layer_lookup_forward(nlk_Layer_Lookup *, const nlk_Array *, 
                               const size_t, nlk_real *output);
 /* Lookup Layer backward pass */
-void nlk_layer_lookup_backprop_lookup(nlk_Layer_Lookup *, const size_t, 
-                                      const nlk_Array *);
+void nlk_layer_lookup_backprop_lookup(nlk_Layer_Lookup *, const size_t *,
+                                      const size_t, const nlk_Array *);
 void nlk_layer_lookup_backprop_acc(nlk_Layer_Lookup *, const nlk_Array *, 
                                    const size_t, const nlk_real, 
                                    nlk_Array *, nlk_Array *, nlk_Array *);
@@ -119,9 +127,10 @@ void nlk_layer_linear_backprop(nlk_Layer_Linear *, const nlk_Array *,
                                const nlk_Array *);
 
 
-/* save */
-int nlk_layer_lookup_save(char *, const bool, nlk_Vocab **, 
+/* save/load */
+int nlk_layer_lookup_save(char *, nlk_Format, nlk_Vocab **, 
                           nlk_Layer_Lookup *);
+nlk_Layer_Lookup *nlk_layer_lookup_load(char *filepath);
 
 /*
  * ### Free ###

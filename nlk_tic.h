@@ -56,6 +56,7 @@ extern time_t __nlk_time_start;
 
 
 void nlk_tic(char *, bool);
+void nlk_toc(char *, bool);
 void nlk_tic_reset();
 
 
