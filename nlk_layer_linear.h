@@ -86,17 +86,19 @@ typedef struct nlk_layer_linear nlk_Layer_Linear;
  *  Initialization for lookup or linear layers
  */
 /* Initialize a linear layer that is followed by a sigmoid */
-void nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *);
-void nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *);
+void nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *, tinymt32_t *rng);
+void nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *, tinymt32_t *rng);
 
 /*
  * Lookup Layer 
  */
 /* Create a Lookup Layer */
 nlk_Layer_Lookup *nlk_layer_lookup_create(const size_t, const size_t);
+int nlk_layer_lookup_resize(nlk_Layer_Lookup *, const size_t);
 
 /* Initialize the lookup layer */
-void nlk_layer_lookup_init(nlk_Layer_Lookup *);
+void nlk_layer_lookup_init(nlk_Layer_Lookup *, tinymt32_t *);
+void nlk_layer_lookup_init_from(nlk_Layer_Lookup *, size_t, tinymt32_t *);
 /* Simple lookup forward pass (1st layer) */
 void nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *, const size_t *,
                                      const size_t, nlk_Array *);

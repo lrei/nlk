@@ -311,7 +311,7 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
     nlk_array_free(sub);
     nlk_array_free(add);
 } /* END OF PARALLEL BLOCk */
-    free(tests); /* @TODO yeah change this */
+    free(tests);
     nlk_array_free(weights_norm);
 
     /* result */
@@ -319,3 +319,122 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
 
     return NLK_SUCCESS;
 }
+
+int
+nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab, 
+                        const nlk_Array *weights,  const bool lower_words, 
+                        nlk_real *accuracy)
+{
+    /** @section Allocation and Initialization
+     */
+    *accuracy = 0;
+    int correct = 0;
+    int total = 0;
+    size_t ii;
+    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
+    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
+
+    nlk_Array *weights_norm;    /* for the normalized copy of the weights */
+    /* normalize weights to make distance calculations easier */
+    weights_norm = nlk_array_create_copy(weights);
+    nlk_array_normalize_row_vectors(weights_norm);
+    size_t limit = weights_norm->rows;
+
+    FILE *fin = fopen(test_file, "rb");
+    if(fin == NULL) {
+        NLK_ERROR(strerror(errno), errno);
+    }
+    size_t num_lines = nlk_text_count_lines(fin);
+
+    nlk_Vocab **par1 = (nlk_Vocab **) malloc(num_lines / 2 * 
+                                             sizeof(nlk_Vocab *));
+    nlk_Vocab **par2 = (nlk_Vocab **) malloc(num_lines / 2 *
+                                             sizeof(nlk_Vocab *));
+
+    if(par1 == NULL || par2 == NULL) {
+        NLK_ERROR("failed to allocate memory for test items",  NLK_ENOMEM);
+    }
+
+    char **line1 = (char **) malloc(max_line_size * sizeof(char *));
+    char **line2 = (char **) malloc(max_line_size * sizeof(char *));
+    if(line1 == NULL || line2 == NULL) {
+        NLK_ERROR("failed to allocate memory for a line",  NLK_ENOMEM);
+        /* unreachable */
+    }
+    for(ii = 0; ii < max_line_size; ii++) {
+        line1[ii] = (char *) malloc(max_word_size * sizeof(char));
+        line2[ii] = (char *) malloc(max_word_size * sizeof(char));
+        if(line1[ii] == NULL || line2[ii]) {
+            NLK_ERROR("failed to allocate memory for a line",  NLK_ENOMEM);
+            /* unreachable */
+        }
+    }
+
+    /* find the index of the first paragraph vector */
+    size_t start_pos = nlk_vocab_first_paragraph(vocab);
+
+    /* read file into memory */
+    char *word = (char *) malloc(max_word_size * sizeof(char));
+    char *tmp = (char *) malloc((max_word_size * max_line_size 
+                                 + max_line_size) * sizeof(char));
+    for(ii = 0; ii < num_lines / 2; ii++) {
+        nlk_read_line(fin, line1, max_word_size, max_line_size, lower_words);
+        nlk_read_line(fin, line2, max_word_size, max_line_size, lower_words);
+
+        nlk_text_concat_hash(line1, tmp, word);
+        par1[ii] = nlk_vocab_find(vocab, word);
+
+        nlk_text_concat_hash(line2, tmp, word);
+        par2[ii] = nlk_vocab_find(vocab, word);
+    }
+
+    /* free the memory for the file reading */
+    for(ii = 0; ii < max_line_size; ii++) {
+        free(line1[ii]);
+        free(line2[ii]);
+    }
+    free(line1);
+    free(line2);
+    free(word);
+    free(tmp);
+
+
+    /** @section Eval Loop
+     */
+#pragma omp parallel reduction(+ : correct) reduction(+ : total)
+{
+#pragma omp for
+    for(size_t tt = 0; tt < num_lines / 2; tt++) {
+        nlk_real best_similarity = 0;
+        size_t most_similar = 0;
+        nlk_real sim = 0;
+        size_t index = start_pos;
+        size_t pos1;
+        if(par1[tt] == NULL || par2[tt] == NULL) {
+            continue;
+        }
+        pos1 = par1[tt]->index;
+        
+        for(; index < limit; index++) {
+            sim = nlk_array_row_dot(weights_norm, pos1, weights_norm, index);
+            if(sim > best_similarity) {
+                best_similarity = sim;
+                most_similar = index;
+            }
+        }
+        if(most_similar == par2[tt]->index) {
+            correct++;
+        }
+        total += 1;
+    }
+    
+} /* end of parallel for */
+    *accuracy = (nlk_real) correct / (nlk_real) total;
+
+    free(par1);
+    free(par2);
+    nlk_array_free(weights_norm);
+ 
+    return NLK_SUCCESS;
+}
+

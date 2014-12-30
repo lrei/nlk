@@ -18,23 +18,64 @@
 
 #include "nlk_w2v.h"
 
+
+void test_vocab() {
+    size_t vocab_size, vocab_words, vocab_total;
+    nlk_Vocab *vocab; 
+
+    vocab = nlk_vocab_create("vtest1.txt", NLK_LM_MAX_WORD_SIZE, 
+                                        0, true);
+    nlk_vocab_save_full("vres1.txt", &vocab);
+
+    vocab_size = nlk_vocab_size(&vocab);
+    vocab_words = nlk_vocab_words_size(&vocab);
+    vocab_total = nlk_vocab_total(&vocab);
+    printf("Test1: size = %zu, words = %zu, total = %zu\n",
+            vocab_size, vocab_words, vocab_total);
+
+
+    vocab = nlk_vocab_create("vtest2.txt", NLK_LM_MAX_WORD_SIZE, 
+                                        0, true);
+    nlk_vocab_save_full("vres2.txt", &vocab);
+    vocab_size = nlk_vocab_size(&vocab);
+    vocab_words = nlk_vocab_words_size(&vocab);
+    vocab_total = nlk_vocab_total(&vocab);
+
+    printf("Test2: size = %zu, words = %zu, total = %zu\n",
+            vocab_size, vocab_words, vocab_total);
+
+
+    nlk_vocab_reduce(&vocab, 2);
+    nlk_vocab_save_full("vres3.txt", &vocab);
+
+    vocab_size = nlk_vocab_size(&vocab);
+    vocab_words = nlk_vocab_words_size(&vocab);
+    vocab_total = nlk_vocab_total(&vocab);
+
+    printf("Test3: size = %zu, words = %zu, total = %zu\n",
+            vocab_size, vocab_words, vocab_total);
+
+
+}
+
 int main(int argc, char **argv)
 {
-    nlk_Vocab *vocab;
+    test_vocab();
+    return 1;
     size_t vocab_size = 0;
     size_t vocab_total = 0;
     size_t ii = 0;
     size_t jj = 0;
     size_t kk = 0;
-    nlk_Vocab *vi = vocab;
 
     /*
      * Parse command line options
      */
     int c;
-    static const char *opt_string = "f:v";
+    static const char *opt_string = "f:vp:";
     struct args_t {
         char        *filename;      /* -f option */
+        char        *parafile;      /* -p option */
         int          verbosity;     /* -v option */
     } args;
 
@@ -46,6 +87,9 @@ int main(int argc, char **argv)
         switch (c) {
             case 'f':
                 args.filename = optarg;
+                break;
+            case 'p':
+                args.parafile = optarg;
                 break;
             case '?':
                 /* display usage */
@@ -69,81 +113,110 @@ int main(int argc, char **argv)
      * Main
      */
     nlk_tic(NULL, false);
-    vocab = nlk_vocab_create(args.filename, NLK_LM_MAX_WORD_SIZE );
-    nlk_tic("create", true);
+
+    /**
+    nlk_Vocab *vocab = nlk_vocab_create(args.filename, NLK_LM_MAX_WORD_SIZE, 
+                             0, true);
+    nlk_tic("created", true);
+    /**/
+   /**/
+    nlk_Vocab *vocab = vocab = nlk_vocab_load("vocab.txt", NLK_LM_MAX_WORD_SIZE);
+    printf("LOADED\n");
+    /**/
 
     vocab_size = nlk_vocab_size(&vocab);
-
-    nlk_tic("count size", true);
-    printf("\n%zu\n", vocab_size);
-
-    
-    nlk_vocab_reduce(&vocab, 5);
-    vocab_size = nlk_vocab_size(&vocab);
-    
-    nlk_tic("reduce-count", true);
-    printf("\n%zu\n", vocab_size);
-    
-    
-
+    size_t vocab_words = nlk_vocab_words_size(&vocab);
     vocab_total = nlk_vocab_total(&vocab);
-    printf("\n%zu\n", vocab_total);
- 
+
+    nlk_tic("count unique items", true);
+    printf("items: %zu, words: %zu total count: %zu\n", vocab_size, vocab_words, vocab_total);
+    
+    nlk_vocab_reduce(&vocab, 40);
+    vocab_size = nlk_vocab_size(&vocab);
+    vocab_words = nlk_vocab_words_size(&vocab);
+    vocab_total = nlk_vocab_total(&vocab);
+    
+    nlk_tic("reduced", true);
+    printf("items: %zu, words: %zu total count: %zu\n", vocab_size, vocab_words, vocab_total);
+    /**/
+     
     nlk_vocab_sort(&vocab);
-    nlk_tic("sort", true);
-    ii = 0;
+    nlk_tic("sorted", true);
+
+    /**/
+    nlk_vocab_save("vocab.txt", &vocab);
+    nlk_tic("saved", true);
+    /**/
+    
 
     nlk_tic(NULL, false);
     nlk_vocab_encode_huffman(&vocab);
     nlk_tic("huffman", true);
-
-    /*
-    size_t maxpoint = 0;
-    for(vi = vocab; vi != NULL; vi=vi->hh.next) {
-        for(jj = 0; jj < vi->code_length; jj++) {
-            if(vi->point[jj] > maxpoint) maxpoint = vi->point[jj];
-        }
-        if(ii < vocab_size - 20) { 
-            ii++; 
-            continue; 
-        }
-        printf("id=%zu s='%s': ", vi->id, vi->word);
-        for(jj = 0; jj < vi->code_length; jj++)
-            printf("%zu ", vi->point[jj]);
-        printf("\n");
-        ii++;
-    }
-    printf("maxpoint = %zu\n", maxpoint);
-    exit(0);
-    */
-    
-
+    /*nlk_vocab_save_full("vocab.full.txt", &vocab);*/
     printf("\n");
 
-    //nlk_vocab_save_full("vocab.txt", &vocab);
-    size_t before = 8;
-    size_t after = 8;
-    float sample_rate = 10e-3;
-    size_t layer_size = 200;
+    size_t before = 12;
+    size_t after = 12;
+    float sample_rate = 10e-5;
+    size_t layer_size = 600;
     nlk_real learn_rate = 0.025; learn_rate = 0.05;
     int epochs = 1;
-    int num_threads = 0;
     int verbose = 1;
+    bool learn_par = false;
+    nlk_real accuracy;
+    nlk_real tol = 0.01;
+    nlk_real ret = 1;
+    size_t iter = 0;
+    bool lower_words = true;
+    bool freeze = false;
     
-    /* *
-    nlk_word2vec(NLK_SKIPGRAM, args.filename, &vocab, before, after, sample_rate, layer_size, 
-                 learn_rate, epochs, num_threads, verbose, "vectors.nlk.bin", NLK_FILE_BIN);
-    /**/
+    /* first pass */
+    nlk_word2vec(NLK_SKIPGRAM, NULL, NULL, learn_par, freeze, args.filename, &vocab, 
+                 before, after, sample_rate, layer_size, 
+                 learn_rate, epochs, verbose, 
+                 "vectors.1.nlk.bin", "vectors.2.nlk.bin", NLK_FILE_BIN);
 
+    nlk_Layer_Lookup *lk1 = nlk_layer_lookup_load("vectors.1.nlk.bin");
     nlk_tic_reset();
-    nlk_Layer_Lookup *lk1 = nlk_layer_lookup_load("vectors.nlk.bin");
-    float accuracy;
     nlk_tic("evaluating", true);
     nlk_eval_on_questions("questions.txt", &vocab, lk1->weights, 30000, 
-                          true, &accuracy);
+                          lower_words, &accuracy);
     printf("accuracy = %f%%\n", accuracy * 100);
     nlk_tic("tested", true);
 
+    /* pass over test */
+    freeze = true;
+    learn_rate = 0.01;
+    learn_par = true;
+    /* extend the vocabulary with paragraphs */
+    size_t max_iter = 1000;
+
+    nlk_vocab_extend(&vocab, args.parafile, NLK_LM_MAX_WORD_SIZE,
+                     NLK_LM_MAX_LINE_SIZE, lower_words);
+
+    /* increase size of layers */
+    size_t new_table_size = nlk_vocab_size(&vocab);
+    nlk_layer_lookup_resize(lk1, new_table_size);
+
+    nlk_Layer_Lookup *lk2 = nlk_layer_lookup_load("vectors.2.nlk.bin");
+
+    nlk_tic_reset();
+    nlk_tic("Learning PVs", true);
+
+    while(ret > tol && iter < max_iter) {
+        ret = nlk_word2vec(NLK_CBOW, lk1, lk2, learn_par, freeze, 
+                          args.parafile, &vocab, before, after, 0, layer_size, 
+                           learn_rate, 10, verbose, NULL, NULL, NLK_FILE_BIN);
+        iter++;
+    }
+    nlk_tic("learned PVs", true);
+    printf("ret = %f\n", ret);
+
+    nlk_tic_reset();
+    nlk_tic("eval PVs", true);
+    nlk_eval_on_paraphrases(args.parafile, &vocab, lk1->weights,
+                            lower_words, &accuracy);
+    
 
     /*printf("\nii=%zu\n", ii);*/
     

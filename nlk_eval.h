@@ -59,5 +59,10 @@ typedef struct nlk_analogy_test nlk_Analogy_Test;
 int nlk_eval_on_questions(const char *, nlk_Vocab **, const nlk_Array *, 
                           const size_t, const bool, nlk_real *accuracy);
 
+void nlk_analogy_test_free(nlk_Analogy_Test *);
+
+int nlk_eval_on_paraphrases(const char *, nlk_Vocab **, const nlk_Array *,  
+                            const bool, nlk_real *);
+
 __END_DECLS
 #endif /* __NLK_EVAL_H__ */

@@ -68,13 +68,16 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size,
 
     while(!feof(file)) {
         ch = fgetc(file);
-        
+        if(ch == 13) {
+            continue; /* ignore CRs */
+        }
+
         /* end of word */
-        if((ch == ' ') || (ch == '\t') || (ch == '\n')) {
+        if((ch == ' ') || (ch == '\t') || (ch == '\n') || (ch == EOF)) {
             if(len == 0) {
                 continue;   /* prevent empty words */
             }
-            word[len] = 0;  /* null terminate the word */
+            word[len] = '\0';  /* null terminate the word */
             return ch;
         }
 
@@ -82,10 +85,13 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size,
         len++;
 
         if(len == max_word_size - 2) {
-            word[len] = 0;
+            word[len] = '\0';
             return NLK_ETRUNC;
         }
     }
+
+    word[len] = '\0';
+
     return EOF;
 }
 
@@ -100,8 +106,9 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size,
  * @return integer of the sentence separator '\n', EOF or NLK_ETRUNC
  *
  * @note
+ * Lines are assumed to be separated by the NEWLINE or TAB character. 
+ *
  * This function is made for reading already pre-processed files.
- * Lines are assumed to be separated by the newline character. 
  *
  * The purpose is is to read files where each line is a sentence 
  * (or similar, e.g. a tweet or a "paragraph").
@@ -127,10 +134,9 @@ nlk_read_line(FILE *file, char **line, const size_t max_word_size,
 
     while(!feof(file)) {
         term = nlk_read_word(file, line[word_idx], max_word_size, lower_words);
-        
         word_idx++;
 
-        if(term == '\n') {
+        if(term == '\n' || term == '\t') {
             *line[word_idx] = '\0';
             return term;
         }
@@ -168,7 +174,7 @@ nlk_text_lower(char *word) {
  * @param key   the resulting hash in string form
  */
 void
-nlk_text_concat_hash(const char **line, char *tmp, char *key)
+nlk_text_concat_hash(char **line, char *tmp, char *key)
 {
     size_t ii;
     size_t jj;
@@ -192,4 +198,229 @@ nlk_text_concat_hash(const char **line, char *tmp, char *key)
     sprintf(key, "0x%"PRIX64 "%"PRIX64, hash[0], hash[1]);
 }
 
+/** @fn size_t nlk_text_count_lines(FILE *fp)
+ * Counts lines remaining in a file. Does not change position of file.
+ * "Lines" are terminated by NEWLINE or TAB characters
+ *
+ * @param fp the FILE pointer
+ *
+ * @return number of lines in file
+ */
+size_t
+nlk_text_count_lines(FILE *fp)
+{
+    size_t lines = 0;
+    int buf;
+    int last;
+    fpos_t pos;
 
+    /* determine current position */
+    fgetpos(fp, &pos);
+
+    /* count lines until the end */
+    while((buf = fgetc(fp)) != EOF) {
+        if(buf == '\n' || buf == '\t') {
+            lines++;
+        }
+        last = buf;
+    }
+    /* handle files that do not terminate in newline */
+    if(last != '\n' && last != '\t') {
+        lines++;
+    }
+
+    /* rewind file pointer so it can be used by caller */
+    fsetpos(fp, &pos);
+
+    return lines;
+}
+
+/** @fn size_t nlk_text_count_words(FILE *fp)
+ * Counts words remaining in a file. Does not change position of file.
+ *
+ * @param fp the FILE pointer
+ *
+ * @return number of words in file
+ */
+size_t
+nlk_text_count_words(FILE *fp)
+{
+    size_t words = 0;
+    int buf;
+    int last;
+    fpos_t pos;
+
+    /* determine current position */
+    fgetpos(fp, &pos);
+
+    /* count lines until the end */
+    while((buf = fgetc(fp)) != EOF) {
+        if(buf == '\n' || buf == '\t' || buf != ' ') {
+            words++;
+        }
+        last = buf;
+    }
+    /* handle files that do not terminate in newline */
+    if(last != '\n' && last != '\t' && last != ' ') {
+        words++;
+    }
+
+    /* rewind file pointer so it can be used by caller */
+    fsetpos(fp, &pos);
+
+    return words;
+}
+
+/** @fn void nlk_text_goto_line(FILE *fp, size_t line)
+ * Set file position to the beginning of a given line
+ *
+ * @param fp    the file point
+ * @param line  the line number to set the file pointer to
+ *
+ */
+void
+nlk_text_goto_line(FILE *fp, size_t line)
+{
+    int buf;
+    long pos = 0;
+
+    rewind(fp);
+    
+    while(pos < line) {
+        while((buf = fgetc(fp)) != EOF) {
+            if(buf == '\n' || buf == '\t') {
+                break;
+            }
+        }
+        pos++;
+    }
+}
+
+/** @fn void nlk_text_goto_line_start(FILE *fp)
+* Set file position to the start of the line
+*
+* @param fp    the file pointer
+*
+*/
+static void
+nlk_text_goto_line_start(FILE *fp)
+{
+    int buf;
+
+    buf = fgetc(fp); 
+    while(buf != '\n' && buf != '\t') {
+        if(ftell(fp) < 2) {
+            fseek(fp, 0, SEEK_SET);
+            return;
+        }
+        fseek(fp, -2, SEEK_CUR);
+        buf = fgetc(fp);
+    }
+}
+
+/** @fn void nlk_text_goto_next_word(FILE *fp)
+* Set file position to the start of the word
+*
+* @param fp    the file pointer
+*
+*/
+static void
+nlk_text_goto_word_start(FILE *fp)
+{
+    int buf;
+
+    buf = fgetc(fp); 
+    while(buf != '\n' && buf != '\t' && buf != ' ') {
+        if(ftell(fp) < 2) {
+            fseek(fp, 0, SEEK_SET);
+            return;
+        }
+        fseek(fp, -2, SEEK_CUR);
+        buf = fgetc(fp);
+    }
+}
+
+/** @fn static size_t nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, 
+ *                                     size_t num_threads, int thread_id)
+ * Used to get the start position in a file for a given worker thread
+ * @param fp        the file where the position will be set
+ * @param use_lines if true, goes to the start of a line instead of a byte
+ * @param total     total number of bytes or lines in file
+ * @param thread_id the "worker thread" id
+ *
+ * @return end position
+ */
+static size_t
+nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
+                 int thread_id)
+{
+    size_t start_pos;
+
+    start_pos = (total / (double)num_threads) * (size_t)thread_id;
+    fseek(fp, start_pos, SEEK_SET);  
+
+    if(use_lines) {
+        nlk_text_goto_line_start(fp);
+    } else {
+        nlk_text_goto_word_start(fp);
+    }
+
+    start_pos = ftell(fp);
+    rewind(fp);
+
+    return start_pos;
+}
+
+
+
+/** @fn size_t nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, 
+ *                              size_t num_threads, int thread_id)
+ * Used to set the start position in a file for a given worker thread
+ * @param fp        the file where the position will be set
+ * @param use_lines if true, goes to the start of a line instead of a byte
+ * @param total     total number of bytes or lines in file
+ * @param thread_id the "worker thread" id
+ *
+ * @return end position
+ */
+size_t
+nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
+                 int thread_id)
+{
+    size_t start_pos;
+    size_t end_pos;
+    int next_thread;
+    
+    /* determine start position */
+    start_pos = nlk_get_file_pos(fp, use_lines, total, num_threads, thread_id);
+
+    /* determine end position */
+    next_thread = thread_id + 1;
+    if(next_thread == num_threads - 1) {
+        fseek(fp, 0, SEEK_END); 
+        end_pos = ftell(fp);
+    } else {
+        end_pos = nlk_get_file_pos(fp, use_lines, total, num_threads,
+                                   next_thread);
+    }
+
+    /* set position */
+    fseek(fp, start_pos, SEEK_SET);
+
+    return end_pos;
+}
+
+
+/* @fn void nlk_text_print_line(char **line)
+ * Print an NLK "line".
+ */
+void
+nlk_text_print_line(char **line)
+{
+    size_t ii = 0;
+    while(line[ii][0] != '\0') {
+        printf("%s ", line[ii]);
+        ii++;
+    }
+    printf("\n");
+}

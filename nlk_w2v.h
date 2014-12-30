@@ -48,26 +48,25 @@ __BEGIN_DECLS
  * The type of the language model
  */
 enum NLK_LM_TYPE { 
-    NLK_CBOW      = 0, 
-    NLK_SKIPGRAM  = 1 
+    NLK_CBOW      = 0,  /**< CBOW and PVDM */
+    NLK_SKIPGRAM  = 1   /**< Skipgram and PVDBOW */
 };
 typedef enum NLK_LM_TYPE nlk_Lm;
 
-void nlk_word2vec(nlk_Lm, char *, nlk_Vocab **, size_t, size_t, float, size_t, 
-                  nlk_real, unsigned int, unsigned int, int, char *, 
-                  nlk_Format);
+nlk_real nlk_word2vec(nlk_Lm, nlk_Layer_Lookup *, nlk_Layer_Lookup *,
+                      bool, bool, char *, nlk_Vocab **, size_t, 
+                      size_t, float, size_t, nlk_real, unsigned int, int, 
+                      char *, char *, nlk_Format);
 
-void *nlk_word2vec_thread(void *);
+nlk_real nlk_skipgram_for_context(nlk_Layer_Lookup *, nlk_Layer_Lookup *, bool, 
+                                  nlk_real, nlk_Table *, nlk_Context *, 
+                                  nlk_Array *, nlk_Array *, nlk_Array *, 
+                                  nlk_Array *, nlk_Array *);
 
-void nlk_skipgram_for_contexts(nlk_Context **, size_t, nlk_Array *,
-                               nlk_Array *, nlk_Array *, nlk_Array *, 
-                               nlk_Array *);
-
-void nlk_cbow_for_contexts(nlk_Context **, size_t, size_t *ctx_ids, 
-                           nlk_Array *, nlk_Array *, nlk_Array *, nlk_Array *, 
-                           nlk_Array *);
-
-
+nlk_real nlk_cbow_for_context(nlk_Layer_Lookup *, nlk_Layer_Lookup *, bool,
+                              nlk_real, nlk_Table *, nlk_Context *, 
+                              size_t *ctx_ids, nlk_Array *, nlk_Array *, 
+                              nlk_Array *, nlk_Array *, nlk_Array *);
 
 __END_DECLS
 #endif /* __NLK_W2V_H__ */

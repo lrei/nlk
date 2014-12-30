@@ -105,8 +105,21 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
     do { \
         nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
         return ; \
-        } while (0)
+    } while (0)
 
+/* NLK_ERROR_VOID: call the error handler no return (for void funtions)  */
+#define NLK_ERROR_ABORT(reason, nlk_errno) \
+    nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
+    abort();
+
+/*
+ * OMP DEFS
+ */
+#ifdef DEBUG
+    #define omp_get_thread_num() 0
+    #define omp_get_num_threads() 1
+    #define omp_get_num_procs() 1
+#endif
 
 __END_DECLS
 #endif /* __NLK_ERR_H__ */

@@ -58,10 +58,11 @@ struct nlk_context {
 typedef struct nlk_context nlk_Context;
 
 size_t nlk_context_window(nlk_Vocab **, const size_t, const bool, const size_t,
-                          const size_t, const bool, nlk_Table *,
-                          nlk_Vocab *vocab_par,  bool center_paragraph,
-                          nlk_Context **);
+                          const size_t, const bool, tinymt32_t *,
+                          nlk_Vocab *,  bool, nlk_Context **);
 nlk_Context *nlk_context_create(size_t); 
 void nlk_context_free(nlk_Context *);
+void nlk_context_print(nlk_Context *context);
+
 __END_DECLS
 #endif /* __NLK_WINDOW__ */

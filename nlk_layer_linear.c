@@ -84,6 +84,32 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
     return layer;
 }
 
+/** @fn int nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, 
+ *                                  const size_t table_size)
+ * Resize a lookup layer increasing or decreasing the table size. Copies old
+ * values up to new table_size if larger or old table_size if smaller.
+ * Does not initialize new weights if new table_size is larger - caller must 
+ * do it!
+ *
+ * @param layer         the lookup layer to resize
+ * @param table_size    the new table size.
+ *
+ * @return NLK_SUCCESS or NLK_FAILURE
+ */
+int
+nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, const size_t table_size)
+{
+    nlk_Array *weights = nlk_array_resize(layer->weights, table_size,
+                                          layer->weights->cols);
+    if(weights == NULL) {
+        return NLK_FAILURE;
+    }
+    
+    layer->weights = weights;
+
+    return NLK_SUCCESS;
+}
+
 /** @fn void nlk_layer_lookup_init(nlk_Layer_Lookup *layer)
  * Initializes the lookup layer weights 
  * Initializations is done by drawing from a uniform distribution in the range
@@ -91,15 +117,16 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
  * This follows the word2vec initialization for the lookup layer
  *
  * @param layer     the Lookup Layer to initialize
+ * @param rng       the random number generator
  *
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init(nlk_Layer_Lookup *layer)
+nlk_layer_lookup_init(nlk_Layer_Lookup *layer, tinymt32_t *rng)
 {
     nlk_real low = -0.5 / layer->weights->cols;
     nlk_real high = 0.5 / layer->weights->cols; 
-    nlk_array_init_uniform(layer->weights, low, high);
+    nlk_array_init_uniform(layer->weights, low, high, rng);
 }
 
 
@@ -121,13 +148,33 @@ nlk_layer_lookup_init(nlk_Layer_Lookup *layer)
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *layer)
+nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *layer, tinymt32_t *rng)
 {
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
                                                 layer->weights->cols));
     nlk_real h =  4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows +
                                                 layer->weights->cols));
-    nlk_array_init_uniform(layer->weights, l, h);
+    nlk_array_init_uniform(layer->weights, l, h, rng);
+}
+
+/** @fn void nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, 
+ *                                              size_t from)
+ * Same as above (nlk_layer_lookup_init) but only for weights after a given row
+ *
+ * @param layer the lookup layer
+ * @param from  the starting row
+ */
+void
+nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, size_t from,
+                                   tinymt32_t *rng)
+{
+    size_t len = (layer->weights->rows - from) * layer->weights->cols;
+    nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
+                                                layer->weights->cols));
+    nlk_real h =  4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows +
+                                                layer->weights->cols));
+    nlk_carray_init_uniform(&layer->weights->data[from * layer->weights->cols], 
+                            l, h, len, rng);
 }
 
 /** @fn nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *layer, 
@@ -391,11 +438,11 @@ nlk_layer_linear_create(const size_t input_size,  const size_t layer_size,
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer)
+nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer, tinymt32_t *rng)
 {
     nlk_real l = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
     nlk_real h = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
-    nlk_array_init_uniform(layer->weights, l, h);
+    nlk_array_init_uniform(layer->weights, l, h, rng);
     if(layer->bias != NULL) {
         nlk_array_zero(layer->bias);
     }

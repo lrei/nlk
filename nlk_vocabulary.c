@@ -33,22 +33,48 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
+#include <time.h>
+#include <omp.h>
 
 #include "uthash.h"
+
 #include "nlk_err.h"
 #include "nlk_text.h"
 #include "nlk_array.h"
+#include "nlk_tic.h"
 
 #include "nlk_vocabulary.h"
 
 
-/** @fn __nlk_vocab_add_item(nlk_Vocab **vocab, const char *word, 
- *                           const size_t id, const uint64_t count)
+/**
+ */
+static void
+nlk_vocab_display(size_t count_actual, size_t total, clock_t start)
+{
+    double progress;
+    double speed;
+    char display_str[256];
+
+    clock_t now = clock();
+
+    progress = count_actual / (double) total * 100;
+    speed = count_actual / 1000.0 / ((double)(now - start + 1) / 
+            (double)CLOCKS_PER_SEC * 1000),
+
+    snprintf(display_str, 256, 
+            "Vocabulary Progress: %.2f%% MBytes/Thread/sec: %.2f Threads: %d", 
+            progress, speed, omp_get_num_threads());
+
+    nlk_tic(display_str, false);
+}
+
+
+/** @fn nlk_vocab_add_item(nlk_Vocab **vocab, const char *word, 
+ *                           const uint64_t count, nlk_Vocab_Type type)
  * Adds an item (word) to a vocabulary
  *
  * @param vocab     the vocabulary
  * @param word      the word to add
- * @param id        the id of the word
  * @param count     the count associated with the word
  *
  * @return the vocabulary item
@@ -57,8 +83,8 @@
  * 0 count should only be used for end_sent_symbol (id=0) and paragraphs. 
  * @endnote
  */
-nlk_Vocab *
-__nlk_vocab_add_item(nlk_Vocab **vocab, const char *word, const size_t id,
+static inline nlk_Vocab *
+nlk_vocab_add_item(nlk_Vocab **vocab, const char *word,
                      const uint64_t count, const nlk_Vocab_Type type)
 {
     nlk_Vocab *vocab_word;
@@ -80,18 +106,295 @@ __nlk_vocab_add_item(nlk_Vocab **vocab, const char *word, const size_t id,
     }
     strcpy(vocab_word->word, word);
 
-    /* set id, index and count */
-    vocab_word->id = id;
-    vocab_word->index = id;
+    /* set index and count */
+    vocab_word->index = 1;
     vocab_word->count = count;
     vocab_word->code_length = 0;
     vocab_word->type = type;
-    vocab_word->point = NULL;
-    vocab_word->code = NULL;
 
     HASH_ADD_STR(*vocab, word, vocab_word); /* hash by word */
 
     return vocab_word;
+}
+
+/** @fn nlk_Vocab *nlk_vocab_init()
+ * Returns an initialized vocabulary (i.e. with an end symbol)
+ */
+static nlk_Vocab *
+nlk_vocab_init()
+{
+    nlk_Vocab *vocab = NULL;
+    
+   /* word 0 is reserved for end symbol </s> */
+    nlk_Vocab *end_symbol = nlk_vocab_add_item(&vocab, NLK_END_SENT_SYMBOL, 
+                                                 0, NLK_VOCAB_WORD);
+    if(end_symbol == NULL) {
+        return NULL;
+    }
+    return vocab;
+}
+
+static int
+nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
+                     const size_t max_word_size, const size_t max_line_size, 
+                     const bool lower_words) 
+{
+    /** @section Shared Initializations
+     */
+    size_t total = 0;
+    size_t count_actual = 0;
+    clock_t start = clock();
+
+    /* paragraph mode */
+    bool par_mode;         
+    if(max_line_size > 0) {
+        par_mode = true;
+    } else {
+        par_mode = false;
+    }
+    /* open file */
+    FILE *in = fopen(filepath, "rb");
+    if(in == NULL) {
+        NLK_ERROR(strerror(errno), errno);
+        /* unreachable */
+    }
+    fseek(in, 0, SEEK_END);
+    total = ftell(in);
+    fclose(in);
+    
+    /* Limit the number of threads */
+    int num_threads = omp_get_num_procs();
+    if(num_threads > NLK_MAX_VOCABS) {
+        num_threads = NLK_MAX_VOCABS;
+    }
+    /* make sure it's an even number, simplifies things */
+    if(num_threads % 2 != 0 && num_threads > 1) {
+        num_threads--;
+    }
+    /* create and initialize vocabularies */
+    nlk_Vocab *vocabs[NLK_MAX_VOCABS];
+    for(size_t vv = 0; vv < num_threads; vv++) {
+        vocabs[vv] = nlk_vocab_init();
+    }
+
+    /** @section Parallel Allocations and Initializations
+     */
+#pragma omp parallel
+{
+    /* vocabulary */
+    nlk_Vocab *vocab_word;
+
+    /* word */
+    char *word;
+    int terminator = 0;
+
+    /* line/paragraph */
+    char **line;
+    char *tmp;
+    size_t line_pos;
+
+    size_t file_pos = 0;
+    size_t end_pos = 0;
+    size_t file_pos_last = 0;
+
+    /* open file */
+    FILE *file = fopen(filepath, "rb");
+    if(file == NULL) {
+        NLK_ERROR_ABORT(strerror(errno), errno);
+        /* unreachable */
+    }
+
+    word = (char *) malloc(max_word_size * sizeof(char));
+    if(word == NULL) {
+        NLK_ERROR_ABORT("failed to allocate memory for a word", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    /* allocate space for paragraphs if necessary */
+    if(par_mode) {
+        line = (char **) malloc(max_line_size * sizeof(char *));
+        if(line == NULL) {
+            NLK_ERROR_ABORT("failed to allocate memory for a line", 
+                            NLK_ENOMEM);
+            /* unreachable */
+        }
+        for(line_pos = 0; line_pos < max_line_size; line_pos++) {
+            line[line_pos] = (char *) malloc(max_word_size * sizeof(char));
+            if(line[line_pos] == NULL) {
+                NLK_ERROR_ABORT("failed to allocate memory for a line", 
+                                NLK_ENOMEM);
+                /* unreachable */
+            }
+        }
+        line_pos = 0;
+        /* the + max_line_size is for the word separators */
+        tmp = (char *) calloc(max_word_size * max_line_size + max_line_size, 
+                              sizeof(char));
+    }
+
+    /** @section Parallel Creation of Vocabularies (Map)
+     * Each thread reads from a different part of the file.
+     */
+#pragma omp for
+    for(int thread_id = 0; thread_id < num_threads; thread_id++) {
+        end_pos = nlk_set_file_pos(file, true, total, num_threads, thread_id);
+        file_pos = ftell(file);
+        printf("%d: from %ld to %ld\n", thread_id, file_pos, end_pos);
+        file_pos_last = file_pos;
+
+        nlk_Vocab *vocab = vocabs[thread_id];
+        nlk_Vocab *end_symbol;
+        HASH_FIND_STR(vocab, NLK_END_SENT_SYMBOL, end_symbol);
+
+        while(1) {
+
+            /** @subsection Progress display 
+             */
+            if(file_pos - file_pos_last > 1000000) {
+                count_actual += file_pos - file_pos_last;
+                file_pos_last = file_pos;
+                
+                int verbose = 1;
+                if(verbose > 0) {
+                    nlk_vocab_display(count_actual, total, start);
+                }
+            }
+
+            /* read from file */
+            terminator = nlk_read_word(file, word, max_word_size, lower_words);
+            if(strlen(word) == 0) {
+                if(terminator == EOF) {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+
+            /* add to line array */
+            if(par_mode) {
+                strcpy(line[line_pos], word);
+                line_pos++;
+            }
+
+            /** @subsection Increment Count or Add
+             */
+            HASH_FIND_STR(vocab, word, vocab_word);
+            if(vocab_word == NULL) { /* word is not in vocabulary */
+                vocab_word = nlk_vocab_add_item(&vocab, word, 1, 
+                                                  NLK_VOCAB_WORD);
+                if(vocab_word == NULL) {
+                    NLK_ERROR_ABORT("adding to vocabulary failed", 
+                                    NLK_FAILURE);
+                }
+            }
+            else { /* word is in vocabulary */
+                vocab_word->count = vocab_word->count + 1;
+            }
+            /* line/paragraph */
+            if(terminator == '\n' || terminator == '\t' || terminator == EOF 
+               || line_pos == max_line_size - 1) {
+
+                /* all sentences must end with </s> 
+                 * unless we're truncating it.
+                 */
+                if(terminator == '\n' || terminator == '\t' 
+                   || terminator == EOF) {
+                    end_symbol->count += 1;
+                }
+
+                /** @subsection Exists or Add Paragraph
+                 */
+                if(par_mode) {
+                    line[line_pos][0] = '\0';
+                    nlk_text_concat_hash(line, tmp, word);
+
+                    HASH_FIND_STR(vocab, word, vocab_word);
+                    if(vocab_word == NULL) {
+                        /* 
+                         * add paragraph to vocabulary, 
+                         */
+                        vocab_word = nlk_vocab_add_item(&vocab, word, 0,
+                                                          NLK_VOCAB_PAR);
+                        if(vocab_word == NULL) {
+                            NLK_ERROR_ABORT("error adding to vocabulary", 
+                                            NLK_FAILURE);
+                        }
+                    }
+                    line_pos = 0;   /* new line */
+                }
+            } /* line/paragraph */
+            file_pos = ftell(file);
+            if(file_pos >= end_pos) {
+                printf("%d: breaking at %ld\n", thread_id, file_pos);
+                break;
+            }
+        } /* file is over (end of while) */
+    } /* end of for thread */
+
+    /** @section Free Memory and Close File
+     */
+    free(word);
+
+    if(par_mode) {
+        for(line_pos = 0; line_pos < max_line_size; line_pos++) {
+            free(line[line_pos]);
+        }
+        free(line);
+        free(tmp);
+    }
+
+    fclose(file);
+
+} /* end of pragma omp parallel */
+    
+    /** @section Parallel reduce of vocabularies
+     */
+    int vs = num_threads / 2;
+    while(vs > 1) {
+#pragma omp parallel for
+        for(int v = 0; v < vs; v++) {
+            nlk_vocab_add_vocab(&vocabs[v], &vocabs[vs + v]);
+            nlk_vocab_free(&vocabs[vs +v]);
+        }
+        vs /= 2;
+    }
+
+    nlk_vocab_add_vocab(vocabulary, &vocabs[0]);
+    nlk_vocab_free(&vocabs[0]);
+
+    if(num_threads > 1) {
+        nlk_vocab_add_vocab(vocabulary, &vocabs[1]);
+        nlk_vocab_free(&vocabs[0]);
+    }
+
+    return NLK_SUCCESS;
+}
+
+/** @fn void nlk_vocabulary_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
+ * Add a vocabulary to another vocabulary. 
+ * If an item exists in dest, it's count will be updated by adding the source's
+ * count to it.
+ * If the item does not exits in dest, it will be created with the count from 
+ * the source. 
+ *
+ * @param dest      the destination vocabulary (will be updated)
+ * @param source    the source vocabulary (will not be changed)
+ */
+void
+nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
+{
+    nlk_Vocab *si;
+    nlk_Vocab *di;
+
+    for(si = *source; si != NULL; si = si->hh.next) {
+        HASH_FIND_STR(*dest, si->word, di);
+        if(di == NULL) {
+            nlk_vocab_add_item(dest, si->word, si->count, si->type);
+        } else { /* just update counts */
+            di->count += si->count;
+        }
+    }
+
 }
 
 /** @fn nlk_Vocab *nlk_vocab_create(char *filename, const size_t max_word_size)
@@ -117,132 +420,30 @@ __nlk_vocab_add_item(nlk_Vocab **vocab, const char *word, const size_t id,
 nlk_Vocab *
 nlk_vocab_create(char *filepath, const size_t max_word_size, 
                  const size_t max_line_size, const bool lower_words) {
-    FILE *file;
 
-    /* vocabulary */
-    nlk_Vocab *vocab_word;
-    nlk_Vocab *end_symbol;
-    nlk_Vocab *vocab = NULL;
-    size_t wid = 0;
-
-    /* word */
-    char *word;
-    int terminator;
-
-    /* line/paragraph */
-    char **line;
-    size_t line_pos;
-    char *tmp;
-
-    /* open file */
-    file = fopen(filepath, "rb");
-    if(file == NULL) {
-        NLK_ERROR_NULL(strerror(errno), errno);
-        /* unreachable */
-    }
- 
-    /* allocate space */
-    word = (char *) malloc(max_word_size * sizeof(char));
-    if(word == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for a word", 
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
-    if(max_line_size) {
-        line = (char **) malloc(max_line_size * sizeof(char *));
-        if(line == NULL) {
-            NLK_ERROR_NULL("failed to allocate memory for a line", 
-                           NLK_ENOMEM);
-            /* unreachable */
-        }
-        for(line_pos = 0; line_pos < max_line_size; line_pos++) {
-            line[line_pos] = (char *) malloc(max_word_size * sizeof(char));
-            if(line[line_pos] == NULL) {
-                NLK_ERROR_NULL("failed to allocate memory for a line", 
-                              NLK_ENOMEM);
-                /* unreachable */
-            }
-        }
-        line_pos = 0;
-        /* the + max_line_size is for the word separators */
-        tmp = (char *) calloc(max_word_size * max_line_size + max_line_size, 
-                              sizeof(char));
-    }
-
-
-    /* word id 0 is reserved for end symbol </s> */
-    end_symbol = __nlk_vocab_add_item(&vocab, NLK_END_SENT_SYMBOL, wid, 0,
-                                      NLK_VOCAB_WORD);
-    if(end_symbol == NULL) {
-        return NULL;
-    }
-    wid++;
-
-    /*
-     * Read file cycle
-     */
-    do {
-        terminator = nlk_read_word(file, word, max_word_size, lower_words);
-
-        if(strlen(word) == 0) {
-            if(terminator == EOF) {
-                break;
-            } else {
-                continue;
-            }
-        }
-
-        /* add to line array */
-        if(max_line_size) {
-            strcpy(line[line_pos], word);
-            line_pos++;
-        }
-
-        HASH_FIND_STR(vocab, word, vocab_word);
-        if(vocab_word == NULL) { /* word is not in vocabulary */
-            vocab_word = __nlk_vocab_add_item(&vocab, word, wid, 1,
-                                              NLK_VOCAB_WORD);
-            if(vocab_word == NULL) {
-                return NULL;
-            }
-            wid++;
-        }
-        else { /* word is in vocabulary */
-            vocab_word->count = vocab_word->count + 1;
-        }
-
-        /* end of line/paragraph */
-        if(terminator == '\n' || terminator == EOF) {
-            /* all sentences must end with </s> */
-            end_symbol->count = end_symbol->count + 1;
-
-            if(max_line_size) {
-                line[line_pos][0] = '\0';
-                vocab_word = nlk_vocab_find_paragraph(&vocab, line, tmp, word);
-                
-                if(vocab_word == NULL) {
-                    /* 
-                     * add paragraph to vocabulary, 
-                     * note that we already have the key from find_paragraph
-                     */
-                    vocab_word = __nlk_vocab_add_item(&vocab, word, wid, 0,
-                                                      NLK_VOCAB_PAR);
-                    if(vocab_word == NULL) {
-                        return NULL;
-                    }
-                    wid++;
-                }
-                line_pos = 0;   /* new line */
-            }
-        }
-
-    } while(terminator != EOF);
-
-    /* free temporary memory and close file */
-    free(word);
-    fclose(file);
+    nlk_Vocab *vocab = nlk_vocab_init();
+    
+    nlk_vocab_read_add(&vocab, filepath, max_word_size, max_line_size, 
+                         lower_words);
     
     return vocab;
+}
+
+/** @fn void nlk_vocab_extend(nlk_Vocab **vocab, char *filepath, 
+ *                            const size_t max_word_size, 
+ *                            const size_t max_line_size, 
+ *                            const bool lower_words)
+ * Extend a vocabulary
+ */
+void
+nlk_vocab_extend(nlk_Vocab **vocab, char *filepath, const size_t max_word_size, 
+                 const size_t max_line_size, const bool lower_words) {
+
+    nlk_Vocab *end_symbol;
+
+    nlk_vocab_read_add(vocab, filepath, max_word_size, max_line_size, \
+                         lower_words);
+
 }
 
 /** @fn void nlk_vocab_free(nlk_Vocab *vocab)
@@ -260,8 +461,6 @@ nlk_vocab_free(nlk_Vocab **vocab)
         /* free structure contents */
         if(vocab_word->word != NULL) {
             free(vocab_word->word);
-            free(vocab_word->point);
-            free(vocab_word->code);
         }
         /* delete from hashmap and free structure **/
         HASH_DEL(*vocab, vocab_word);
@@ -293,7 +492,7 @@ nlk_vocab_words_size(nlk_Vocab **vocab)
     size_t n = 0;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
-        if(vocab_word->type != NLK_VOCAB_PAR) {
+        if(vocab_word->type == NLK_VOCAB_WORD && vocab_word->word != NULL) {
             n++;
         }
     }
@@ -328,7 +527,7 @@ nlk_vocab_total(nlk_Vocab **vocab)
  * @note
  * Sort is called to update the position index which after the reduce call
  * has "holes".
- * @endnote
+ * @endnotesed 1d msr_paraphrase_train.txt | awk -F"\t" -v OFS="\t" '$1="1" {print $4,$5}' >
  */
 void
 nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
@@ -337,8 +536,8 @@ nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
     nlk_Vocab *tmp;
 
     HASH_ITER(hh, *vocab, vi, tmp) {
-        /* always protect end symbol vi->index = 0 */
-        if(vi->count < min_count && vi->index != 0) {
+        /* always protect end symbol vi->index = 0 and paragraphs */
+        if(vi->count < min_count && vi->index != 0 && vi->count != 0) {
             /* free structure contents */
             if(vi->word != NULL) {
                 free(vi->word);
@@ -346,7 +545,7 @@ nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
             }
             /* delete from hashmap and free structure **/
             HASH_DEL(*vocab, vi);
-            /* free(vi); */
+            free(vi);
         }
     }
 
@@ -383,9 +582,7 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
 
             if(unk_symbol == NULL || vi != unk_symbol) {
                 unk_count += vi->count;
-                if(vi->id < first_id) {
-                    first_id = vi->id;
-                }
+
                 /* free structure contents */
                 if(vi->word != NULL) {
                     free(vi->word);
@@ -393,7 +590,7 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
                 }
                 /* delete from hashmap and free structure **/
                 HASH_DEL(*vocab, vi);
-                /* free(vi); */
+                free(vi);
             }
         }
     }
@@ -406,7 +603,7 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
         if(unk_count == 0) {
             unk_count = 1; /* 0 count is just for end_sent and paragraphs */
         }
-        unk_symbol = __nlk_vocab_add_item(vocab, NLK_UNK_SYMBOL, first_id + 1, 
+        unk_symbol = nlk_vocab_add_item(vocab, NLK_UNK_SYMBOL, 
                                           unk_count, NLK_VOCAB_WORD);
     }
     else { /* just an update */
@@ -417,30 +614,7 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
     nlk_vocab_sort(vocab);
 }
 
-/** @fn size_t __nlk_vocab_next_id(nlk_Vocab **vocab)
- * Find the next free ID for a vocab item
- *
- * @param vocab the vocabulary structure
- *
- * @return the next free ID for a vocab item
- */
-size_t 
-__nlk_vocab_next_id(nlk_Vocab **vocab)
-{
-    nlk_Vocab *vi;
-    nlk_Vocab *tmp;
-    size_t next_id = 0;
-
-    HASH_ITER(hh, *vocab, vi, tmp) {
-        if(vi->id > next_id) {
-            next_id = vi->id;
-        }
-    }
-    return next_id + 1;
-}
-
-
-/** @fn void __nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
+/** @fn void nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
  * Vocab item comparator - used for sorting with most frequent words first
  *
  * @param a vocab item
@@ -448,8 +622,8 @@ __nlk_vocab_next_id(nlk_Vocab **vocab)
  *
  * @returns positive if b.count > a.count, negative if b.count < a.count
  */
-int 
-__nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
+static int 
+nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
 {
     if(a->index == 0) { 
         return -1; 
@@ -459,7 +633,7 @@ __nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
     return (b->count - a->count);
 }
 
-/** @fn void __nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
+/** @fn void nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
  * Vocab item comparator - used for sorting with the least frequent words first
  *
  * @param a vocab item
@@ -468,7 +642,7 @@ __nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
  * @returns positive if b.count < a.count, negative if b.count > a.count
  */
 int 
-__nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
+nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
 {
     if(a->index == 0) { 
         return 1; 
@@ -490,9 +664,9 @@ void nlk_vocab_sort(nlk_Vocab **vocab)
     nlk_Vocab *vi;
     size_t ii = 1;  /* 0 is the end symbol */
 
-    HASH_SORT(*vocab, __nlk_vocab_item_comparator);
+    HASH_SORT(*vocab, nlk_vocab_item_comparator);
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->id == 0) {
+        if(vi->index == 0) {
             continue;   /* keep end symbol at position 0 */
         }
         vi->index = ii;
@@ -568,6 +742,9 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
      */
     nn = 0;
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+        if(vi->type == NLK_VOCAB_PAR) {
+            continue;
+        }
         count[nn] = vi->count;
         nn++;
     }
@@ -636,7 +813,10 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
     size_t maxpoint = 0;
     nn = 0;
     for(vi = *vocab; vi != NULL; vi = (nlk_Vocab *)(vi->hh.next)) {
-      /* now, traverse the tree and assign the code to this word */
+        if(vi->type == NLK_VOCAB_PAR) {
+            continue;
+        }
+        /* now, traverse the tree and assign the code to this word */
         code_length = 0;
         /* traverse the tree from current node to the root */
         for(ii = nn; ii != (vsize * 2) - 2; ii = parent[ii]) { 
@@ -647,15 +827,6 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
         }
         /* assign code and point to vocabulary item in correct order */
         vi->code_length = code_length;
-        vi->point = (size_t *)  realloc(vi->point,
-                                        code_length * sizeof(size_t));
-        vi->code  = (uint8_t *) realloc(vi->code,
-                                        code_length * sizeof(uint8_t));
-        if(vi->word == NULL || vi->point == NULL) {
-            NLK_ERROR_VOID("failed to allocate memory for code/points", 
-                           NLK_ENOMEM);
-            /* unreachable */
-        }
         vi->point[0] = vsize - 2;
         for(ii = 0; ii < code_length; ii++) {
             vi->code[code_length - ii - 1] = code[ii];
@@ -709,13 +880,20 @@ int
 nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
 {
     nlk_Vocab *vi;
+    nlk_Vocab *end;
     FILE *out = fopen(filepath, "wb");
     if(out == NULL) {
         NLK_ERROR(strerror(errno), errno);
         /* unreachable */
     }
 
+    HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, end);
+    fprintf(out, "%s %zu\n", end->word, end->count);
+
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+        if(vi == end) {
+            continue;
+        }
         fprintf(out, "%s %zu\n", vi->word, vi->count);
     }
     fclose(out);
@@ -732,31 +910,42 @@ nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
  *
  * @returns NLK_SUCCESS or errno
  */
-int
-nlk_vocab_load(const char *filepath, const size_t max_word_size, 
-               nlk_Vocab **vocab)
+nlk_Vocab *
+nlk_vocab_load(const char *filepath, const size_t max_word_size)
 {
-    size_t count;
-    size_t wid = 0;
+    nlk_Vocab *vocab = nlk_vocab_init();
+    nlk_Vocab *end;
+
+    uint64_t count = 0;
     char *word = (char *) calloc(max_word_size, sizeof(char));
     FILE *in = fopen(filepath, "rb");
     if(in == NULL) {
-        NLK_ERROR(strerror(errno), errno);
+        NLK_ERROR_NULL(strerror(errno), errno);
         /* unreachable */
     }
 
+    HASH_FIND_STR(vocab, NLK_END_SENT_SYMBOL, end);
+
+    nlk_read_word(in, word, max_word_size, false);
+    if(fscanf(in, "%"SCNu64, &count) != 1) {
+        NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+    }
+    end->count += count;
+
+
     while(!feof(in)) {
-        nlk_read_word(in, word, max_word_size, false);
-        if(fscanf(in, "%zu", &count) != 1) {
-            NLK_ERROR("Parsing error", NLK_FAILURE);
+        if(nlk_read_word(in, word, max_word_size, false) == EOF) {
+            break;
         }
-        __nlk_vocab_add_item(vocab, word, wid, count, NLK_VOCAB_WORD);
-        wid++;
+        if(fscanf(in, "%"SCNu64, &count) != 1) {
+            NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+        }
+        nlk_vocab_add_item(&vocab, word, count, NLK_VOCAB_WORD);
     }
 
     free(word);
     fclose(in);
-    return NLK_SUCCESS;
+    return vocab;
 }
 
 /** @fn int nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
@@ -790,16 +979,22 @@ nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
         fprintf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
                  vi->word, vi->type, vi->index, vi->count, vi->code_length);
-        /* code */
-        for(ii = 0; ii < vi->code_length - 1; ii++) {
-            fprintf(file, "%"PRIu8" ", vi->code[ii]);
+
+        if(vi->code_length != 0) {
+            /* code */
+            for(ii = 0; ii < vi->code_length - 1; ii++) {
+                fprintf(file, "%"PRIu8" ", vi->code[ii]);
+            }
+            fprintf(file, "%"PRIu8"\t", vi->code[vi->code_length - 1]);
+
+            /* point */
+            for(ii = 0; ii < vi->code_length - 1; ii++) {
+                fprintf(file, "%zu ", vi->point[ii]);
+            }
+            fprintf(file, "%zu\n", vi->point[vi->code_length - 1]);
+        } else {
+            fprintf(file, "\n");
         }
-        fprintf(file, "%"PRIu8"\t", vi->code[vi->code_length - 1]);
-        /* point */
-        for(ii = 0; ii < vi->code_length - 1; ii++) {
-            fprintf(file, "%zu ", vi->point[ii]);
-        }
-        fprintf(file, "%zu\n", vi->point[vi->code_length - 1]);
     }
 
     fclose(file);
@@ -872,14 +1067,17 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
  * @param paragraph             an array of strings (char arrays)
  * @param sample                sample rate for subsampling frequent words
  *                              - if <= 0, no subsampling will happen
- * @param rand_pool             random number pool
+ * @param rng                   the random number generator
  * @param replacement           vocab to use for words not in the vocabulary
  *                              - NULL means do not replace
  * @param end_symbol            if true, add the end symbol at the end
  * @param varray                the vocabulary item array to be written
  * @param n_subsampled          number of subsampled words (overwritten)
  * @param vocab_paragraph       vocabulary item for the paragraph (overwritten)
- *                              pass NULL not to generate it
+ * @param tmp                   temporary memory for generating vocab_paragraph
+ *                              pass NULL to this disable vocab_paragraph
+ * @param word                  for storing the word representation of the
+ *                              paragraph
  *
  * @returns number of words vocabularized (size of the array)
  *
@@ -896,8 +1094,8 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
  * @endnote
  */
 size_t
-nlk_vocab_vocabularize(nlk_Vocab **vocab, const char *paragraph[],
-                       const float sample, nlk_Table *rand_pool,
+nlk_vocab_vocabularize(nlk_Vocab **vocab, char **paragraph,
+                       const float sample, tinymt32_t *rng,
                        nlk_Vocab *replacement, const bool end_symbol,
                        nlk_Vocab **varray, size_t *n_subsampled,
                        nlk_Vocab *vocab_paragraph, char *tmp, char *word) 
@@ -921,8 +1119,7 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, const char *paragraph[],
             prob *= (sample * total_words) / (float) vocab_word->count;
 
             /* "flip coin " */
-            r = (float) nlk_random_pool_get(rand_pool) /
-                (float) rand_pool->max;
+            r = tinymt32_generate_float(rng);
             if(prob < r) {
                 *n_subsampled += 1;
                 continue;   /* ignore this word - undersample */
@@ -948,9 +1145,9 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, const char *paragraph[],
     }
 
     /* paragraph */
-    if(vocab_paragraph != NULL) {
-        vocab_paragraph = nlk_vocab_find_paragraph(vocab, paragraph, tmp,
-                                                   word);
+    if(tmp != NULL) {
+        nlk_text_concat_hash(paragraph, tmp, word);
+        vocab_paragraph = nlk_vocab_find(vocab, word);
     }
     
         return vec_idx;
@@ -996,15 +1193,58 @@ nlk_vocab_at_index(nlk_Vocab **vocab, size_t index)
     return NULL;
 }
 
-
-nlk_Vocab *
-nlk_vocab_find_paragraph(nlk_Vocab **vocab, const char **paragraph,
-                         char *tmp, char *word)
+/** @fn nlk_vocab_first_paragraph(nlk_Vocab **vocab) 
+ * Find the index of the first paragraph in the vocabulary
+ *
+ * @param vocab the vocabulary
+ *
+ * @return the index of the first paragraph or 0 if none are found
+ */
+size_t
+nlk_vocab_first_paragraph(nlk_Vocab **vocab) 
 {
-    nlk_Vocab *vocab_word;
-    nlk_text_concat_hash(paragraph, tmp, word);
-    
-    HASH_FIND_STR(*vocab, word, vocab_word);
+    nlk_Vocab *vi;
 
-    return vocab_word;
+    for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+        if(vi->type == NLK_VOCAB_PAR) {
+            return vi->index;
+        }
+    }
+    return 0;
+}
+
+/** @fn void nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
+ * Print a vocabularized line.
+ */
+void
+nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
+{
+    for(size_t ii = 0; ii < length; ii++) {
+        printf("%s ", varray[ii]->word);
+    }
+    printf("\n");
+}
+
+/** @fn unfinished
+ */
+nlk_Table_Index *
+nlk_vocab_neg_table_create(nlk_Vocab **vocab, const size_t size, double power)
+{
+    nlk_Vocab *vi;
+    double z = 0;
+    size_t max = nlk_vocab_size(vocab);
+    nlk_Table_Index *neg = nlk_table_index_create(size, max);
+
+    
+    /* use the default power, a magical magic number */
+    if(power == 0) {
+        power = 0.75;
+    }
+
+    for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+        if(vi->type == NLK_VOCAB_PAR) {
+            continue;
+        }
+        z += pow(vi->count, power);
+    }
 }

@@ -54,7 +54,13 @@ __BEGIN_DECLS
 int nlk_read_word(FILE *, char *, const size_t, const bool);
 int nlk_read_line(FILE *, char **, const size_t, const size_t, const bool);
 void nlk_text_lower(char *);
-void nlk_text_concat_hash(const char **, char *, char *);
+void nlk_text_concat_hash(char **, char *, char *);
+
+size_t nlk_text_count_words(FILE *);
+size_t nlk_text_count_lines(FILE *);
+size_t nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
+void nlk_text_print_line(char **);
+
 
 __END_DECLS
 #endif /* __NLK_TEXT_H__ */
