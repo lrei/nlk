@@ -9,10 +9,10 @@ COMMON_FLAGS += -pthread -march=native -std=gnu11
 
 LDFLAGS += $(foreach librarydir,$(LIBRARY_DIRS),-L$(librarydir)) \
 $(foreach library,$(LIBRARIES),-l$(library))
-LDFLAGS += -lm -lopenblas -fopenmp
+LDFLAGS += -lm -lopenblas
 
 CC = gcc
-UTHASHOPTS = -DHASH_BLOOM=28
+UTHASHOPTS = -DHASH_BLOOM=32
 OBJS = main.o nlk_err.o nlk_array.o tinymt32.o nlk_layer_linear.o nlk_text.o \
 	   nlk_vocabulary.o nlk_tic.o nlk_window.o nlk_transfer.o nlk_criterion.o \
 	   nlk_eval.o nlk_w2v.o MurmurHash3.o
@@ -21,9 +21,10 @@ OBJS = main.o nlk_err.o nlk_array.o tinymt32.o nlk_layer_linear.o nlk_text.o \
 all: release
 
 release: CFLAGS = -O3 -fno-strict-aliasing -ffast-math -funroll-loops
+release: LDFLAGS += -lm -fopenmp
 release: nlk
 
-debug: CFLAGS = -g -pg -static-libgcc
+debug: CFLAGS = -g  -static-libgcc -DDEBUG
 debug: nlk
 
 nlk: $(OBJS)

@@ -171,6 +171,7 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
     if(num_threads % 2 != 0 && num_threads > 1) {
         num_threads--;
     }
+
     /* create and initialize vocabularies */
     nlk_Vocab *vocabs[NLK_MAX_VOCABS];
     for(size_t vv = 0; vv < num_threads; vv++) {

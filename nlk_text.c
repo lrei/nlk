@@ -396,7 +396,8 @@ nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
 
     /* determine end position */
     next_thread = thread_id + 1;
-    if(next_thread == num_threads - 1) {
+    if(next_thread == num_threads) {
+        /* this is the last thread */
         fseek(fp, 0, SEEK_END); 
         end_pos = ftell(fp);
     } else {

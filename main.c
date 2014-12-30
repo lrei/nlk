@@ -19,49 +19,8 @@
 #include "nlk_w2v.h"
 
 
-void test_vocab() {
-    size_t vocab_size, vocab_words, vocab_total;
-    nlk_Vocab *vocab; 
-
-    vocab = nlk_vocab_create("vtest1.txt", NLK_LM_MAX_WORD_SIZE, 
-                                        0, true);
-    nlk_vocab_save_full("vres1.txt", &vocab);
-
-    vocab_size = nlk_vocab_size(&vocab);
-    vocab_words = nlk_vocab_words_size(&vocab);
-    vocab_total = nlk_vocab_total(&vocab);
-    printf("Test1: size = %zu, words = %zu, total = %zu\n",
-            vocab_size, vocab_words, vocab_total);
-
-
-    vocab = nlk_vocab_create("vtest2.txt", NLK_LM_MAX_WORD_SIZE, 
-                                        0, true);
-    nlk_vocab_save_full("vres2.txt", &vocab);
-    vocab_size = nlk_vocab_size(&vocab);
-    vocab_words = nlk_vocab_words_size(&vocab);
-    vocab_total = nlk_vocab_total(&vocab);
-
-    printf("Test2: size = %zu, words = %zu, total = %zu\n",
-            vocab_size, vocab_words, vocab_total);
-
-
-    nlk_vocab_reduce(&vocab, 2);
-    nlk_vocab_save_full("vres3.txt", &vocab);
-
-    vocab_size = nlk_vocab_size(&vocab);
-    vocab_words = nlk_vocab_words_size(&vocab);
-    vocab_total = nlk_vocab_total(&vocab);
-
-    printf("Test3: size = %zu, words = %zu, total = %zu\n",
-            vocab_size, vocab_words, vocab_total);
-
-
-}
-
 int main(int argc, char **argv)
 {
-    test_vocab();
-    return 1;
     size_t vocab_size = 0;
     size_t vocab_total = 0;
     size_t ii = 0;
