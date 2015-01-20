@@ -28,9 +28,12 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <ctype.h>
+#include <wctype.h>
 #include <inttypes.h>
 
 #include "MurmurHash3.h"
@@ -39,12 +42,57 @@
 #include "nlk_text.h"
 
 
-/** @fn int nlk_read_word(FILE *file, char *word, const size_t max_word_size)
-Read a word from a file
+/**
+ * @brief Convert string to lowercase in-place
+ * 
+ * @param word      the word to convert to lowercase
+ * @param tmp       temporary memory for widechar conversion
+ */
+void
+nlk_text_lower(char *word, wchar_t *tmp) {
+    size_t ii;
+    size_t len;
+    wchar_t *low_tmp;
+
+    len = strlen(word) + 1;
+
+    if(tmp == NULL) {
+        low_tmp = malloc(len * sizeof(wchar_t));
+    } else {
+        low_tmp = tmp;
+    }
+
+    /* convert to wide representation */
+    len = mbstowcs(low_tmp, word, len);
+    if(len == (size_t) - 1) {
+        NLK_ERROR_VOID("Invalid char conversion.", NLK_FAILURE);
+        /* unreachable */
+    }
+
+    for(ii = 0; ii < len; ii++) {
+        low_tmp[ii] = towlower(low_tmp[ii]);
+    }
+
+    /* convert back to multibyte representation */
+    len = wcstombs(word, low_tmp, len + 1);
+    if(len == (size_t) - 1) {
+        NLK_ERROR_VOID("Invalid char conversion.", NLK_FAILURE);
+        /* unreachable */
+    }
+
+    if(tmp == NULL) {
+        free(low_tmp);
+    }
+}
+
+/** 
+ * @brief Read a word from a file
+ *
  * @param file            FILE object to read from
  * @param word            char pointer where the word will be stored
+ * @param low_tmp         temporary storage for converting strings to lowercase
+ *                        if NULL, no conversion happens
  * @param max_word_size   maximum size of a word (including null terminator)
- * @param lower           convert uppercase chars to lowercase
  *
  * @return integer of the word separator (terminator), EOF or NLK_ETRUNC
  *
@@ -52,56 +100,70 @@ Read a word from a file
  * This function is made for reading already pre-processed files, does not
  * do actual tokenization or handle weird stuff.
  *
- * Assumes words are separated by:
- *      * spaces (' ')
- *      * tabs ('\t')
- *      * newlines ('\n')
- *
+ * Assumes words are separated by whitespaces (isspace() == true).
+ * Ignores CRs.
  * @endnote
  */
 int
-nlk_read_word(FILE *file, char *word, const size_t max_word_size,
-              const bool lower)
+nlk_read_word(FILE *file, char *word, wchar_t *low_tmp, 
+              const size_t max_word_size)
 {
-    int ch;
+    int ch = EOF;
     size_t len = 0;
 
     while(!feof(file)) {
         ch = fgetc(file);
-        if(ch == 13) {
-            continue; /* ignore CRs */
-        }
 
-        /* end of word */
-        if((ch == ' ') || (ch == '\t') || (ch == '\n') || (ch == EOF)) {
-            if(len == 0) {
-                continue;   /* prevent empty words */
+        /* space chars */
+        if(isspace(ch) || ch == EOF) {
+            /* 
+             * Because of line checks tests we need to ignore CRs.
+             * All other "space" chars are end of word chars 
+             */
+            if(ch == '\r') {
+                continue;
             }
-            word[len] = '\0';  /* null terminate the word */
-            return ch;
+
+            /* prevent empty words */
+            if(len == 0 && ch != EOF) {
+                continue;
+            }
+            
+            break; /* goto EOW */
         }
 
-        word[len] = tolower(ch);
+        /* just another non-space char */
+        word[len] = ch;
         len++;
 
+        /* truncate at max_word_size */
         if(len == max_word_size - 2) {
-            word[len] = '\0';
-            return NLK_ETRUNC;
+            ch = NLK_ETRUNC;
+            break;  /* goto EOW */
         }
+
+    }
+    /*
+     * END-OF-WORD (EOW):
+     */
+    word[len] = '\0';
+    if(low_tmp != NULL || len > 0) {
+        nlk_text_lower(word, low_tmp);
     }
 
-    word[len] = '\0';
-
-    return EOF;
+    return ch;
 }
 
-/** @fn Read a line from a file
+/** 
+ * @brief Read a line from a file
+ *
  * @param file            FILE object to read from
  * @param line            array  where the words+1 will be stored
+ *                        null terminator)
+ * @param low_tmp         temporary storage for converting strings to lowercase
+ *                        if NULL, no conversion happens
  * @param max_word_size   maximum size of a word (including null terminator)
  * @param max_line_size   maximum size of a line in number of words (including 
- *                        null terminator)
- * @param lower_words     conver uppercase chars to lowercase
  *
  * @return integer of the sentence separator '\n', EOF or NLK_ETRUNC
  *
@@ -126,17 +188,17 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size,
  * @endnote
  */
 int
-nlk_read_line(FILE *file, char **line, const size_t max_word_size, 
-              const size_t max_line_size, const bool lower_words)
+nlk_read_line(FILE *file, char **line, wchar_t *low_tmp,
+              const size_t max_word_size, const size_t max_line_size)
 {
-    int term;               /* word terminator, on return, line terminator */
-    size_t word_idx = 0;    /* word in line index */
+    int term;                   /* word terminator */
+    size_t word_idx = 0;        /* word in line index */
 
     while(!feof(file)) {
-        term = nlk_read_word(file, line[word_idx], max_word_size, lower_words);
+        term = nlk_read_word(file, line[word_idx], low_tmp, max_word_size);
         word_idx++;
 
-        if(term == '\n' || term == '\t') {
+        if(term == '\n' || term == '\t' || term == EOF) {
             *line[word_idx] = '\0';
             return term;
         }
@@ -146,22 +208,8 @@ nlk_read_line(FILE *file, char **line, const size_t max_word_size,
             return NLK_ETRUNC;
         }
     }
-    return EOF;
-}
 
-/** @fn nlk_text_lower(char *word)
- * Convert string to lowercase in-place
- * 
- * @param word  the word to convert to lowercase
- *
- * @return no return, word i overwritten
- */
-void
-nlk_text_lower(char *word) {
-    char *wp;
-    for (wp = word ; *wp; ++wp) {
-        *wp = tolower(*wp);
-    }
+    return EOF;
 }
 
 /** @fn void nlk_text_concat_hash
@@ -210,8 +258,8 @@ size_t
 nlk_text_count_lines(FILE *fp)
 {
     size_t lines = 0;
-    int buf;
-    int last;
+    int buf = 0;
+    int last = 0;
     fpos_t pos;
 
     /* determine current position */
@@ -246,8 +294,8 @@ size_t
 nlk_text_count_words(FILE *fp)
 {
     size_t words = 0;
-    int buf;
-    int last;
+    int buf = 0;
+    int last = 0;
     fpos_t pos;
 
     /* determine current position */

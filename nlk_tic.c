@@ -25,6 +25,9 @@
 
 /** @file nlk_tic.c
  * For checking progress / execution time
+ * get_monotonic_time was taken from 
+ * http://stackoverflow.com/questions/21665641/ns-precision-monotonic-clock-in-c-on-linux-and-os-x/21665642#21665642
+ * By Douglas B. Staple
  */
 
 
@@ -33,65 +36,98 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <sys/time.h>
 
-bool __nlk_tic_ticking = false;
-clock_t __nlk_tic_start;
-clock_t __nlk_tic_end;
-time_t __nlk_time_start;
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#endif
 
 
-/** @fn nlk_tic(char *msg)
- * Prints the current time, the elapsed time since the first call/last call to 
- * nlk_toc() and a message
- *
- * @param msg   a message string that will be printed, use NULL for none.
+static bool ticking = false;
+
+
+/**
+ * Get time
+ * Use clock_gettime in linux, clock_get_time in OS X.
  */
 void
+nlk_get_monotonic_time(struct timespec *ts)
+{
+#ifdef __MACH__
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), SYSTEM_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    mach_port_deallocate(mach_task_self(), cclock);
+    ts->tv_sec = mts.tv_sec;
+    ts->tv_nsec = mts.tv_nsec;
+#else
+    clock_gettime(CLOCK_MONOTONIC, ts);
+#endif
+}
+
+/**
+ * Determine time elapsed in seconds
+ */
+double 
+nlk_get_elapsed_time(struct timespec *before, struct timespec *after)
+{
+    double deltat_s  = after->tv_sec - before->tv_sec;
+    double deltat_ns = after->tv_nsec - before->tv_nsec;
+    return deltat_s + deltat_ns * 1e-9;
+}
+
+
+/**
+ * Prints msg 
+ *
+ * @param msg       a message string that will be printed, use NULL for none
+ * @param newline   print a newline after message if true
+ *
+ * @return total elasped time (since last call to stop)
+ */
+double
 nlk_tic(char *msg, bool newline)
 {
-    time_t time_now;
-    double tic_diff;
-    double time_diff;
-    
+    static struct timespec before;
+    struct timespec after;
+    double diff;
+    static double total;
 
-    /* First call to tic */
-    if(__nlk_tic_ticking == false) {  
-        __nlk_tic_ticking = true;
-        __nlk_tic_start = clock();
-        time(&__nlk_time_start);
+    /** @section First call to tic */
+    if(ticking == false) {  
+        ticking = true;
+        nlk_get_monotonic_time(&before);
+        total = 0;
         if(msg != NULL) {
             printf("nlk tic: %s\n", msg);
         }
-
-        return;
+        return 0;
     }
 
-    /* All subsequent calls */
-    __nlk_tic_end = clock();
-    tic_diff = (double)(__nlk_tic_end - __nlk_tic_start) / 
-               (double)(CLOCKS_PER_SEC * 1000);    /* milliseconds */
+    /** @section All subsequent calls */
+    nlk_get_monotonic_time(&after);
+    diff = nlk_get_elapsed_time(&before, &after);
+    total += diff;
+    before = after;
 
-
-    time(&time_now);
-    time_diff = difftime(time_now, __nlk_time_start);
 
     if(msg != NULL) {
-        printf("\rnlk tic %.fs (elapsed %.5f): %s", time_diff , tic_diff, msg);
+        printf("\rnlk (%.2f): %s", total, msg);
         if(newline) {
             printf("\n");
         }
     }
     fflush(stdout);
+
+    return total;
 }
 
-void
-nlk_toc(char *msg, bool newline) {
-
-    nlk_tic(msg, newline);
-    __nlk_tic_start = clock();
-}
-
+/**
+ * Stop counting time
+ */
 void nlk_tic_reset()
 {
-    __nlk_tic_ticking = false;
+    ticking = false;
 }

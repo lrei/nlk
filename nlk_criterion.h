@@ -48,11 +48,11 @@ __BEGIN_DECLS
 /* Negative Likelihood gradient for a single of  binary classification */ 
 void nlk_bin_nl_sgradient(const nlk_real, const uint8_t, nlk_real *);
 
-int nlk_binary_neg_log_likelihood(const nlk_Array *, const uint8_t *);
+int nlk_binary_neg_log_likelihood(const NLK_ARRAY *, const uint8_t *);
 
-int nlk_neg_log_likelihood_gradient(const nlk_Array *, const size_t, 
-                                    nlk_Array *);
-nlk_real nlk_neg_log_likelihood(const nlk_Array *, const size_t);
+int nlk_neg_log_likelihood_gradient(const NLK_ARRAY *, const size_t, 
+                                    NLK_ARRAY *);
+nlk_real nlk_neg_log_likelihood(const NLK_ARRAY *, const size_t);
 
 
 __END_DECLS

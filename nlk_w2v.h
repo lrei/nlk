@@ -32,7 +32,6 @@
 #define __NLK_W2V_H__
 
 
-
 #undef __BEGIN_DECLS
 #undef __END_DECLS
 #ifdef __cplusplus
@@ -47,26 +46,32 @@ __BEGIN_DECLS
 /** @enum NLK_LM_TYPE
  * The type of the language model
  */
-enum NLK_LM_TYPE { 
+enum nlk_lm_t { 
     NLK_CBOW      = 0,  /**< CBOW and PVDM */
     NLK_SKIPGRAM  = 1   /**< Skipgram and PVDBOW */
+    NLK_PVDM      = 2   /**< PVDM */
+    NLK_PVDBOW    = 3   /**< PVDBOW */
 };
-typedef enum NLK_LM_TYPE nlk_Lm;
+typedef enum nlk_lm_t NLK_LM;
 
-nlk_real nlk_word2vec(nlk_Lm, nlk_Layer_Lookup *, nlk_Layer_Lookup *,
-                      bool, bool, char *, nlk_Vocab **, size_t, 
-                      size_t, float, size_t, nlk_real, unsigned int, int, 
-                      char *, char *, nlk_Format);
 
-nlk_real nlk_skipgram_for_context(nlk_Layer_Lookup *, nlk_Layer_Lookup *, bool, 
-                                  nlk_real, nlk_Table *, nlk_Context *, 
-                                  nlk_Array *, nlk_Array *, nlk_Array *, 
-                                  nlk_Array *, nlk_Array *);
+/* create */
+struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, bool hs, bool neg);
 
-nlk_real nlk_cbow_for_context(nlk_Layer_Lookup *, nlk_Layer_Lookup *, bool,
-                              nlk_real, nlk_Table *, nlk_Context *, 
-                              size_t *ctx_ids, nlk_Array *, nlk_Array *, 
-                              nlk_Array *, nlk_Array *, nlk_Array *);
+/* train */
+nlk_real nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
+                      bool, char *, nlk_Vocab **, 
+                      size_t, float, nlk_real, unsigned int, int);
+
+nlk_real nlk_skipgram_for_context(NLK_LAYER_LOOKUP *, NLK_LAYER_LOOKUP *, 
+                                  nlk_real, NLK_TABLE *, nlk_Context *, 
+                                  NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *, 
+                                  NLK_ARRAY *, NLK_ARRAY *);
+
+nlk_real nlk_cbow_for_context(NLK_LAYER_LOOKUP *, NLK_LAYER_LOOKUP *,
+                              nlk_real, NLK_TABLE *, nlk_Context *, 
+                              size_t *ctx_ids, NLK_ARRAY *, NLK_ARRAY *, 
+                              NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *);
 
 __END_DECLS
 #endif /* __NLK_W2V_H__ */

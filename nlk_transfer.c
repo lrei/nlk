@@ -36,8 +36,8 @@
 #include "nlk_transfer.h"
 
 
-/** @fn void nlk_transfer_concat_forward(nlk_Array *concat_view, 
- *                                       const nlk_Array *source)
+/** @fn void nlk_transfer_concat_forward(NLK_ARRAY *concat_view, 
+ *                                       const NLK_ARRAY *source)
  * Concatenated view of all rows in a matrix into a single vector.
  *
  * @param input        the array (matrix) containing the data
@@ -59,14 +59,14 @@
  * @endnote
  */
 void
-nlk_transfer_concat_forward(const nlk_Array *input, nlk_Array *concat)
+nlk_transfer_concat_forward(const NLK_ARRAY *input, NLK_ARRAY *concat)
 {
     const size_t len = input->rows * input->cols;
     nlk_carray_copy_carray(concat->data, input->data, len);
 }
 
-/** @fn void nlk_transfer_concat_backprop(nlk_Array *grad_int, 
- *                                        const nlk_Array *grad_out)
+/** @fn void nlk_transfer_concat_backprop(NLK_ARRAY *grad_int, 
+ *                                        const NLK_ARRAY *grad_out)
  * Backwards pass for a concatenation operation. 
  *
  * @param grad_out      gradient at the output of the function
@@ -75,8 +75,8 @@ nlk_transfer_concat_forward(const nlk_Array *input, nlk_Array *concat)
  * grad_in_view is overwritten.
  */ 
 void
-nlk_transfer_concat_backprop(const nlk_Array *grad_out, 
-                             nlk_Array *grad_in)
+nlk_transfer_concat_backprop(const NLK_ARRAY *grad_out, 
+                             NLK_ARRAY *grad_in)
 {
     size_t ii;
     for(ii = 0; ii < grad_in->rows; ii++) {
@@ -88,8 +88,8 @@ nlk_transfer_concat_backprop(const nlk_Array *grad_out,
 
 
 
-/** @fn void nlk_sigmoid_forward(const nlk_Table *sigmoid_table, 
- *                               const nlk_Array *input,  nlk_Array *output)
+/** @fn void nlk_sigmoid_forward(const NLK_TABLE *sigmoid_table, 
+ *                               const NLK_ARRAY *input,  NLK_ARRAY *output)
  * Sigmoid transfer function
  *
  * @param sigmoid_table     precomputed sigmoid table
@@ -99,17 +99,10 @@ nlk_transfer_concat_backprop(const nlk_Array *grad_out,
  * @return NLK_SUCCESS or error code NLK_E*
  */
 void
-nlk_sigmoid_forward_table(const nlk_Table *sigmoid_table, nlk_Array *input)
+nlk_sigmoid_forward_table(const NLK_TABLE *sigmoid_table, NLK_ARRAY *input)
 {
     nlk_array_sigmoid_table(sigmoid_table, input);
 }
-
-void
-nlk_sigmoid_forward(nlk_Array *input)
-{
-    nlk_array_sigmoid_approx(input);
-}
-
 
 /** @fn nlk_sigmoid_backprop
  * Calculates the gradient of the sigmoid
@@ -121,8 +114,8 @@ nlk_sigmoid_forward(nlk_Array *input)
  * @return NLK_SUCCESS or error code NLK_E*
  */
 int
-nlk_sigmoid_backprop(const nlk_Array *output, const nlk_Array *grad_out, 
-                    nlk_Array *grad_in)
+nlk_sigmoid_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out, 
+                    NLK_ARRAY *grad_in)
 {
     size_t ii;
     size_t len = output->rows * output->cols; 
@@ -136,7 +129,7 @@ nlk_sigmoid_backprop(const nlk_Array *output, const nlk_Array *grad_out,
     return NLK_SUCCESS;
 }
 
-/** @fn nlk_average(const nlk_Array *input, nlk_Array *output)
+/** @fn nlk_average(const NLK_ARRAY *input, NLK_ARRAY *output)
  * Averaging layer: takes matrix where each row represents an input and
  * averages the rows, writting it to the output.
  *
@@ -145,14 +138,14 @@ nlk_sigmoid_backprop(const nlk_Array *output, const nlk_Array *grad_out,
  * @param output    the output array (overwritten)
  *
  */
-int
-nlk_average(const nlk_Array *input, size_t n_rows, nlk_Array *output) 
+void
+nlk_average(const NLK_ARRAY *input, size_t n_rows, NLK_ARRAY *output) 
 {
     size_t ii;
 
     if(input->cols != output->rows) {
-        NLK_ERROR("number of input matrix columns must be equal to the number "
-                  "of output rows", NLK_EBADLEN);
+        NLK_ERROR_VOID("number of input matrix columns must be equal to the "
+                       "number of output rows", NLK_EBADLEN);
         /* unreachable */
     }
 

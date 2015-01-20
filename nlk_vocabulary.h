@@ -54,6 +54,7 @@ __BEGIN_DECLS
 #define NLK_UNK_SYMBOL "<UNK>"
 #define NLK_MAX_CODE 40
 #define NLK_MAX_VOCABS 512
+#define NLK_NEG_TABLE_SIZE 1e8
 
 
 /** @enum NLK_VOCAB_TYPE

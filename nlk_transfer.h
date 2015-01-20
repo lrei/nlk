@@ -47,14 +47,14 @@
 __BEGIN_DECLS
 
 
-void nlk_transfer_concat_forward(const nlk_Array *, nlk_Array *);
-void nlk_transfer_concat_backprop(const nlk_Array *, nlk_Array *);
+void nlk_transfer_concat_forward(const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_transfer_concat_backprop(const NLK_ARRAY *, NLK_ARRAY *);
 
-int nlk_average(const nlk_Array *, size_t, nlk_Array *);
+void nlk_average(const NLK_ARRAY *, size_t, NLK_ARRAY *);
 
-void nlk_sigmoid_forward_table (const nlk_Table *, nlk_Array *);
-void nlk_sigmoid_forward(nlk_Array *input);
-int nlk_sigmoid_backprop(const nlk_Array *, const nlk_Array *, nlk_Array *);
+void nlk_sigmoid_forward_table (const NLK_TABLE *, NLK_ARRAY *);
+void nlk_sigmoid_forward(NLK_ARRAY *input);
+int nlk_sigmoid_backprop(const NLK_ARRAY *, const NLK_ARRAY *, NLK_ARRAY *);
 
 
 __END_DECLS

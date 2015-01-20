@@ -54,7 +54,7 @@ nlk_bin_nl_sgradient(const nlk_real prediction, const uint8_t target,
     *gradient = 1 - target - prediction;
 }
 
-/** @fn int nlk_binary_neg_log_likelihood_gradient(const nlk_Array *prediction, 
+/** @fn int nlk_binary_neg_log_likelihood_gradient(const NLK_ARRAY *prediction, 
  *                                                 const uint8_t *target)
  * Negative Likelihood gradient for each of multiple independent binary 
  * classifications (e.g. hierarchical softmax)
@@ -68,7 +68,7 @@ nlk_bin_nl_sgradient(const nlk_real prediction, const uint8_t target,
  * @endnote
  */
 nlk_real
-nlk_binary_neg_log_likelihood(const nlk_Array *prediction,
+nlk_binary_neg_log_likelihood(const NLK_ARRAY *prediction,
                               const uint8_t *target)
 {
     size_t ii;
@@ -84,9 +84,9 @@ nlk_binary_neg_log_likelihood(const nlk_Array *prediction,
     return NLK_SUCCESS;
 }
 
-/** @fn nlk_real nlk_neg_likelihood_gradient(const nlk_Array *prediction, 
+/** @fn nlk_real nlk_neg_likelihood_gradient(const NLK_ARRAY *prediction, 
  *                                           const uint8_t *target,
- *                                           nlk_Array *gradient)
+ *                                           NLK_ARRAY *gradient)
  * Negative Log Likelihood error gradient for Multiclass Classification
  *
  * @param prediction    network output
@@ -100,9 +100,9 @@ nlk_binary_neg_log_likelihood(const nlk_Array *prediction,
  * @endnote
  */
 int
-nlk_neg_log_likelihood_gradient(const nlk_Array *prediction, 
+nlk_neg_log_likelihood_gradient(const NLK_ARRAY *prediction, 
                                 const size_t target, 
-                                nlk_Array *gradient)
+                                NLK_ARRAY *gradient)
 {
     nlk_array_zero(gradient);
     gradient->data[target] = -log(prediction->data[target]);
@@ -110,7 +110,7 @@ nlk_neg_log_likelihood_gradient(const nlk_Array *prediction,
     return NLK_SUCCESS;
 }
 
-/** @fn nlk_real nlk_neg_log_likelihood(const nlk_Array *prediction, 
+/** @fn nlk_real nlk_neg_log_likelihood(const NLK_ARRAY *prediction, 
  *                                  const size_t target)
  * Negative Log Likelihood error for multiclass (1-of-K) classification.
  * (e.g. softmax)
@@ -125,7 +125,7 @@ nlk_neg_log_likelihood_gradient(const nlk_Array *prediction,
  * @endnote
  */
 nlk_real
-nlk_negative_log_likelihood(const nlk_Array *prediction, 
+nlk_negative_log_likelihood(const NLK_ARRAY *prediction, 
                             const size_t target)
 {
     return -log(prediction->data[target]);

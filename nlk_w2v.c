@@ -37,6 +37,7 @@
 #include "nlk_array.h"
 #include "nlk_vocabulary.h"
 #include "nlk_window.h"
+#include "nlk_neuralnet.h"
 #include "nlk_layer_linear.h"
 #include "nlk_tic.h"
 #include "nlk_text.h"
@@ -46,10 +47,16 @@
 #include "nlk_w2v.h"
 
 
-/** @fn nlk_w2v_learn_rate_update(nlk_real learn_rate, nlk_real start_learn_rate,
- *                                size_t epochs, size_t word_count_actual, 
- *                                size_t train_words)
+/**
  * Learn rate update function from word2vec
+ *
+ * @param learn_rate        current learn rate
+ * @param start_learn_rate  starting learn rate
+ * @param epochs            total number of epochs
+ * @param word_count_actual total number of words seen so far
+ * @param train_words       total number of words in train file
+ *
+ * @return  new learn rate
  */
 nlk_real
 nlk_word2vec_learn_rate_update(nlk_real learn_rate, nlk_real start_learn_rate,
@@ -66,13 +73,19 @@ nlk_word2vec_learn_rate_update(nlk_real learn_rate, nlk_real start_learn_rate,
     return learn_rate;
 }
 
-/** @fn void nlk_word2vec_display(size_t word_count_actual, size_t train_words,
- *                                int epochs, int local_epoch, clock_t start)
+/**
  * Word2Vec style progress display.
+ *
+ * @param learn_rate        the current learn rate
+ * @param word_count_actual total number of words seen so far
+ * @param train_words       total number of words in train file
+ * @param epochs            total number of epochs
+ * @param epoch             the current epoch
+ * @param start             the clock at the start of the training
  */
-void
+static void
 nlk_word2vec_display(nlk_real learn_rate, size_t word_count_actual, 
-                     size_t train_words, int epochs, int local_epoch, 
+                     size_t train_words, int epochs, int epoch, 
                      clock_t start)
 {
     double progress;
@@ -88,26 +101,100 @@ nlk_word2vec_display(nlk_real learn_rate, size_t word_count_actual,
     snprintf(display_str, 256,
             "Alpha: %f  Progress: %.2f%% (%d) "
             "Words/Thread/sec: %.2fk Threads: %d", 
-            learn_rate, progress, local_epoch, speed, omp_get_num_threads());
+            learn_rate, progress, epoch, speed, omp_get_num_threads());
     nlk_tic(display_str, false);
 }
 
-nlk_real
-nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
-             bool learn_par, bool freeze_words, char *train_file_path,
-             nlk_Vocab **vocab, size_t before, size_t after, float sample_rate, 
-             size_t layer_size, nlk_real learn_rate,
-             unsigned int epochs, int verbose, char *lk1_file_path,
-             char *lk2_file_path, nlk_Format save_format)
+/**
+ * Create a word2vec neural network
+ *
+ * @param vocab_size    the vocabulary size
+ * @param layer_size    the hidden layer size
+ *
+ * @return the neural network structure
+ */
+struct nlk_neuralnet_t *
+nlk_word2vec_create(size_t vocab_size, size_t layer_size, bool hs, bool neg)
 {
-    goto_set_num_threads(1);
-    nlk_real err;
+    struct nlk_neuralnet_t *nn;
+    struct nlk_layer_lookup_t *lk1;
+    struct nlk_layer_lookup_t *lkhs;
+    struct nlk_layer_lookup_t *lkneg;
+    int n_layers = 1;
+
+    if(hs) {
+        n_layers++;
+    }
+    if(neg) {
+        n_layers++;
+    }
+
+    nn = nlk_neuralnet_create(n_layers);
+    if(nn == NULL) {
+        return NULL;
+    }
+
+    /* lookup layer 1 */
+    lk1 = nlk_layer_lookup_create(vocab_size, layer_size);
+    tinymt32_t rng;
+    tinymt32_init(&rng,  447290 + clock());
+    nlk_layer_lookup_init(lk1, &rng);
+    nlk_neuralnet_add_layer_lookup(nn, lk1);
+    
+    /* lookup layer HS */
+    if(hs) {
+        lkhs = nlk_layer_lookup_create(vocab_size, layer_size);
+        /* [ default initialization: zero ] */
+        nlk_neuralnet_add_layer_lookup(nn, lkhs);
+    }
+
+    /* lookup layer NEG */
+    if(neg) {
+        lkneg = nlk_layer_lookup_create(vocab_size, layer_size);
+        /* [ default initialization: zero ] */
+        nlk_neuralnet_add_layer_lookup(nn, lkneg);
+
+    }
+ 
+    return nn;
+}
+
+/**
+ * Train a word2vec model
+ *
+ * @param model_type        NLK_SKIPGRAM, NLK_CBOW
+ * @param nn                the neural network
+ * @param learn_par         learn paragraph vectors
+ * @param train_file_path   the path of the train file
+ * @param vocab             the vocabulary
+ * @param window
+ * @param sample_rate
+ * @param learn_rate
+ * @param epochs
+ * @param verbose
+ *
+ * @return total error for last epoch
+ */
+nlk_real
+nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn,
+             bool learn_par, char *train_file_path,
+             nlk_Vocab **vocab, size_t window, float sample_rate, 
+             nlk_real learn_rate, unsigned int epochs, int verbose)
+{
+    /*goto_set_num_threads(1);*/
+
+    /* shortcuts */
+    struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
+    struct nlk_layer_lookup_t *lk2 = nn->layers[1].lk;
+    size_t layer_size = lk1->weights->cols;
+
+    nlk_real err = 0;   /* epoch error */
+
     /** @section Shared Initializations
      * All variables declared in this section are shared among threads.
      * Most are read-only but some (e.g. learn_rate & word_count_actual)
      * are updated directly from the threads.
      */
-    size_t ii;
 
     /** @subsection Input and Window initializations
      * Alllocations and initializations related to the input (text)
@@ -115,7 +202,7 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
     size_t word_count_actual = 0;   /* warning: thread write-shared */
     size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
     size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
-    size_t ctx_size = after + before;            /* max context size */
+    size_t ctx_size = window * 2;   /* max context size */
 
     /* Context for PVDBOW (skipgram with paragraph vectors) includes the
      * window center word in the "context". PVDM ds not.
@@ -155,24 +242,12 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
      * Create and initialize neural net and associated variables 
      */
     nlk_real learn_rate_start = learn_rate;
-    size_t vocab_size = nlk_vocab_size(vocab);
 
     tinymt32_t rng;
     tinymt32_init(&rng, 6121884 - 1 + clock());
-
-    /* the first layer: vanilla loopup table - e.g. normal ids */
-    if(lk1 == NULL) {
-        lk1 = nlk_layer_lookup_create(vocab_size, layer_size);
-        nlk_layer_lookup_init(lk1, &rng);
-    }
-
-    /* the second layer, hierarchical softmax - HS point ids */
-    if(lk2 == NULL) {
-        lk2 = nlk_layer_lookup_create(vocab_size, layer_size);
-    }
   
     /* sigmoid table */
-    nlk_Table *sigmoid_table = nlk_table_sigmoid_create(NLK_SIGMOID_TABLE_SIZE, 
+    NLK_TABLE *sigmoid_table = nlk_table_sigmoid_create(NLK_SIGMOID_TABLE_SIZE, 
                                                         NLK_MAX_EXP);
 
     clock_t start = clock();
@@ -203,7 +278,7 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
      */
     int local_epoch = epochs;          /* current epoch (thread local) */
     /* output of the first layer */
-    nlk_Array *lk1_out;
+    NLK_ARRAY *lk1_out;
     if(model_type == NLK_CBOW) {
         lk1_out = nlk_array_create(ctx_size, layer_size);
     } else { /* NLK_SKIPGRAM */
@@ -211,12 +286,12 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
     }
 
     /* the concat or average "layer" */
-    nlk_Array *cc_avg_out = nlk_array_create(layer_size, 1);
+    NLK_ARRAY *cc_avg_out = nlk_array_create(layer_size, 1);
 
     /* for storing gradients */
-    nlk_Array *lk2_grad = nlk_array_create(1, layer_size);
-    nlk_Array *grad_acc = nlk_array_create(1, layer_size);
-    nlk_Array *lk2_temp = nlk_array_create(layer_size, 1);
+    NLK_ARRAY *lk2_grad = nlk_array_create(1, layer_size);
+    NLK_ARRAY *grad_acc = nlk_array_create(1, layer_size);
+    NLK_ARRAY *lk2_temp = nlk_array_create(layer_size, 1);
 
     /** @subsection Input Text and Context Window initializations
      */
@@ -239,6 +314,7 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
     /* variables for generating vocab items for the paragraph */
     nlk_Vocab *vocab_par = NULL;
     char *word = (char *) malloc(max_word_size * sizeof(char));
+    wchar_t *low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
     char *tmp = NULL;
     if(learn_par) {
         tmp = (char *) malloc((max_word_size * max_line_size + max_line_size) *
@@ -280,7 +356,6 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
      * The train file is divided into parts, one part for each thread.
      * Open file and move to thread specific starting point
      */
-    int term;
     size_t count = 0;
     size_t file_pos_last = 0;
     size_t file_pos = 0;
@@ -324,8 +399,8 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
              * models is in the context that gets generated here.
              */
             /* read line */
-            term = nlk_read_line(train, text_line, max_word_size,
-                                 max_line_size, true);
+            nlk_read_line(train, text_line, low_tmp, max_word_size,
+                          max_line_size);
             line_count++;
             
             /* vocabularize */
@@ -336,7 +411,7 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
 
             /* window */
             n_examples = nlk_context_window(vectorized, line_len, include_self, 
-                                            before, after, true, &rng, 
+                                            window, window, true, &rng, 
                                             vocab_par, center_par, contexts);
 
 
@@ -347,13 +422,13 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
                 nlk_Context *context = contexts[ex];
 
                 if(model_type == NLK_SKIPGRAM) {
-                    e = nlk_skipgram_for_context(lk1, lk2, freeze_words, 
+                    e = nlk_skipgram_for_context(lk1, lk2, 
                                                 learn_rate, sigmoid_table, 
                                                 context, grad_acc, lk1_out, 
                                                 cc_avg_out, lk2_grad, 
                                                 lk2_temp);
                 } else if(model_type == NLK_CBOW) {
-                    e = nlk_cbow_for_context(lk1, lk2, freeze_words, 
+                    e = nlk_cbow_for_context(lk1, lk2, 
                                              learn_rate, sigmoid_table, 
                                              context, ctx_ids, grad_acc,  
                                              lk1_out, cc_avg_out, lk2_grad, 
@@ -417,14 +492,6 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
 
     nlk_tic_reset();
 
-    /* save weights */
-    if(lk1_file_path != NULL) {
-        nlk_layer_lookup_save(lk1_file_path, save_format, vocab, lk1);
-    }
-    if(lk2_file_path != NULL) {
-        nlk_layer_lookup_save(lk2_file_path, save_format, vocab, lk2);
-    }
-
     /* free neural net memory */
     nlk_layer_lookup_free(lk1);
     nlk_layer_lookup_free(lk2);
@@ -438,13 +505,12 @@ nlk_word2vec(nlk_Lm model_type,  nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
  *
  */
 nlk_real
-nlk_skipgram_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2, 
-                         bool freeze_words,
-                         nlk_real learn_rate, nlk_Table *sigmoid_table,
+nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2, 
+                         nlk_real learn_rate, NLK_TABLE *sigmoid_table,
                          nlk_Context *context,
-                         nlk_Array *grad_acc, nlk_Array *lk1_out, 
-                         nlk_Array *cc_out, nlk_Array *lk2_grad,
-                         nlk_Array *lk2_temp)
+                         NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out, 
+                         NLK_ARRAY *cc_out, NLK_ARRAY *lk2_grad,
+                         NLK_ARRAY *lk2_temp)
 {
     nlk_real lk2_out;
     nlk_real out;
@@ -454,7 +520,6 @@ nlk_skipgram_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
     nlk_Vocab *word;
     size_t point;
     uint8_t code;
-    size_t ii;
     size_t jj;
     size_t pp;
     nlk_real ctx_err = 0;
@@ -516,10 +581,8 @@ nlk_skipgram_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
 
         } /* end of points/codes */
         /* learn layer1 weights using the accumulated gradient */
-        if(freeze_words == false) {
-            nlk_layer_lookup_backprop_lookup(lk1, &word->index, 1,
-                                             grad_acc);
-        }
+        nlk_layer_lookup_backprop_lookup(lk1, &word->index, 1,
+                                         grad_acc);
 
     } /* end of context words */
     return ctx_err;
@@ -530,22 +593,19 @@ nlk_skipgram_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
  *
  */
 nlk_real
-nlk_cbow_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2, 
-                     bool freeze_words,
-                     nlk_real learn_rate, nlk_Table *sigmoid_table,
+nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2, 
+                     nlk_real learn_rate, NLK_TABLE *sigmoid_table,
                      nlk_Context *context,
-                     size_t *ctx_ids, nlk_Array *grad_acc, nlk_Array *lk1_out, 
-                     nlk_Array *avg_out, nlk_Array *lk2_grad,
-                     nlk_Array *lk2_temp)
+                     size_t *ctx_ids, NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out, 
+                     NLK_ARRAY *avg_out, NLK_ARRAY *lk2_grad,
+                     NLK_ARRAY *lk2_temp)
 {
         nlk_real lk2_out;
         nlk_real out;
         nlk_real grad_out;
         nlk_Vocab *center_word = context->center;
-        nlk_Vocab *word;
         size_t point;
         uint8_t code;
-        size_t ii;
         size_t jj;
         size_t pp;
         nlk_real ctx_err = 0;
@@ -610,20 +670,18 @@ nlk_cbow_for_context(nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2,
 
     } /* end of context points/codes */
     /* learn layer1 weights using the accumulated gradient */
-    if(freeze_words == false) {
-        nlk_layer_lookup_backprop_lookup(lk1, ctx_ids, context->size, 
-                                         grad_acc);
-    }
+    nlk_layer_lookup_backprop_lookup(lk1, ctx_ids, context->size, 
+                                     grad_acc);
     return ctx_err;
 }
 
 
 nlk_real
-nlk_learn_pv(nlk_Lm type, char *train_file, nlk_Vocab **vocab, 
-             nlk_Layer_Lookup *lk1, nlk_Layer_Lookup *lk2, nlk_real learn_rate, 
+nlk_learn_pv(NLK_LM type, char *train_file, nlk_Vocab **vocab, 
+             NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2, nlk_real learn_rate, 
              size_t before, size_t after, nlk_real tol, size_t max_iter,
              char *save_file, nlk_Format save_format)
 {
 
-
+    return 0;
 }

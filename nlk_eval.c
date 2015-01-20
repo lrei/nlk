@@ -78,7 +78,7 @@ __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line,
         
         /* to lower case if necessary */
         if(lower_words) {
-            nlk_text_lower(word); 
+            nlk_text_lower(word, NULL); 
         }
         
         /* find word in voculary */
@@ -179,7 +179,7 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
 
 
 /** @fn int nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
-                                  const nlk_Array *weights, const size_t limit, 
+                                  const NLK_ARRAY *weights, const size_t limit, 
                                   const bool randomize, const bool lower_words, 
                                   nlk_real *accuracy)
  * Uses a word relation test set to evaluate the quality of word vectors.
@@ -209,14 +209,14 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
  */
 int
 nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
-                      const nlk_Array *weights, const size_t limit, 
+                      const NLK_ARRAY *weights, const size_t limit, 
                       const bool lower_words, nlk_real *accuracy)
 {
     nlk_Analogy_Test *tests;    /* array that will contain all test cases */
     size_t total_tests;
 
     size_t _limit;
-    nlk_Array *weights_norm;    /* for the normalized copy of the weights */
+    NLK_ARRAY *weights_norm;    /* for the normalized copy of the weights */
     size_t correct = 0;
     size_t executed = 0;
 
@@ -244,10 +244,10 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
      */
 #pragma omp parallel reduction(+ : correct) reduction(+ : executed)
 {
-    nlk_Array *predicted = nlk_array_create(1, weights->cols);
-    nlk_Array *sub = nlk_array_create(1, weights->cols);
-    nlk_Array *add = nlk_array_create(1, weights->cols);
-    nlk_Array *word_vector = nlk_array_create(1, weights->cols);
+    NLK_ARRAY *predicted = nlk_array_create(1, weights->cols);
+    NLK_ARRAY *sub = nlk_array_create(1, weights->cols);
+    NLK_ARRAY *add = nlk_array_create(1, weights->cols);
+    NLK_ARRAY *word_vector = nlk_array_create(1, weights->cols);
     nlk_Analogy_Test *test;     /* iteration test case*/
     
 
@@ -322,7 +322,7 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
 
 int
 nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab, 
-                        const nlk_Array *weights,  const bool lower_words, 
+                        const NLK_ARRAY *weights,  const bool lower_words, 
                         nlk_real *accuracy)
 {
     /** @section Allocation and Initialization
@@ -334,7 +334,7 @@ nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab,
     size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
     size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
 
-    nlk_Array *weights_norm;    /* for the normalized copy of the weights */
+    NLK_ARRAY *weights_norm;    /* for the normalized copy of the weights */
     /* normalize weights to make distance calculations easier */
     weights_norm = nlk_array_create_copy(weights);
     nlk_array_normalize_row_vectors(weights_norm);
@@ -370,6 +370,11 @@ nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab,
         }
     }
 
+    wchar_t *low_tmp = NULL;
+    if(lower_words) {
+        low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
+    }
+
     /* find the index of the first paragraph vector */
     size_t start_pos = nlk_vocab_first_paragraph(vocab);
 
@@ -378,8 +383,8 @@ nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab,
     char *tmp = (char *) malloc((max_word_size * max_line_size 
                                  + max_line_size) * sizeof(char));
     for(ii = 0; ii < num_lines / 2; ii++) {
-        nlk_read_line(fin, line1, max_word_size, max_line_size, lower_words);
-        nlk_read_line(fin, line2, max_word_size, max_line_size, lower_words);
+        nlk_read_line(fin, line1, low_tmp, max_word_size, max_line_size);
+        nlk_read_line(fin, line2, low_tmp, max_word_size, max_line_size);
 
         nlk_text_concat_hash(line1, tmp, word);
         par1[ii] = nlk_vocab_find(vocab, word);
@@ -396,6 +401,9 @@ nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab,
     free(line1);
     free(line2);
     free(word);
+    if(low_tmp != NULL) {
+        free(low_tmp);
+    }
     free(tmp);
 
 

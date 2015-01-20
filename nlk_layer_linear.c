@@ -40,30 +40,23 @@
 #include "nlk_layer_linear.h"
 
 
-/** @fn nlk_Layer_Lookup *nlk_layer_lookup_create(const size_t table_size, 
- *                                                const size_t layer_size,
- *                                                const size_t n_indices)
+/**
  * Create a Lookup Layer 
  *
  * @param table_size    e.g. the size of the vocabulary 
  * @param layer_size    the size of this layer  
  *
  * @return pointer to a Lookup_Layer or NULL if creation failed
- *
- * @note
- * The number of indices can be something like a word context size.
- * Weights are initialized to zero by this function.
- * @endnote
  */
-nlk_Layer_Lookup *
+struct nlk_layer_lookup_t *
 nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
 {
-    nlk_Layer_Lookup *layer;
+    struct nlk_layer_lookup_t *layer;
    
     /*
      * Allocate memory for struct, create the members
      */
-    layer = (nlk_Layer_Lookup *) malloc(sizeof(nlk_Layer_Lookup));
+    layer = (struct nlk_layer_lookup_t *) malloc(sizeof(struct nlk_layer_lookup_t));
     if(layer == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for layer struct",
                        NLK_ENOMEM);
@@ -81,11 +74,41 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
     /* default weight initialization, zero */
     nlk_array_zero(layer->weights);
 
+    layer->frozen_limit = 0;
+
     return layer;
 }
 
-/** @fn int nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, 
- *                                  const size_t table_size)
+/**
+ * Create a Lookup Layer from an already initialized weight array
+ *
+ * @param weights   an initialized weights array
+ *
+ * @return pointer to a Lookup_Layer or NULL if creation failed
+ */
+struct nlk_layer_lookup_t *
+nlk_layer_lookup_create_from_array(NLK_ARRAY *weights)
+{
+    struct nlk_layer_lookup_t *layer;
+
+    /*
+     * Allocate memory for struct, create the members
+     */
+    layer = (struct nlk_layer_lookup_t *) malloc(sizeof(struct nlk_layer_lookup_t));
+    if(layer == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for layer struct",
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    layer->weights = weights;
+
+    layer->frozen_limit = 0;
+
+    return layer;
+}
+
+/** 
  * Resize a lookup layer increasing or decreasing the table size. Copies old
  * values up to new table_size if larger or old table_size if smaller.
  * Does not initialize new weights if new table_size is larger - caller must 
@@ -97,9 +120,9 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
  * @return NLK_SUCCESS or NLK_FAILURE
  */
 int
-nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, const size_t table_size)
+nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer, const size_t table_size)
 {
-    nlk_Array *weights = nlk_array_resize(layer->weights, table_size,
+    NLK_ARRAY *weights = nlk_array_resize(layer->weights, table_size,
                                           layer->weights->cols);
     if(weights == NULL) {
         return NLK_FAILURE;
@@ -110,7 +133,7 @@ nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, const size_t table_size)
     return NLK_SUCCESS;
 }
 
-/** @fn void nlk_layer_lookup_init(nlk_Layer_Lookup *layer)
+/** 
  * Initializes the lookup layer weights 
  * Initializations is done by drawing from a uniform distribution in the range
  * [-0.5 / layer_size, 0.5 / layer_size )
@@ -122,15 +145,29 @@ nlk_layer_lookup_resize(nlk_Layer_Lookup *layer, const size_t table_size)
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init(nlk_Layer_Lookup *layer, tinymt32_t *rng)
+nlk_layer_lookup_init(struct nlk_layer_lookup_t *layer, tinymt32_t *rng)
 {
     nlk_real low = -0.5 / layer->weights->cols;
     nlk_real high = 0.5 / layer->weights->cols; 
     nlk_array_init_uniform(layer->weights, low, high, rng);
 }
 
+/** @fn void nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer)
+ * "Freezes" weight updates in this layer, preventing backpropagation updates
+ *
+ * @param layer             the Lookup Layer to initialize
+ * @param frozen_limit      after and incl. this index, weights are not frozen
+ *
+ * @return no return, the lookup layer's weight matrix will be overwritten
+ */
+void
+nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer, size_t frozen_limit)
+{
+    layer->frozen_limit = frozen_limit;
+}
 
-/** @fn nlk_layer_lookup_init_sigmoid(nlk_Layer_Linear *layer)
+
+/** @fn nlk_layer_lookup_init_sigmoid(NLK_LAYER_LINEAR *layer)
  * Initializes the linear layer weights 
  *
  *
@@ -148,7 +185,7 @@ nlk_layer_lookup_init(nlk_Layer_Lookup *layer, tinymt32_t *rng)
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *layer, tinymt32_t *rng)
+nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer, tinymt32_t *rng)
 {
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
                                                 layer->weights->cols));
@@ -157,15 +194,14 @@ nlk_layer_lookup_init_sigmoid(nlk_Layer_Lookup *layer, tinymt32_t *rng)
     nlk_array_init_uniform(layer->weights, l, h, rng);
 }
 
-/** @fn void nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, 
- *                                              size_t from)
+/** 
  * Same as above (nlk_layer_lookup_init) but only for weights after a given row
  *
  * @param layer the lookup layer
  * @param from  the starting row
  */
 void
-nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, size_t from,
+nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer, size_t from,
                                    tinymt32_t *rng)
 {
     size_t len = (layer->weights->rows - from) * layer->weights->cols;
@@ -177,9 +213,7 @@ nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, size_t from,
                             l, h, len, rng);
 }
 
-/** @fn nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *layer, 
- *                                      const size_t *indices, 
- *                                      size_t n_indices)
+/** 
  * Lookup Layer forward pass with just ids (1st layer)
  *
  * @param layer         the lookup layer
@@ -190,10 +224,11 @@ nlk_layer_lookup_init_sigmoid_from(nlk_Layer_Lookup *layer, size_t from,
  * return no return, output_view is overwritten with result
  */
 void
-nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *layer, const size_t *indices, 
-                                const size_t n_indices, nlk_Array *output)
+nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *indices, 
+                                const size_t n_indices, NLK_ARRAY *output)
 {
     size_t ii;
+    size_t ret;
 
     if (n_indices == 0) {
         NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
@@ -203,13 +238,17 @@ nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *layer, const size_t *indices,
 
     /* copy content from indices to the ouput */
     for(ii = 0; ii < n_indices; ii++) {
-        nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
+       ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
+       if(ret != NLK_SUCCESS) {
+           printf("index: %zu\n", indices[ii]);
+           NLK_ERROR_VOID("Invalid lookup: %zu", ret);
+           abort();
+       }
     }
 
 }
 
-/** @fn nlk_layer_lookup_forward(nlk_Layer_Lookup *layer, nlk_Array *input,
- *                               size_t *indices, size_t n_indices)
+/** 
  * Lookup Layer forward pass with input (not first layer)
  * output = input * layer->weights for index (dot product)
  *
@@ -220,16 +259,14 @@ nlk_layer_lookup_forward_lookup(nlk_Layer_Lookup *layer, const size_t *indices,
  * return no return, output is overwritten with result
  */
 void
-nlk_layer_lookup_forward(nlk_Layer_Lookup *layer, const nlk_Array *input, 
+nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *input, 
                          const size_t index, nlk_real *output)
 {
     *output = nlk_array_dot_carray(input, 
                 &layer->weights->data[index * layer->weights->cols]);
 }
 
-/** @fn  void nlk_layer_lookup_backprop_accumulate(nlk_Layer_Lookup *layer, 
- *                                          const size_t index, 
- *                                          const nlk_real gradient)
+/** 
  * Lookup Layer backward pass for accumulating gradient
  *
  * @param layer         the lookup layer
@@ -242,10 +279,10 @@ nlk_layer_lookup_forward(nlk_Layer_Lookup *layer, const nlk_Array *input,
  * return no return, 
  */
 void
-nlk_layer_lookup_backprop_acc(nlk_Layer_Lookup *layer, const nlk_Array *input,
+nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *input,
                               const size_t index, const nlk_real grad_out, 
-                              nlk_Array *gradient, nlk_Array *gradient_acc, 
-                              nlk_Array *temp)
+                              NLK_ARRAY *gradient, NLK_ARRAY *gradient_acc, 
+                              NLK_ARRAY *temp)
 {
     /* gradient at input (accumulate) */
     nlk_array_copy_row(gradient, 0, layer->weights, index);
@@ -253,20 +290,25 @@ nlk_layer_lookup_backprop_acc(nlk_Layer_Lookup *layer, const nlk_Array *input,
     nlk_array_add(gradient, gradient_acc);
 
     /* learn weights for this layer */
-    nlk_array_copy(temp, input);
-    nlk_array_scale(grad_out, temp);
-    nlk_vector_add_row(temp, layer->weights, index);
+    if(index >= layer->frozen_limit) {
+        nlk_array_copy(temp, input);
+        nlk_array_scale(grad_out, temp);
+        nlk_vector_add_row(temp, layer->weights, index);
+    }
 }
 
 
 void
-nlk_layer_lookup_backprop_lookup(nlk_Layer_Lookup *layer, 
+nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer, 
                                  const size_t *indices, const size_t n_indices, 
-                                 const nlk_Array *grad_out)
+                                 const NLK_ARRAY *grad_out)
 {
     size_t ii;
     /* update weights */
     for(ii = 0; ii < n_indices; ii++) {
+        if(indices[ii] < layer->frozen_limit) {
+            continue;
+        }
         nlk_array_add_carray(grad_out,
                 &layer->weights->data[indices[ii] * layer->weights->cols]);
     }
@@ -274,32 +316,50 @@ nlk_layer_lookup_backprop_lookup(nlk_Layer_Lookup *layer,
     /* no need to calc grad at input - 1st layer*/
 }
 
-/** @fn void nlk_layer_lookup_free(nlk_Layer_Lookup *layer)
+/** @fn void nlk_layer_lookup_free(struct nlk_layer_lookup_t *layer)
  * Free Lookup Layer memory 
  *
  * @param layer the Lookup Layer
  */
 void 
-nlk_layer_lookup_free(nlk_Layer_Lookup *layer)
+nlk_layer_lookup_free(struct nlk_layer_lookup_t *layer)
 {
     nlk_array_free(layer->weights);
     free(layer);
 }
 
-/** @fn int nlk_layer_lookup_save(const char *filepath,
- *                                const nlk_Format format, 
- *                                const nlk_Layer_Lookup *layer)
- * Save a lookup layer to disk - word2vec compatible file
+/** 
+ * Save a lookup layer to disk
  *
- * @note
- * I don't like the word2vec binary format because it needlessly mixes the 
- * vocabulary with the weights making it far more complicated and to read than 
- * it would otherwise be.
- * @endnote
+ * @param filepath  the path of the output file to open
+ * @param format    file format (word2vec compatible text, bin or NKL bin)
+ * @param layer     the layer to save
  */
 int
-nlk_layer_lookup_save(char *filepath, const nlk_Format format,
-                      nlk_Vocab **vocab, nlk_Layer_Lookup *layer)
+nlk_layer_lookup_export(char *filepath, const nlk_Format format,
+                        nlk_Vocab **vocab, struct nlk_layer_lookup_t *layer)
+{
+    FILE *out = fopen(filepath, "wb");
+    if(out == NULL) {
+        NLK_ERROR(strerror(errno), errno);
+        /* unreachable */
+    }
+    nlk_layer_lookup_export_file(out, format, vocab, layer);
+    fclose(out);
+    return NLK_SUCCESS;
+}
+
+/** 
+ * Export a lookup layer to a file pointer
+ *
+ * @param out       the file pointer to save to
+ * @param format    file format (word2vec compatible text, bin or NKL bin)
+ * @param layer     the layer to save
+ *
+ */
+void
+nlk_layer_lookup_export_file(FILE *out, nlk_Format format, nlk_Vocab **vocab, 
+                             struct nlk_layer_lookup_t *layer)
 {
     size_t w_idx;
     size_t cc;
@@ -307,83 +367,93 @@ nlk_layer_lookup_save(char *filepath, const nlk_Format format,
     size_t vocab_size = layer->weights->rows;
     size_t layer_size = layer->weights->cols;
 
-    FILE *out = fopen(filepath, "wb");
-    if(out == NULL) {
-        NLK_ERROR(strerror(errno), errno);
-        /* unreachable */
-    }
-
     /* print header */
-    fprintf(out, "%zu %zu\n", vocab_size, layer_size);
-
     if(format == NLK_FILE_W2V_TXT || format == NLK_FILE_W2V_BIN) {
+        fprintf(out, "%zu %zu\n", vocab_size, layer_size);
+        /** @section W2V compatible */
         for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
             fprintf(out, "%s ", vi->word);
             w_idx = vi->index;
             
-            if(format == NLK_FILE_W2V_BIN) {
+            if(format == NLK_FILE_W2V_BIN) { 
+                /** @subsection W2V BIN */
                 for(cc = 0; cc < layer_size; cc++) {
                     fwrite(&layer->weights->data[w_idx * layer_size + cc], 
                            sizeof(nlk_real), 1, out);
                 } /* end of word weight */
             }
             else {
+                /** @subsection W2V TXT */
                 for(cc = 0; cc < layer_size; cc++) {
-                    fprintf(out, "%lf ", layer->weights->data[w_idx * layer_size +
-                                                             cc]);
+                    fprintf(out, "%lf ", layer->weights->data[w_idx * 
+                                                              layer_size +
+                                                              cc]);
                 }
             }
             fprintf(out, "\n");
         }
-    } else {
-        fwrite(layer->weights->data, sizeof(nlk_real),
-               layer->weights->rows * layer->weights->cols, out);
     }
-    fclose(out);
+    else {
+        /** @section NLK binary format
+         * Does not use the vocabulary
+         */
+        nlk_array_save(layer->weights, out);
+    }
 }
 
-/** @fn nlk_Layer_Lookup *nlk_layer_lookup_load(char *filepath)
- * Load lookup layer from a file (NLK_FILE_BIN)
+/**
+ * Save a lookp layer to a file pointer
+ *
+ * @param layer the lookup layer
+ */
+void
+nlk_layer_lookup_save(struct nlk_layer_lookup_t *layer, FILE *fp)
+{
+    nlk_array_save(layer->weights, fp);
+}
+
+/** 
+ * Load lookup layer from a file pointer (NLK_FILE_BIN)
+ *
+ * @param fp    the file pointer
+ *
+ * @return the loaded layer
+ */
+struct nlk_layer_lookup_t * 
+nlk_layer_lookup_load(FILE *in)
+{
+    struct nlk_layer_lookup_t *layer;
+
+    NLK_ARRAY *weights = nlk_array_load(in);
+    if(weights == NULL) {
+        return NULL;
+    }
+    layer = nlk_layer_lookup_create_from_array(weights);
+
+    return layer;
+}
+
+/** 
+ * Load lookup layer from a file path (NLK_FILE_BIN)
  *
  * @param filepath  the path of the file
  *
  * @return the loaded layer
  */
-nlk_Layer_Lookup * 
-nlk_layer_lookup_load(char *filepath)
+struct nlk_layer_lookup_t * 
+nlk_layer_lookup_load_path(char *filepath)
 {
-    nlk_Layer_Lookup *layer;
-    size_t rows;
-    size_t cols;
-    size_t ret;
-
-    FILE *in = fopen(filepath, "rb");
-    if(in == NULL) {
-        NLK_ERROR_NULL(strerror(errno), errno);
+    FILE *fp = fopen(filepath, "rb");
+    if(fp == NULL) {
+        NLK_ERROR_NULL("unable to open file.", NLK_FAILURE);
         /* unreachable */
     }
-    
-    /* read header */
-    ret = fscanf(in, "%zu", &rows);
-    ret = fscanf(in, "%zu", &cols);
-    ret = fgetc(in); /* the newline */
-
-    layer = nlk_layer_lookup_create(rows, cols);
-
-    ret = fread(layer->weights->data, sizeof(nlk_real), rows * cols, in);
-    if(ret != rows * cols) {
-        NLK_ERROR_NULL("file length does not match header information",
-                        NLK_FAILURE);
-        /* unreachable */
-    }
-
-    return layer;
+    return nlk_layer_lookup_load(fp);
 }
 
 
-/** @fn nlk_Layer_Linear *nlk_layer_linear_create(const size_t input_size,  
- *                                               const size_t layer_size, 
- *                                               bool bias)
+
+/** 
  * Create a Linear Layer
  *
  * @param input_size    length of each input vector
@@ -392,14 +462,14 @@ nlk_layer_lookup_load(char *filepath)
  *
  * @return the Linear_Layer or NULL if creation failed
  */
-nlk_Layer_Linear *
+NLK_LAYER_LINEAR *
 nlk_layer_linear_create(const size_t input_size,  const size_t layer_size, 
                         bool bias)
 {
-    nlk_Layer_Linear *layer;
+    NLK_LAYER_LINEAR *layer;
    
     /* Allocate memory for struct, create the members */
-    layer = (nlk_Layer_Linear *) malloc(sizeof(nlk_Layer_Linear));
+    layer = (NLK_LAYER_LINEAR *) malloc(sizeof(NLK_LAYER_LINEAR));
     if(layer == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for layer struct",
                        NLK_ENOMEM);
@@ -418,7 +488,7 @@ nlk_layer_linear_create(const size_t input_size,  const size_t layer_size,
     return layer;
 }
 
-/** @fn nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer)
+/** @fn nlk_layer_linear_init_sigmoid(NLK_LAYER_LINEAR *layer)
  * Initializes the linear layer weights 
  *
  *
@@ -438,7 +508,7 @@ nlk_layer_linear_create(const size_t input_size,  const size_t layer_size,
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer, tinymt32_t *rng)
+nlk_layer_linear_init_sigmoid(NLK_LAYER_LINEAR *layer, tinymt32_t *rng)
 {
     nlk_real l = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
     nlk_real h = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
@@ -448,8 +518,8 @@ nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer, tinymt32_t *rng)
     }
 }
 
-/** @fn void nlk_layer_linear_forward(const nlk_Layer_Linear *layer, 
- *                                    const nlk_Array *input)
+/** @fn void nlk_layer_linear_forward(const NLK_LAYER_LINEAR *layer, 
+ *                                    const NLK_ARRAY *input)
  * Linear Layer forward pass f(x) = W.x + b 
  * sets layer->output = layer->weights * input + layer->bias
  *
@@ -459,7 +529,7 @@ nlk_layer_linear_init_sigmoid(nlk_Layer_Linear *layer, tinymt32_t *rng)
  * return no return, layer->output (vector) is overwritten with result
  */
 void
-nlk_layer_linear_forward(const nlk_Layer_Linear *layer, const nlk_Array *input)
+nlk_layer_linear_forward(const NLK_LAYER_LINEAR *layer, const NLK_ARRAY *input)
 {
     /* bias needs to be added to matrix-vector product */
     if(layer->bias != NULL) {
@@ -473,9 +543,9 @@ nlk_layer_linear_forward(const nlk_Layer_Linear *layer, const nlk_Array *input)
                                    input, layer->output);
 }
 
-/** @fn void nlk_layer_linear_backprop(nlk_Layer_Linear *layer,
- *                                const nlk_Array *input, 
- *                                const nlk_Array *grad_out)
+/** @fn void nlk_layer_linear_backprop(NLK_LAYER_LINEAR *layer,
+ *                                const NLK_ARRAY *input, 
+ *                                const NLK_ARRAY *grad_out)
  * Linear Layer backward pass 
  *      gradient_input = weights' * gradient_output 
  *      weights += gradient_output * input'
@@ -489,8 +559,8 @@ nlk_layer_linear_forward(const nlk_Layer_Linear *layer, const nlk_Array *input)
  *         updated
  */
 void 
-nlk_layer_linear_backprop(nlk_Layer_Linear *layer, const nlk_Array *input, 
-                          const nlk_Array *grad_out)
+nlk_layer_linear_backprop(NLK_LAYER_LINEAR *layer, const NLK_ARRAY *input, 
+                          const NLK_ARRAY *grad_out)
 {
     /* gradient (at input)  */
     nlk_matrix_vector_multiply_add(layer->weights, NLK_NOTRANSPOSE, 
@@ -503,13 +573,13 @@ nlk_layer_linear_backprop(nlk_Layer_Linear *layer, const nlk_Array *input,
     }
 }
 
-/** @fn void nlk_layer_linear_free(nlk_Layer_Linear *layer)
+/** @fn void nlk_layer_linear_free(NLK_LAYER_LINEAR *layer)
  * Free Linear Layer memory 
  *
  * @param layer    the Linear Layer
  */
 void 
-nlk_layer_linear_free(nlk_Layer_Linear *layer)
+nlk_layer_linear_free(NLK_LAYER_LINEAR *layer)
 {
     nlk_array_free(layer->weights);
     if(layer->bias != NULL) {

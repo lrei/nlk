@@ -42,20 +42,18 @@
 #include "tinymt32.h"
 
 
-int __seed = -1;                /* current seed */
-
-/** @fn nlk_Array *nlk_array_create(const size_t rows, const size_t cols)
- * Create and allocate an nlk_Array
+/**
+ * Create and allocate an NLK_ARRAY
  *
  * @param rows      the number of rows
  * @param cols      the number of columns
  *
- * @return nlk_Array or NULL on error
+ * @return NLK_ARRAY or NULL on error
  */
-nlk_Array *
+NLK_ARRAY *
 nlk_array_create(const size_t rows, const size_t cols)
 {
-    nlk_Array *array;
+    NLK_ARRAY *array;
     int r;
 
     /* 0 dimensions are not allowed */
@@ -66,7 +64,7 @@ nlk_array_create(const size_t rows, const size_t cols)
     }
 
     /* allocate space for array struct */
-    array = (nlk_Array *) malloc(sizeof(nlk_Array));
+    array = (NLK_ARRAY *) malloc(sizeof(NLK_ARRAY));
     if(array == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for array struct", 
                        NLK_ENOMEM);
@@ -88,8 +86,7 @@ nlk_array_create(const size_t rows, const size_t cols)
     return array;
 }
 
-/** @fn nlk_Array *nlk_array_resize(nlk_Array *old, const size_t rows, 
- *                                  const size_t cols)
+/**
  * "Resizes" an array. In reality, creates a new array and copies the contents
  * of the old array. If creation fails returns NULL and the original array
  * remains intact. If creation succeeds the old array is freed and the pointer
@@ -106,13 +103,13 @@ nlk_array_create(const size_t rows, const size_t cols)
  * copied. If new size is larger, the new values are NOT initialized.
  * @endnote
  */
-nlk_Array *
-nlk_array_resize(nlk_Array *old, const size_t rows, const size_t cols)
+NLK_ARRAY *
+nlk_array_resize(NLK_ARRAY *old, const size_t rows, const size_t cols)
 {
     size_t row_limit;
     size_t col_limit;
 
-    nlk_Array *array = nlk_array_create(rows, cols);
+    NLK_ARRAY *array = nlk_array_create(rows, cols);
     if(array == NULL) {
         return NULL;
     }
@@ -140,17 +137,17 @@ nlk_array_resize(nlk_Array *old, const size_t rows, const size_t cols)
     return array;
 }
 
-/** @fn nlk_Array *nlk_array_create_copy(const nlk_Array *array)
+/**
  * Create a copy of an array.
  *
  * @param source    array to copy
  *
  * @return the copy
  */
-nlk_Array *
-nlk_array_create_copy(const nlk_Array *source)
+NLK_ARRAY *
+nlk_array_create_copy(const NLK_ARRAY *source)
 {
-    nlk_Array *dest = nlk_array_create(source->rows, source->cols);
+    NLK_ARRAY *dest = nlk_array_create(source->rows, source->cols);
     if(dest == NULL) {
         NLK_ERROR_NULL("failed to create empty array", NLK_FAILURE);
         /* unreachable */
@@ -162,8 +159,7 @@ nlk_array_create_copy(const nlk_Array *source)
 }
 
 
-/** @fn int nlk_array_copy_row(nlk_Array *dest, const size_t dest_row, 
- *                            const nlk_Array *source, size_t source_row)
+/**
  * Copies a row from a source array row to a destination array row
  *
  * @param dest          the destination array
@@ -180,31 +176,33 @@ nlk_array_create_copy(const nlk_Array *source)
  * will fail with NLK_EBADLEN.
  * @endnote
  */
-void
-nlk_array_copy_row(nlk_Array *dest, const size_t dest_row, const 
-                   nlk_Array *source, const size_t source_row)
+int
+nlk_array_copy_row(NLK_ARRAY *dest, const size_t dest_row, const 
+                   NLK_ARRAY *source, const size_t source_row)
 {
 #ifndef NCHECKS
     if(dest_row > dest->rows) {
-        NLK_ERROR_VOID("Destination row out of range", NLK_EINVAL);
+        NLK_ERROR("Destination row out of range", NLK_EINVAL);
         /* unreachable */
     }
     if(source_row > source->rows) {
-        NLK_ERROR_VOID("Source row out of range", NLK_EINVAL);
+        NLK_ERROR("Source row out of range", NLK_EINVAL);
         /* unreachable */
     }
     if(source->cols > dest->cols) {
-        NLK_ERROR_VOID("Destination array has a smaller number of columns "
-                       "than the source array", NLK_EBADLEN);
+        NLK_ERROR("Destination array has a smaller number of columns "
+                  "than the source array", NLK_EBADLEN);
         /* unreachable */
     }
 #endif
     
     cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
                 &dest->data[dest_row * dest->cols], 1);
+
+    return NLK_SUCCESS;
 }
 
-/** @fn int nlk_array_copy(nlk_Array *dest, const nlk_Array *source)
+/**
  * Copies an array from a source to a destination
  *
  * @param dest          the destination array
@@ -218,7 +216,7 @@ nlk_array_copy_row(nlk_Array *dest, const size_t dest_row, const
  */
 
 void
-nlk_array_copy(nlk_Array *dest, const nlk_Array *source)
+nlk_array_copy(NLK_ARRAY *dest, const NLK_ARRAY *source)
 {
     const size_t len = dest->rows * dest->cols;
 
@@ -238,18 +236,7 @@ nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
     cblas_scopy(length, source, 1, dest, 1);
 }
 
-/** @fn int nlk_get_seed()
- * Get the current seed for the random number generation 
- *
- * @return  the current seed
- */
-int
-nlk_get_seed()
-{
-    return __seed;
-}
-
-/** @fn uint32_t nlk_random_uint()
+/**
  * Returns a random unsigned 32bit integer
  *
  * @return a random unsigned 32bit integer
@@ -260,19 +247,30 @@ nlk_random_uint(tinymt32_t *rng)
     return tinymt32_generate_uint32(rng);
 }
 
-/** @fn nlk_array_init_wity_carray(nlk_Array *arr, const nlk_real *carr)
+/**
+ * Mikolov's random number generator function (16 bit unsigned int)
+ * @param next_random   I/O variable that contains (a pointer to) the previous 
+ *                      random number when the unction is called and the next 
+ *                      random number when the function returns
+ */
+void
+nlk_random_cheap(size_t *next_random) 
+{
+    *next_random = *next_random * (unsigned long long)25214903917 + 11;
+}
+
+/**
  * Initialize an array with the values from a C array
  */
 void 
-nlk_array_init_wity_carray(nlk_Array *arr, const nlk_real *carr)
+nlk_array_init_wity_carray(NLK_ARRAY *arr, const nlk_real *carr)
 {
     const size_t len = arr->rows * arr->cols;
     cblas_scopy(len, carr, 1, arr->data, 1);
 }
 
 
-/** @fn nlk_array_init_uniform(nlk_Array *array, const nlk_real low, 
- *                             const nlk_real high)
+/**
  * Initialize an array with numbers drawn from a uniform distribution in the 
  * [low, high) range.
  *
@@ -282,7 +280,7 @@ nlk_array_init_wity_carray(nlk_Array *arr, const nlk_real *carr)
  * @param rng       the random number generator
  */
 void 
-nlk_array_init_uniform(nlk_Array *array, const nlk_real low, 
+nlk_array_init_uniform(NLK_ARRAY *array, const nlk_real low, 
                        const nlk_real high, tinymt32_t *rng)
 {
     size_t ii;
@@ -294,8 +292,7 @@ nlk_array_init_uniform(nlk_Array *array, const nlk_real low,
     }
 }
 
-/** @fn nlk_array_init_uniform(nlk_real *carr, const nlk_real low, 
- *                             const nlk_real high, size_t length)
+/**
  * Initialize a C array with numbers drawn from a uniform distribution in the 
  * [low, high) range.
  *
@@ -320,7 +317,7 @@ nlk_carray_init_uniform(nlk_real *carr, const nlk_real low,
 
 
 
-/** @fn void nlk_zero(nlk_Array *array)
+/**
  * Initialize an array with 0s
  *
  * @param array     the nlk_array to initialize
@@ -328,12 +325,12 @@ nlk_carray_init_uniform(nlk_real *carr, const nlk_real low,
  * @return no return (void); array data is zeroed.
  */
 void
-nlk_array_zero(nlk_Array *array)
+nlk_array_zero(NLK_ARRAY *array)
 {
     memset(array->data, 0, array->rows * array->cols * sizeof(nlk_real));
 }
 
-/** @fn
+/**
  * Elementwise comparison between the values of an array and a C array
  *
  * @param arr       the array
@@ -343,12 +340,23 @@ nlk_array_zero(nlk_Array *array)
  * @return true if forall ii, abs(arr[ii] - carr[ii]) < tolerance, else false 
  */
 bool
-nlk_array_compare_carray(nlk_Array *arr, nlk_real *carr, nlk_real tolerance)
+nlk_array_compare_carray(NLK_ARRAY *arr, nlk_real *carr, nlk_real tolerance)
 {
     const size_t len = arr->rows * arr->cols;
     return nlk_carray_compare_carray(arr->data, carr, len, tolerance);
 
 }
+
+/**
+ * Elementwise comparison between the values of two C arrays
+ *
+ * @param carr1     a C array
+ * @param carr2     another C array
+ * @param tolerance the tolerance of the comparison for each value
+ *
+ * @return  true if forall ii, abs(carr1[ii] - carr2[ii]) < tolerance,
+ *          else false
+ */
 bool
 nlk_carray_compare_carray(nlk_real *carr1, nlk_real *carr2, size_t len,
                           nlk_real tolerance)
@@ -361,12 +369,15 @@ nlk_carray_compare_carray(nlk_real *carr1, nlk_real *carr2, size_t len,
     return true;
 }
 
-/** @fn void nlk_print_array(const nlk_Array *array, const size_t row_limit, 
- *                           const size_t col_limit)
- *  Print an array
+/**
+ *  Print an array (via printf)
+ *
+ *  @param array        the array to print
+ *  @param row_limit    the maximum number of rows to print
+ *  @param col_limit    the maximum number of columns to print
  */
 void
-nlk_print_array(const nlk_Array *array, const size_t row_limit, 
+nlk_print_array(const NLK_ARRAY *array, const size_t row_limit, 
                 const size_t col_limit)
 {
     size_t rr;
@@ -403,14 +414,91 @@ nlk_print_array(const nlk_Array *array, const size_t row_limit,
     }
 }
 
-/* nlk_array_free - free array */
-void nlk_array_free(nlk_Array *array)
+/**
+ *  Save an array to a file pointer
+ *
+ *  @param array        the array to save
+ *  @param fp           the file pointer
+ */
+void
+nlk_array_save(NLK_ARRAY *array, FILE *fp)
 {
-    free(array->data);
-    free(array);
+    const size_t len = array->cols * array->rows;
+
+    /* write header */
+    fprintf(fp, "%zu %zu\n", array->rows, array->cols);
+
+    /* write data */
+    fwrite(array->data, sizeof(nlk_real), len, fp);
 }
 
-/** @fn void nlk_array_scale(const nlk_real scalar, nlk_Array *array)
+/**
+ *  Load an array from a file pointer
+ *
+ *  @param fp           the file pointer
+ *
+ *  @return the array or NULL
+ */
+NLK_ARRAY *
+nlk_array_load(FILE *fp)
+{
+    size_t rows;
+    size_t cols;
+    size_t ret;
+    size_t len;
+    NLK_ARRAY *array;
+
+    /* read header */
+    ret = fscanf(fp, "%zu", &rows);
+    if(ret <= 0) {
+        goto nlk_array_load_err;
+    }
+    ret = fscanf(fp, "%zu", &cols);
+    if(ret <= 0) {
+        goto nlk_array_load_err;
+    }
+    ret = fgetc(fp); /* the newline */
+    if(ret <= 0) {
+        goto nlk_array_load_err;
+    }
+
+    array = nlk_array_create(rows, cols);
+    len = array->cols * array->rows;
+
+    /* read data */
+    ret = fread(array->data, sizeof(nlk_real), len, fp);
+    if(ret != len) {
+        NLK_ERROR_NULL("read length does not match expected length",
+                       NLK_FAILURE);
+        /* unreachable */
+    }
+
+    return array;
+
+    /* generic header error */
+nlk_array_load_err:
+    NLK_ERROR_NULL("unable to read header information", NLK_FAILURE);
+}
+
+
+/**
+ * Free the memory of an array 
+ *
+ * @param array the array to free
+ */
+void 
+nlk_array_free(NLK_ARRAY *array)
+{
+    if(array != NULL) {
+        free(array->data);
+        free(array);
+        array = NULL;
+    } else {
+        NLK_ERROR_VOID("Double free attempt", NLK_FAILURE);
+    }
+}
+
+/**
  * Scale an array by *scalar*
  *
  * @param scalar    the scalar
@@ -419,14 +507,14 @@ void nlk_array_free(nlk_Array *array)
  * @return no return (void), array is overwritten
  */
 void
-nlk_array_scale(const nlk_real scalar, nlk_Array *array)
+nlk_array_scale(const nlk_real scalar, NLK_ARRAY *array)
 {
     size_t len = array->rows * array->cols;
 
     cblas_sscal(len, scalar, array->data, 1);
 }
 
-/** @fn void nlk_array_normalize_row_vectors(nlk_Array *m)
+/**
  * Normalizes the row vectors of a matrix
  *
  * @param m     the matrix
@@ -434,7 +522,7 @@ nlk_array_scale(const nlk_real scalar, nlk_Array *array)
  * @return no return, matrix is overwritten
  */
 void
-nlk_array_normalize_row_vectors(nlk_Array *m)
+nlk_array_normalize_row_vectors(NLK_ARRAY *m)
 {
     size_t row;
     nlk_real len;
@@ -445,7 +533,7 @@ nlk_array_normalize_row_vectors(nlk_Array *m)
     }
 }
 
-/** @fn void nlk_array_normalize_vectors(nlk_Array *v)
+/**
  * Normalizes a vector
  *
  * @param v     the vector
@@ -453,15 +541,14 @@ nlk_array_normalize_row_vectors(nlk_Array *m)
  * @return no return, vector is overwritten
  */
 void
-nlk_array_normalize_vector(nlk_Array *v)
+nlk_array_normalize_vector(NLK_ARRAY *v)
 {
-    nlk_real len;
+    const nlk_real len = cblas_snrm2(v->rows, v->data, 1);
 
-    len = cblas_snrm2(v->rows, v->data, 1);
     cblas_sscal(v->rows, 1.0/len, v->data, 1); 
 }
 
-/** @fn nlk_real nlk_dot(nlk_Array *v1, nlk_Array *v2) 
+/**
  * Compute the dot product of two vectors
  *
  * @param v1    the first vector
@@ -469,7 +556,7 @@ nlk_array_normalize_vector(nlk_Array *v)
  * @param dim   0 (for row vectors) or 1 (for column vectors)
  */
 nlk_real
-nlk_array_dot(const nlk_Array *v1, nlk_Array *v2, uint8_t dim)
+nlk_array_dot(const NLK_ARRAY *v1, NLK_ARRAY *v2, uint8_t dim)
 {
 #ifndef NCHECKS
     if(dim == 0 && v1->rows != v2->rows) {
@@ -492,11 +579,18 @@ nlk_array_dot(const nlk_Array *v1, nlk_Array *v2, uint8_t dim)
     }
 }
 
-/** @fn nlk_real nlk_dot(nlk_Array *m1, size_t row1, nlk_Array *m2, row2) 
+/**
  * Compute the dot product of rows of a different matrices
+ *
+ * @param m1    a matrix
+ * @param row1  the row of m1 to use
+ * @param m2    another matrix
+ * @param row2  the row of m2 to use
+ *
+ * @return the dot product of the matrix rows
  */
 nlk_real
-nlk_array_row_dot(const nlk_Array *m1, size_t row1, nlk_Array *m2, size_t row2)
+nlk_array_row_dot(const NLK_ARRAY *m1, size_t row1, NLK_ARRAY *m2, size_t row2)
 {
 #ifndef NCHECKS
     if(m1->cols != m2->cols) {
@@ -508,26 +602,29 @@ nlk_array_row_dot(const nlk_Array *m1, size_t row1, nlk_Array *m2, size_t row2)
                       &m2->data[row2 * m2->cols], 1);
 }
 
-/** @fn nlk_real nlk_dot_array_carray(nlk_Array *v1, nlk_real *carr) 
+/**
  * Compute the dot product a vector array and a c array
+ * 
+ * @param v1    an array
+ * @param carr  a C array
+ *
+ * @return the dot product
  */
 nlk_real
-nlk_array_dot_carray(const nlk_Array *v1, nlk_real *carr)
+nlk_array_dot_carray(const NLK_ARRAY *v1, nlk_real *carr)
 {
     return cblas_sdot(v1->rows, v1->data, 1, carr, 1);
 }
 
-/** @fn void nlk_array_add(const nlk_Array *a1, nlk_Array *a2)
+/**
  * Array (vector, matrix) element-wise addition
  * 
  * @param a1    array
  * @param a2    array, will be overwritten with the result
  */
 void
-nlk_array_add(const nlk_Array *a1, nlk_Array *a2)
+nlk_array_add(const NLK_ARRAY *a1, NLK_ARRAY *a2)
 {
-    const size_t len = a1->rows * a1->cols;
-    
 #ifndef NCHECKS
     if(a1->cols != a2->cols || a1->rows != a2->rows) {
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
@@ -535,10 +632,10 @@ nlk_array_add(const nlk_Array *a1, nlk_Array *a2)
     }
 #endif
 
-    cblas_saxpy(len, 1, a1->data, 1, a2->data, 1); 
+    cblas_saxpy(a1->rows * a1->cols, 1, a1->data, 1, a2->data, 1); 
 }
 
-/** @fn void nlk_vector_add_row(const nlk_Array *v, nlk_Array *m, size_t row)
+/**
  * Adds a row vector to a matrix row
  * 
  * @param v     a column vector
@@ -546,7 +643,7 @@ nlk_array_add(const nlk_Array *a1, nlk_Array *a2)
  * @param row   the matrix row, overwritten with the result
  */
 void
-nlk_vector_add_row(const nlk_Array *v, nlk_Array *m, size_t row)
+nlk_vector_add_row(const NLK_ARRAY *v, NLK_ARRAY *m, size_t row)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -563,7 +660,7 @@ nlk_vector_add_row(const nlk_Array *v, nlk_Array *m, size_t row)
     cblas_saxpy(m->cols, 1, v->data, 1, &m->data[row * m->cols], 1); 
 }
 
-/** @fn int nlk_row_add_vector(const nlk_Array *m, nlk_Array *v, size_t row)
+/**
  * Adds a matrix row to a vector
  * 
  * @param m     a matrix
@@ -571,7 +668,7 @@ nlk_vector_add_row(const nlk_Array *v, nlk_Array *m, size_t row)
  * @param row   the matrix row
  */
 void
-nlk_row_add_vector(const nlk_Array *m, size_t row, nlk_Array *v)
+nlk_row_add_vector(const NLK_ARRAY *m, size_t row, NLK_ARRAY *v)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -588,7 +685,7 @@ nlk_row_add_vector(const nlk_Array *m, size_t row, nlk_Array *v)
     cblas_saxpy(m->cols, 1, &m->data[row * m->cols], 1, v->data, 1); 
 }
 
-/** @fn void nlk_array_add_carray(const nlk_Array *arr, nlk_real *carr)
+/**
  * Array element-wise addition addition with a C array
  * 
  * @param arr       array
@@ -597,21 +694,19 @@ nlk_row_add_vector(const nlk_Array *m, size_t row, nlk_Array *v)
  * @return no return, overwittes carray
  */
 void
-nlk_array_add_carray(const nlk_Array *arr, nlk_real *carr)
+nlk_array_add_carray(const NLK_ARRAY *arr, nlk_real *carr)
 {
     cblas_saxpy(arr->rows * arr->cols, 1, arr->data, 1, carr, 1); 
 }
 
-/** @fn void nlk_array_mul(const nlk_Array *a1, nlk_Array *a2)
+/**
  *  Elementwise array multiplication (NON-PARALLEL)
  *
  *  @param a1   first array
  *  @param a2   second array (overwritten)
- *
- *  @return NLK_EBADLEN or NLK_SUCCESS, a2 is overwritten
  */
 void
-nlk_array_mul(const nlk_Array *a1, nlk_Array *a2)
+nlk_array_mul(const NLK_ARRAY *a1, NLK_ARRAY *a2)
 {
     const size_t len = a1->rows * a1->cols;
     
@@ -628,7 +723,7 @@ nlk_array_mul(const nlk_Array *a1, nlk_Array *a2)
     }
 
 }
-/** @fn nlk_real nlk_array_abs_sum(const nlk_Array *arr)
+/**
  * Sum of absolute array values (?asum)
  *
  * @param arr the array
@@ -636,19 +731,25 @@ nlk_array_mul(const nlk_Array *a1, nlk_Array *a2)
  * @return the sum of absolute array values
  */
 nlk_real
-nlk_array_abs_sum(const nlk_Array *arr)
+nlk_array_abs_sum(const NLK_ARRAY *arr)
 {
-    const size_t len = arr->rows * arr->cols;
-    return cblas_sasum(len, arr->data, 1);
+    return cblas_sasum(arr->rows * arr->cols, arr->data, 1);
 }
 
+/**
+ * Sum of absolute C array values (?asum)
+ *
+ * @param arr the array
+ *
+ * @return the sum of absolute array values
+ */
 nlk_real
 nlk_carray_abs_sum(const nlk_real *carr, size_t length)
 {
     return cblas_sasum(length, carr, 1);
 }
 
-/** @fn size_t nlk_array_non_zero(const nlk_Array *arr)
+/**
  * Count the number of non-zero elements in the array
  *
  * @param arr the array
@@ -656,7 +757,7 @@ nlk_carray_abs_sum(const nlk_real *carr, size_t length)
  * @return number of non-zero elements in the array
  */
 size_t
-nlk_array_non_zero(const nlk_Array *arr)
+nlk_array_non_zero(const NLK_ARRAY *arr)
 {
     size_t ii = 0;
     size_t non_zero = 0;
@@ -670,8 +771,7 @@ nlk_array_non_zero(const nlk_Array *arr)
     return non_zero;
 }
 
-/** @fn void nlk_add_scaled_vectors(const nlk_real s, const nlk_Array *v1,
- *                                 nlk_Array *v2)
+/**
  * Scaled Vector addition (?axpy): a2  = s * a1 + a2
  * 
  * @param s     the scalar
@@ -681,7 +781,7 @@ nlk_array_non_zero(const nlk_Array *arr)
  * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes a2.
  */
 void
-nlk_add_scaled_vectors(const nlk_real s, const nlk_Array *v1, nlk_Array *v2)
+nlk_add_scaled_vectors(const nlk_real s, const NLK_ARRAY *v1, NLK_ARRAY *v2)
 {
     
 #ifndef NCHECKS
@@ -698,9 +798,7 @@ nlk_add_scaled_vectors(const nlk_real s, const nlk_Array *v1, nlk_Array *v2)
     cblas_saxpy(v1->rows, s, v1->data, 1, v2->data, 1);
 }
 
-/* void nlk_vector_transposed_multiply_add(const nlk_Array *v1, 
- *                                         const nlk_Array *v2, 
- *                                         nlk_Array *m)
+/**
  * Multiplies vector a1 by the transpose of vector a2, then adds matrix a3. 
  * m = v1 * v2' + m (?ger)
  *                                  
@@ -710,8 +808,8 @@ nlk_add_scaled_vectors(const nlk_real s, const nlk_Array *v1, nlk_Array *v2)
  *
  */
 void
-nlk_vector_transposed_multiply_add(const nlk_Array *v1, const nlk_Array *v2, 
-                                   nlk_Array *m)
+nlk_vector_transposed_multiply_add(const NLK_ARRAY *v1, const NLK_ARRAY *v2, 
+                                   NLK_ARRAY *m)
 {
 #ifndef NCHECKS
     if(v1->rows != m->rows) {
@@ -730,7 +828,7 @@ nlk_vector_transposed_multiply_add(const nlk_Array *v1, const nlk_Array *v2,
                 1, v2->data, 1, m->data, m->cols);
 }
 
-/* nlk_matrix_vector_multiply_add
+/**
  * Multiplies a matrix by a vector 
  * v2 = m * v1 + v2 or v2 = m' * v1 + v2
  *
@@ -742,8 +840,8 @@ nlk_vector_transposed_multiply_add(const nlk_Array *v1, const nlk_Array *v2,
  *
  */
 void 
-nlk_matrix_vector_multiply_add(const nlk_Array *m, const NLK_OPTS trans, 
-                               const nlk_Array *v1, nlk_Array *v2)
+nlk_matrix_vector_multiply_add(const NLK_ARRAY *m, const NLK_OPTS trans, 
+                               const NLK_ARRAY *v1, NLK_ARRAY *v2)
 {
 #ifndef NCHECKS
      /* First we need to make sure all dimensions make sense */
@@ -772,7 +870,7 @@ nlk_matrix_vector_multiply_add(const nlk_Array *m, const NLK_OPTS trans,
                 v1->data, 1, 1, v2->data, 1); 
 }
 
-/** @fn void nlk_init_sigmoid(nlk_Array *array, const uint8_t max_exp)
+/**
 * Initialize an array with the values of the sigmoid between 
 * [-max_exp, max_exp] split evenly into the number of elements in the array.
 *
@@ -787,7 +885,7 @@ nlk_matrix_vector_multiply_add(const nlk_Array *m, const NLK_OPTS trans,
 * @endnote
 */
 void
-nlk_array_init_sigmoid(nlk_Array *array, const uint8_t max_exp) {
+nlk_array_init_sigmoid(NLK_ARRAY *array, const uint8_t max_exp) {
     size_t size = array->rows * array->cols;
 
     /* this splits the range [sigma(-max), sigma(max)] into *size* pieces */
@@ -799,7 +897,7 @@ nlk_array_init_sigmoid(nlk_Array *array, const uint8_t max_exp) {
 }
 
 
-/** @fn nlk_Table *nlk_table_sigmoid_create(size_t size, uint8_t max_exp)
+/**
  * Create a sigmoid table for computing 1/(exp(-x) + 1)
  * 
  * @param size      table size
@@ -812,14 +910,13 @@ nlk_array_init_sigmoid(nlk_Array *array, const uint8_t max_exp) {
  * Another trick (not used) is Leon Bottou approx exp(-x) in Torch7
  * @endnote
  */
-nlk_Table *
+NLK_TABLE *
 nlk_table_sigmoid_create(const size_t table_size, const nlk_real max_exp)
 {
-    nlk_Table *table;
-    size_t ii;
+    NLK_TABLE *table;
 
     /* allocate structure */
-    table = (nlk_Table *) malloc(sizeof(nlk_Table));
+    table = (NLK_TABLE *) malloc(sizeof(NLK_TABLE));
     if(table == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for table struct",
                        NLK_ENOMEM);
@@ -843,7 +940,7 @@ nlk_table_sigmoid_create(const size_t table_size, const nlk_real max_exp)
     return table;
 }
 
-/** @fn nlk_Table_Index *nlk_table_index_create(size_t table_size, size_t max)
+/**
  * Index table creation (positive integers).
  *
  * @param table_size    the table size
@@ -851,12 +948,12 @@ nlk_table_sigmoid_create(const size_t table_size, const nlk_real max_exp)
  *
  * @return the table
  */
-nlk_Table_Index *nlk_table_index_create(size_t table_size, size_t max)
+NLK_TABLE_INDEX *nlk_table_index_create(size_t table_size, size_t max)
 {
-    nlk_Table_Index *table;
+    NLK_TABLE_INDEX *table;
 
     /* allocate structure */
-    table = (nlk_Table_Index *) malloc(sizeof(nlk_Table));
+    table = (NLK_TABLE_INDEX *) malloc(sizeof(NLK_TABLE));
     if(table == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for table struct",
                        NLK_ENOMEM);
@@ -878,34 +975,37 @@ nlk_Table_Index *nlk_table_index_create(size_t table_size, size_t max)
 }
 
 
-/** @fn nlk_table_free(nlk_Table *table)
+/**
  * Free a table.
  *
  * @param table the table to free
  */
 void
-nlk_table_free(nlk_Table *table)
+nlk_table_free(NLK_TABLE *table)
 {
-    nlk_array_free(table->table);
-    free(table);
-    table = NULL;
+    if(table != NULL) {
+        nlk_array_free(table->table);
+        free(table);
+        table = NULL;
+    }
 }
 
-/** @fn nlk_table_index_free(nlk_Table_Index *table)
+/**
  * Free an index table.
  *
  * @param table the table to free
  */
 void
-nlk_table_index_free(nlk_Table_Index *table)
+nlk_table_index_free(NLK_TABLE_INDEX *table)
 {
-    free(table->table);
-    free(table);
-    table = NULL;
+    if(table != NULL) {
+        free(table->table);
+        free(table);
+        table = NULL;
+    }
 }
 
-/** @fn nlk_real nlk_sigmoid_table(const nlk_Table *sigmoid_table, 
- *                                 const nlk_real x) 
+/**
  * Calculates the sigmoid 1/(exp(-x) + 1) for a real valued x.
  * 
  * @param sigmoid_table     a precomputed sigmoid table
@@ -914,7 +1014,7 @@ nlk_table_index_free(nlk_Table_Index *table)
  * @return the sigmoid of x
  */
 nlk_real
-nlk_sigmoid_table(const nlk_Table *sigmoid_table, const double x) 
+nlk_sigmoid_table(const NLK_TABLE *sigmoid_table, const double x) 
 {
     int idx;
 
@@ -934,8 +1034,7 @@ nlk_sigmoid_table(const nlk_Table *sigmoid_table, const double x)
     return sigmoid_table->table->data[idx];
 }
 
-/** @fn nlk_array_sigmoid_table(const nlk_Table *sigmoid_table, 
- *                              const nlk_Array *input, nlk_Array *output)
+/**
  * Calculates the elemtwise sigmoid for an entire array
  *
  * @param sigmoid_table     a precomputed sigmoid table
@@ -944,7 +1043,7 @@ nlk_sigmoid_table(const nlk_Table *sigmoid_table, const double x)
  * @return NLK_SUCCESS or NLK_E* on error
  */
 int
-nlk_array_sigmoid_table(const nlk_Table *sigmoid_table, nlk_Array *arr)
+nlk_array_sigmoid_table(const NLK_TABLE *sigmoid_table, NLK_ARRAY *arr)
 {
     const size_t len = arr->rows * arr->cols;
 
@@ -968,20 +1067,18 @@ nlk_array_sigmoid_table(const nlk_Table *sigmoid_table, nlk_Array *arr)
     return NLK_SUCCESS;
 }
 
-/** @fn nlk_array_log(const nlk_Array *input, nlk_Array *output)
+/**
  * Calculates the elemtwise logarithm for an entire array
  *
  * @param input             the input array
  * @param output            the output array (overwritten with the result)
- *
- * @return NLK_SUCCESS or NLK_E* on error
  *
  * @note
  * Not parallel.
  * @endnote
  */
 void
-nlk_array_log(const nlk_Array *input, nlk_Array *output)
+nlk_array_log(const NLK_ARRAY *input, NLK_ARRAY *output)
 {
     const size_t len = input->rows * input->cols;
 
@@ -996,55 +1093,5 @@ nlk_array_log(const nlk_Array *input, nlk_Array *output)
     for(size_t ii = 0; ii < len; ii++) {
         output->data[ii] = log(input->data[ii]);
     }
-
-}
-
-/** @fn nlk_exp_minus
- * Calculates exp(-x) via Leon Bottou's/Torch7 approximate function or
- * standard exp(-x) function if EXACT_EXPONENTIAL was defined.
- * @note
- * x should be positive.
- * @endnote
- */
-nlk_real nlk_exp_minus(nlk_real x)
-{
-#define EXACT_EXPONENTIAL 0
-#if EXACT_EXPONENTIAL
-    return exp(-x);
-#else
- /* fast approximation of exp(-x) for x positive */
-#define A0 (1.0)
-#define A1 (0.125)
-#define A2 (0.0078125)
-#define A3 (0.00032552083)
-#define A4 (1.0172526e-5)
-    double y;
-    if (x < 13.0) {
-        y = A0+x*(A1+x*(A2+x*(A3+x*A4)));
-        y *= y;
-        y *= y;
-        y *= y;
-        y = 1/y;
-        return (nlk_real) y;
-    } 
-    return 0;
-#undef A0
-#undef A1
-#undef A2
-#undef A3
-#undef A4
-#endif
-}
-
-void 
-nlk_array_sigmoid_approx(nlk_Array *arr)
-{
-    const size_t len = arr->rows * arr->cols;
-
-#pragma omp parallel for
-    for(size_t ii = 0; ii < len; ii++) {
-        arr->data[ii] = 1.0 / 1.0 + nlk_exp_minus(arr->data[ii]);
-    }
-
 
 }

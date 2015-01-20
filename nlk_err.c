@@ -125,7 +125,6 @@ __nlk_nop_handler(const char *reason, const char *file, int line, int nlk_errno)
 
 /* 
  * nlk_set_error_handler_off - disable error handling
- *  If errors can't happen, no reason to do error handling...
  *  This is different from *nlk_set_error_handler(NULL)*
  *
  * Returns:

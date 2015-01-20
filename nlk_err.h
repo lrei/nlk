@@ -74,10 +74,6 @@ void nlk_error(const char * reason, const char *file, int line, int nlk_errno);
 /* Set a new error handler */
 nlk_error_handler_t *nlk_set_error_handler(nlk_error_handler_t *new_handler);
 
-/* Do-Nothing (no op) error handler: used by *nlk_set_error_handler_off()* */
-static void __nlk_nop_handler(const char *reason, const char *file, int line, 
-                              int nlk_errno);
-
 /* Disable error handling */
 nlk_error_handler_t *nlk_set_error_handler_off(void);
 
@@ -113,7 +109,7 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
     abort();
 
 /*
- * OMP DEFS
+ * OMP DEFS FOR DEBUG
  */
 #ifdef DEBUG
     #define omp_get_thread_num() 0

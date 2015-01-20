@@ -34,6 +34,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
 
 #undef __BEGIN_DECLS
@@ -47,16 +48,9 @@
 #endif
 __BEGIN_DECLS
 
-
-extern bool __nlk_tic_ticking;
-extern clock_t __nlk_tic_start;
-extern clock_t __nlk_tic_end;
-extern double __nlk_tic_total;
-extern time_t __nlk_time_start;
-
-
+void nlk_get_monotonic_time(struct timespec *);
+double nlk_get_elapsed_time(struct timespec *, struct timespec *);
 void nlk_tic(char *, bool);
-void nlk_toc(char *, bool);
 void nlk_tic_reset();
 
 

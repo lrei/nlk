@@ -33,6 +33,7 @@
 #include "tinymt32.h"
 
 #include "nlk_err.h"
+#include "nlk_array.h"
 #include "nlk_vocabulary.h"
 #include "nlk_array.h"
 #include "nlk_window.h"
@@ -82,7 +83,7 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
     size_t random_window;
     size_t before = _before;
     size_t after = _after;
-    uint32_t r;
+    size_t r = tinymt32_generate_uint32(rng);
 
     /* 
      * The position in the contexts (context_idx) will only be different from
@@ -102,18 +103,18 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
         /* random window */
         if(random_windows && _before == _after) {
             /* if after == before, keep it that way (word2vec style) */
-            r = tinymt32_generate_uint32(rng);
+            nlk_random_cheap(&r);
             random_window = (r % _before) + 1;
             before = random_window;
             after = random_window;
         } else if(random_windows) {
             if(_before > 0) {
-                r = tinymt32_generate_uint32(rng);
+                nlk_random_cheap(&r);
                 random_window = (r % _before) + 1;
                 before = random_window;
             }
             if(_after > 0) {
-                r = tinymt32_generate_uint32(rng);
+                nlk_random_cheap(&r);
                 random_window = (r % _after) + 1;
                 after = random_window;
             }
@@ -157,7 +158,7 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
             contexts[context_idx]->window[0] = vocab_par;
             window_idx = 1;
 
-            for(window_pos; window_pos < window_end; window_pos++) {
+            for(; window_pos < window_end; window_pos++) {
                 if(window_pos == line_pos) {
                     continue; /* skip the "target" */
                 }
@@ -173,7 +174,7 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
             contexts[context_idx]->size = window_end - window_pos - 1;
             window_idx = 0;
 
-            for(window_pos; window_pos < window_end; window_pos++) {
+            for(; window_pos < window_end; window_pos++) {
                 if(window_pos == line_pos) {
                     contexts[context_idx]->center = varray[window_pos];
                     continue;
