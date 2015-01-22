@@ -58,7 +58,7 @@ struct nlk_context {
 typedef struct nlk_context nlk_Context;
 
 size_t nlk_context_window(nlk_Vocab **, const size_t, const bool, const size_t,
-                          const size_t, const bool, tinymt32_t *,
+                          const size_t, const bool,
                           nlk_Vocab *,  bool, nlk_Context **);
 nlk_Context *nlk_context_create(size_t); 
 void nlk_context_free(nlk_Context *);

@@ -40,8 +40,7 @@
 #include "nlk_eval.h"
 
 
-/** @fn bool __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, 
- *                                    char *line, nlk_Analogy_Test *test)
+/** 
  * Parses a line of a word relation test set
  *
  * @param vocab         the vocabulary
@@ -100,10 +99,7 @@ __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line,
     return true;
 }
 
-/** @fn nlk_Analogy_Test *__nlk_read_analogy_test_file(const char *filepath, 
- *                                                     nlk_Vocab **vocab,
-                                                       const bool lower_words, 
-                                                       size_t *total_tests)
+/** 
  * Read/Parse a word analogy test file
  *
  * @param filepath      file path of the test file
@@ -178,10 +174,7 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
 }
 
 
-/** @fn int nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
-                                  const NLK_ARRAY *weights, const size_t limit, 
-                                  const bool randomize, const bool lower_words, 
-                                  nlk_real *accuracy)
+/**
  * Uses a word relation test set to evaluate the quality of word vectors.
  *
  * The test is described in

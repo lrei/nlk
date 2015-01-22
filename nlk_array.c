@@ -39,7 +39,6 @@
 
 #include "nlk_err.h"
 #include "nlk_array.h"
-#include "tinymt32.h"
 
 
 /**
@@ -234,29 +233,6 @@ void
 nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
 {
     cblas_scopy(length, source, 1, dest, 1);
-}
-
-/**
- * Returns a random unsigned 32bit integer
- *
- * @return a random unsigned 32bit integer
- */
-uint32_t
-nlk_random_uint(tinymt32_t *rng)
-{
-    return tinymt32_generate_uint32(rng);
-}
-
-/**
- * Mikolov's random number generator function (16 bit unsigned int)
- * @param next_random   I/O variable that contains (a pointer to) the previous 
- *                      random number when the unction is called and the next 
- *                      random number when the function returns
- */
-void
-nlk_random_cheap(size_t *next_random) 
-{
-    *next_random = *next_random * (unsigned long long)25214903917 + 11;
 }
 
 /**

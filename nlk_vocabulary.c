@@ -140,8 +140,8 @@ nlk_vocab_init()
 
 static int
 nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
-                     const size_t max_word_size, const size_t max_line_size, 
-                     const bool lower_words) 
+                   const size_t max_word_size, const size_t max_line_size, 
+                   const bool lower_words, const bool verbose) 
 {
     /** @section Shared Initializations
      */
@@ -263,8 +263,7 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
                 count_actual += file_pos - file_pos_last;
                 file_pos_last = file_pos;
                 
-                int verbose = 1;
-                if(verbose > 0) {
+                if(verbose) {
                     nlk_vocab_display_progress(count_actual, total, start);
                 }
             }
@@ -406,7 +405,7 @@ nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
 
 }
 
-/** @fn nlk_Vocab *nlk_vocab_create(char *filename, const size_t max_word_size)
+/**
  * Build a vocabulary from a file
  *
  * @param filepath        the path of the file to read from
@@ -415,6 +414,7 @@ nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
  *                        a null terminator. If not zero, lines will be read
  *                        as vobabulary items
  * @param lower_words     convert characters to lowercase
+ * @param verbose         display progress
  *
  * @return a pointer to the first item in the vocabulary use &vocab to pass it
  *         to other functions (it acts as a pointer to the entire vocabulary)
@@ -428,12 +428,13 @@ nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
  */
 nlk_Vocab *
 nlk_vocab_create(char *filepath, const size_t max_word_size, 
-                 const size_t max_line_size, const bool lower_words) {
+                 const size_t max_line_size, const bool lower_words,
+                 const bool verbose) {
 
     nlk_Vocab *vocab = nlk_vocab_init();
     
     nlk_vocab_read_add(&vocab, filepath, max_word_size, max_line_size, 
-                         lower_words);
+                         lower_words, verbose);
     
     return vocab;
 }
@@ -449,7 +450,7 @@ nlk_vocab_extend(nlk_Vocab **vocab, char *filepath, const size_t max_word_size,
                  const size_t max_line_size, const bool lower_words) {
 
     nlk_vocab_read_add(vocab, filepath, max_word_size, max_line_size,
-                       lower_words);
+                       lower_words, false);
 }
 
 /** @fn void nlk_vocab_free(nlk_Vocab *vocab)
@@ -1058,13 +1059,7 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
     return vec_idx + 1; /* +1: we return a count not the zero-based index */
 }
 
-/* @fn size_t nlk_vocab_vocabularize(nlk_Vocab **vocab, 
- *                                   char **paragraph,
- *                                   float subsample,
- *                                   nlk_Table *rand_pool,
- *                                   bool replace_missing,
- *                                   nlk_Vocab *replacement,
- *                                   nlk_Vocab **array)
+/**
  * "Vocabularizes" a series of words: for each word, the output vector will 
  * contain a pointer to the vocabulary item of that word.
  *
@@ -1228,22 +1223,47 @@ nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
     printf("\n");
 }
 
-nlk_Vocab *
-nlk_vocab_next_word(nlk_Vocab **vocab, nlk_Vocab *vi)
+/**
+ * Save a NEG table to disk, used for debug purposes
+ */
+void
+nlk_vocab_neg_table_save(nlk_Vocab **vocab, size_t *neg_table, size_t size, 
+                         char *filepath)
 {
-    if(vi == NULL) {
-        vi = *vocab;
+    FILE *fp;
+    size_t target;
+    size_t ii;
+    size_t count;
+    nlk_Vocab *word;
+
+
+    fp = fopen(filepath, "w");
+    if(fp == NULL) {
+        NLK_ERROR_VOID("unable to open neg table file", NLK_FAILURE);
+        /* unreachable */
     }
 
-    /* next vocab item */
-    vi = vi->hh.next;
+    ii = 0;
+    target = neg_table[ii];
+    word = nlk_vocab_at_index(vocab, target);
+    count = 0;
 
-    /* go to last word */
-    while(vi == NULL || vi->type == NLK_VOCAB_PAR) {
-        vi = vi->hh.prev;
+    while(ii < size) {
+        if(target != neg_table[ii]) {
+            fprintf(fp, "%s\t%zu\n", word->word, count);
+            target = neg_table[ii];
+            word = nlk_vocab_at_index(vocab, target);
+            count = 1;
+        } else {
+            count++;
+        }
+
+        ii++;
     }
+    fprintf(fp, "%s\t%zu\n", word->word, count);
 
-    return vi;
+
+    fclose(fp);
 }
 
 /**
@@ -1257,22 +1277,22 @@ size_t *
 nlk_vocab_neg_table_create(nlk_Vocab **vocab, const size_t size, double power)
 {
     nlk_Vocab *vi;
-    double z = 0;
-    size_t tpos = 0;
+    size_t z = 0;
+    size_t table_pos = 0;
     size_t index = 0;
     double d1 = 0;
 
+    /* allocate */
+    if(size == 0) {
+        NLK_ERROR_NULL("attempt at allocation with 0 size", NLK_EINVAL);
+    }
     size_t *neg_table = (size_t *) malloc(size * sizeof(size_t));
     if(neg_table == NULL) {
         NLK_ERROR_NULL("unable to allocate memory for NEG table", NLK_ENOMEM);
         /* unreachable */
     }
     
-    /* use the default power, a magical magic number */
-    if(power == 0) {
-        power = 0.75;
-    }
-
+    /* calculate "z" */
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
         if(vi->type == NLK_VOCAB_PAR) {
             continue;
@@ -1283,18 +1303,21 @@ nlk_vocab_neg_table_create(nlk_Vocab **vocab, const size_t size, double power)
     /* initialize table */
     vi = *vocab;
     index = vi->index;
-    d1 = pow(vi->count, power) / z;
+    d1 = pow(vi->count, power) / (double) z;
 
-    while(tpos < size) {
-        neg_table[tpos] = index;
+    for(table_pos = 0; table_pos < size; table_pos++) {
+        neg_table[table_pos] = index;
 
-        if(index / (float)size > d1) {
-            vi = nlk_vocab_next_word(vocab, vi);
-            d1 += pow(vi->count, power) / z;
+        if(table_pos / (float)size > d1) {
+            vi = vi->hh.next;
+            if(vi == NULL || vi->type == NLK_VOCAB_PAR) {
+                vi = vi->hh.prev;
+            }
+            index = vi->index;
+            d1 += pow(vi->count, power) / (double)z;
         }
-
-        tpos++;
     }
 
+    /* nlk_vocab_neg_table_save(vocab, neg_table, size, "neg.debug"); */
     return neg_table;
 }

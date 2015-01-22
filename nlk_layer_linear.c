@@ -240,8 +240,7 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
     for(ii = 0; ii < n_indices; ii++) {
        ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
        if(ret != NLK_SUCCESS) {
-           printf("index: %zu\n", indices[ii]);
-           NLK_ERROR_VOID("Invalid lookup: %zu", ret);
+           NLK_ERROR_VOID("Invalid lookup", ret);
            abort();
        }
     }

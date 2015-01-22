@@ -1,3 +1,9 @@
+
+## xorshift ##
+http://xorshift.di.unimi.it
+Written in 2014 by Sebastiano Vigna (vigna@acm.org)
+License: Public Domain
+
 ## TinyMT ##
 Version 1.0.3
 http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/TINYMT/index.html

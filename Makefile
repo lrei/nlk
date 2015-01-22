@@ -56,7 +56,7 @@ UTHASHOPTS = -DHASH_BLOOM=32
 
 OBJS = main.o nlk_err.o nlk_array.o tinymt32.o nlk_layer_linear.o nlk_text.o \
 	   nlk_vocabulary.o nlk_tic.o nlk_window.o nlk_transfer.o nlk_criterion.o \
-	   nlk_eval.o nlk_w2v.o MurmurHash3.o nlk_neuralnet.o
+	   nlk_eval.o nlk_w2v.o MurmurHash3.o nlk_neuralnet.o nlk_random.o
 
 
 all: release

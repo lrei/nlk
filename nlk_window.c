@@ -35,7 +35,7 @@
 #include "nlk_err.h"
 #include "nlk_array.h"
 #include "nlk_vocabulary.h"
-#include "nlk_array.h"
+#include "nlk_random.h"
 #include "nlk_window.h"
 
 /** @fn size_t nlk_context_window(nlk_Vocab **line_array,
@@ -52,7 +52,7 @@
  *                          in the context window
  *  @param random_windows   use word2vec style random_window in range
  *                          before=[1, before], after=[1, after]
- *  @param rng              the random number generator
+ *  @param r                the random number / rng state
  *  @param vocab_par        if not NULL, the paragraph vocabulary item
  *                          will be included in the contexts
  *  @param center_par       if true, the paragraph will be the center of the
@@ -70,20 +70,19 @@
 size_t
 nlk_context_window(nlk_Vocab **varray, const size_t line_length,
                    const bool self, const size_t _before, const size_t _after,
-                   const bool random_windows, tinymt32_t *rng,
+                   const bool random_windows,
                    nlk_Vocab *vocab_par,  bool center_par,
                    nlk_Context **contexts)
 {
-    size_t line_pos      = 0;           /* position in line/par (input) */
-    int window_pos       = 0;           /* position in window for line/par */
-    int window_end       = 0;           /* end of window */
-    size_t window_idx    = 0;           /* position in the current window */
-    size_t context_idx   = 0;           /* position in the contexts array */
-    nlk_Vocab *vocab_word;              /* current center of the window */
-    size_t random_window;
-    size_t before = _before;
-    size_t after = _after;
-    size_t r = tinymt32_generate_uint32(rng);
+    size_t line_pos         = 0;        /* position in line/par (input) */
+    int window_pos          = 0;        /* position in window for line/par */
+    int window_end          = 0;        /* end of window */
+    size_t window_idx       = 0;        /* position in the current window */
+    size_t context_idx      = 0;        /* position in the contexts array */
+    nlk_Vocab *vocab_word   = NULL;     /* current center of the window */
+    size_t random_window    = 0;        /* random window size */
+    size_t before           = _before;  /* reduced window before current w */
+    size_t after            = _after;   /* reduced window after current w */
 
     /* 
      * The position in the contexts (context_idx) will only be different from
@@ -103,19 +102,16 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
         /* random window */
         if(random_windows && _before == _after) {
             /* if after == before, keep it that way (word2vec style) */
-            nlk_random_cheap(&r);
-            random_window = (r % _before) + 1;
+            random_window = (nlk_random_xs1024() % _before) + 1;
             before = random_window;
             after = random_window;
         } else if(random_windows) {
             if(_before > 0) {
-                nlk_random_cheap(&r);
-                random_window = (r % _before) + 1;
+                random_window = (nlk_random_xs1024()  % _before) + 1;
                 before = random_window;
             }
             if(_after > 0) {
-                nlk_random_cheap(&r);
-                random_window = (r % _after) + 1;
+                random_window = (nlk_random_xs1024()  % _after) + 1;
                 after = random_window;
             }
         }

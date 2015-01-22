@@ -41,7 +41,6 @@
 #include <cblas.h>
 #endif
 
-#include "nlk_types.h"
 #include "tinymt32.h"
 
 
@@ -143,11 +142,6 @@ void nlk_array_zero(NLK_ARRAY *);
 /*
  * Random numbers & Index Table
  */
-
-uint32_t nlk_random_uint();
-
-void nlk_random_cheap(size_t *next_random);
-
 void nlk_array_init_uniform(NLK_ARRAY *, const nlk_real, const nlk_real, 
                             tinymt32_t *);
 void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
