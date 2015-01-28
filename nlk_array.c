@@ -217,11 +217,11 @@ nlk_array_copy_row(NLK_ARRAY *dest, const size_t dest_row, const
                    NLK_ARRAY *source, const size_t source_row)
 {
 #ifndef NCHECKS
-    if(dest_row > dest->rows) {
+    if(dest_row >= dest->rows) {
         NLK_ERROR("Destination row out of range", NLK_EINVAL);
         /* unreachable */
     }
-    if(source_row > source->rows) {
+    if(source_row >= source->rows) {
         NLK_ERROR("Source row out of range", NLK_EINVAL);
         /* unreachable */
     }
@@ -234,6 +234,43 @@ nlk_array_copy_row(NLK_ARRAY *dest, const size_t dest_row, const
     
     cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
                 &dest->data[dest_row * dest->cols], 1);
+
+    return NLK_SUCCESS;
+}
+
+/**
+ * Copies a row from a source array to a destination vector row or column
+ *
+ * @param dest          the destination array
+ * @param dimension     copy to row vector (0) or column vector (1)
+ * @param source        the source array
+ * @param source_row    the source array index
+ *
+ * @return NLK_SUCCESS or NLK_EINVAL or NLK_EBADLEN
+ */
+int
+nlk_array_copy_row_vector(NLK_ARRAY *dest, const unsigned int dim, 
+                          const NLK_ARRAY *source, const size_t source_row)
+{
+#ifndef NCHECKS
+    if(source_row > source->rows) {
+        NLK_ERROR("Source row out of range", NLK_EINVAL);
+        /* unreachable */
+    }
+    if(dim == 1 && source->cols > dest->cols) {
+        NLK_ERROR("Destination array has a smaller number of columns "
+                  "than the source array", NLK_EBADLEN);
+        /* unreachable */
+    }
+    if(dim == 0 && source->cols > dest->rows) {
+        NLK_ERROR("Destination array has a smaller number of columns "
+                  "than the source array", NLK_EBADLEN);
+        /* unreachable */
+    }
+
+#endif
+    cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
+                dest->data, 1);
 
     return NLK_SUCCESS;
 }

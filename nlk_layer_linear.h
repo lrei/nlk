@@ -109,6 +109,10 @@ void nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *, const size_t *
 /* Lookup forward pass with built-in averaging */
 void nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *, const size_t *, 
                                   const size_t, NLK_ARRAY *);
+/* */
+void nlk_layer_lookup_forward_one(struct nlk_layer_lookup_t *, const size_t, 
+                                  NLK_ARRAY *);
+
 
 /* Lookup with input (not 1st layer */
 void nlk_layer_lookup_forward(struct nlk_layer_lookup_t *, const NLK_ARRAY *, 

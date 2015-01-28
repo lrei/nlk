@@ -122,6 +122,9 @@ NLK_ARRAY *nlk_array_create_copy(const NLK_ARRAY *);
 
 int nlk_array_copy_row(NLK_ARRAY *, const size_t, const NLK_ARRAY *,
                        const size_t);
+int nlk_array_copy_row_vector(NLK_ARRAY *, const unsigned int, 
+                              const NLK_ARRAY *, const size_t);
+
 
 void nlk_array_copy(NLK_ARRAY *, const NLK_ARRAY *);
 void nlk_carray_copy_carray(nlk_real *, const nlk_real *, size_t);

@@ -304,12 +304,7 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
      */
     int local_epoch = epochs;          /* current epoch (thread local) */
     /* output of the first layer */
-    NLK_ARRAY *lk1_out;
-    if(model_type == NLK_CBOW) {
-        lk1_out = nlk_array_create(layer_size, 1);
-    } else { /* NLK_SKIPGRAM */
-        lk1_out = nlk_array_create(1, layer_size);
-    }
+    NLK_ARRAY *lk1_out = nlk_array_create(layer_size, 1);
 
     /* the concat or average "layer" */
     NLK_ARRAY *cc_avg_out = nlk_array_create(layer_size, 1);
@@ -534,7 +529,7 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                          NLK_TABLE *sigmoid_table, 
                          nlk_Context *context,
                          NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out, 
-                         NLK_ARRAY *cc_out, NLK_ARRAY *lk2_grad,
+                         NLK_ARRAY *yada, NLK_ARRAY *lk2_grad,
                          NLK_ARRAY *lk2_temp)
 {
     nlk_real lk2_out;
@@ -560,11 +555,8 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
         /** @section Skipgram Lookup Layer1 Forward (common)
          * Each context word gets forwarded through the first lookup layer
          */
-        nlk_layer_lookup_forward_lookup(lk1, &word->index, 1,
-                                        lk1_out);
+        nlk_layer_lookup_forward_one(lk1, word->index, lk1_out);
 
-        /*  [1, layer_size] -> [layer_size, 1] */
-        nlk_transfer_concat_forward(lk1_out, cc_out);
 
         
         /** @section Skipgram Hierarchical Softmax Forward
@@ -579,7 +571,7 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                 code = center_word->code[pp];
 
                 /* forward with lookup for point pp */
-                nlk_layer_lookup_forward(lk2hs, cc_out, point, &lk2_out);
+                nlk_layer_lookup_forward(lk2hs, lk1_out, point, &lk2_out);
                 
                 /* ignore points with outputs outside of sigm bounds */
                 if(lk2_out >= sigmoid_table->max) {
@@ -607,7 +599,7 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                 grad_out *= learn_rate;
                 
                 /* layer2hs backprop, accumulate gradient for all points */
-                nlk_layer_lookup_backprop_acc(lk2hs, cc_out, point, grad_out, 
+                nlk_layer_lookup_backprop_acc(lk2hs, lk1_out, point, grad_out, 
                                               lk2_grad, grad_acc, lk2_temp);
 
             } /* end of points/codes */
@@ -634,7 +626,7 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                     }
                 }
                 /* forward with lookup for target word */
-                nlk_layer_lookup_forward(lk2neg, cc_out, target, &lk2_out);
+                nlk_layer_lookup_forward(lk2neg, lk1_out, target, &lk2_out);
 
                 /* outside of sigm bounds round to 1 or 0 respectively */
                 if(lk2_out >= sigmoid_table->max) {
@@ -654,7 +646,7 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                 grad_out *= learn_rate;
 
                 /* layer2neg backprop, accumulate gradient for all examples */
-                nlk_layer_lookup_backprop_acc(lk2neg, cc_out, target, grad_out, 
+                nlk_layer_lookup_backprop_acc(lk2neg, lk1_out, target, grad_out, 
                                               lk2_grad, grad_acc, lk2_temp);
 
             } /* end of examples */

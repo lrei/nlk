@@ -251,7 +251,7 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
 
 /** 
  * Lookup Layer forward pass with just ids (1st layer) but averages them
- * together
+ * together. I.E. a shortcut for lookup followed by average
  *
  * @param layer         the lookup layer
  * @param indices       the indices to lookup 
@@ -282,6 +282,33 @@ nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *layer,
     for(ii = 0; ii < n_indices; ii++) {
        nlk_add_scaled_row_vector(s, layer->weights, indices[ii], output);
     }
+}
+
+
+/** 
+ * Lookup Layer forward pass with just one id (1st layer) followed by a
+ * transformation of the output vector from a column vector to a row vector
+ * I.E. A shortcut for lookup followed by concat
+ *
+ * @param layer         the lookup layer
+ * @param index         the index to lookup 
+ * @param output        the output of the lookup forward pass
+ *
+ * return no return, output is overwritten with result: n_indices * layer->cols
+ */
+void
+nlk_layer_lookup_forward_one(struct nlk_layer_lookup_t *layer, 
+                             const size_t index, NLK_ARRAY *output)
+{
+    size_t ret;
+
+    /* copy content from index columns to the ouput rows */
+   ret = nlk_array_copy_row_vector(output, 1, layer->weights, index); 
+#ifndef NCHECKS
+   if(ret != NLK_SUCCESS) {
+       NLK_ERROR_VOID("Invalid lookup", ret);
+   }
+#endif
 }
 
 /** 
@@ -337,11 +364,8 @@ nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer,
     size_t ii;
     /* update weights */
     for(ii = 0; ii < n_indices; ii++) {
-        if(indices[ii] < layer->frozen_limit) {
-            continue;
-        }
         nlk_array_add_carray(grad_out,
-                &layer->weights->data[indices[ii] * layer->weights->cols]);
+                    &layer->weights->data[indices[ii] * layer->weights->cols]);
     }
 
     /* no need to calc grad at input - 1st layer*/
