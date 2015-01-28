@@ -228,7 +228,6 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
                                 const size_t n_indices, NLK_ARRAY *output)
 {
     size_t ii;
-    size_t ret;
 
 #ifndef NCHECKS
     if (n_indices == 0) {
@@ -240,11 +239,15 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
 
     /* copy content from indices to the ouput */
     for(ii = 0; ii < n_indices; ii++) {
-       ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
+        /** @warning this bit of code is duplicated for NCHECKS */
 #ifndef NCHECKS
-       if(ret != NLK_SUCCESS) {
-           NLK_ERROR_VOID("Invalid lookup", ret);
-       }
+        size_t ret;
+        ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
+        if(ret != NLK_SUCCESS) {
+            NLK_ERROR_VOID("Invalid lookup", ret);
+        }
+#else
+        nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
 #endif
     }
 }
@@ -261,9 +264,9 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
  * return no return, output is overwritten with result: 1 * layer->cols
  */
 void
-nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *layer, 
-                             const size_t *indices, const size_t n_indices, 
-                             NLK_ARRAY *output)
+nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *layer, 
+                                    const size_t *indices,
+                                    const size_t n_indices, NLK_ARRAY *output)
 {
     size_t ii;
     nlk_real s;
@@ -280,7 +283,7 @@ nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *layer,
 
     /* copy content from indices to the ouput */
     for(ii = 0; ii < n_indices; ii++) {
-       nlk_add_scaled_row_vector(s, layer->weights, indices[ii], output);
+       nlk_add_scaled_row_vector(s, layer->weights, indices[ii], 0,  output);
     }
 }
 
@@ -297,18 +300,23 @@ nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *layer,
  * return no return, output is overwritten with result: n_indices * layer->cols
  */
 void
-nlk_layer_lookup_forward_one(struct nlk_layer_lookup_t *layer, 
-                             const size_t index, NLK_ARRAY *output)
+nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *layer, 
+                                    const size_t index, NLK_ARRAY *output)
 {
-    size_t ret;
+    /** @warning this function is duplicated for NCHECKS */
 
-    /* copy content from index columns to the ouput rows */
-   ret = nlk_array_copy_row_vector(output, 1, layer->weights, index); 
 #ifndef NCHECKS
-   if(ret != NLK_SUCCESS) {
-       NLK_ERROR_VOID("Invalid lookup", ret);
-   }
+    /* copy content from index columns to the ouput rows */
+    size_t ret;
+    ret = nlk_array_copy_row_vector(output, 0, layer->weights, index); 
+    if(ret != NLK_SUCCESS) {
+        NLK_ERROR_VOID("Invalid lookup", ret);
+    }
+#else
+    /* copy content from index columns to the ouput rows */
+    nlk_array_copy_row_vector(output, 0, layer->weights, index); 
 #endif
+
 }
 
 /** 
@@ -336,7 +344,7 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
  * @param index         the index corresponing to this gradient
  * @param grad_out      gradient at the layer above (gradient at output)
  * @param gradient      gradient at input for this step (overwritten)
- * @param gradient_acc  gradient at input accumulator (overwritten)
+ * @param grad_acc      gradient at input accumulator (overwritten)
  * @param temp          array for weight update (overwritten/temporary)
  *
  * return no return, 
@@ -344,17 +352,19 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
 void
 nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *input,
                               const size_t index, const nlk_real grad_out, 
-                              NLK_ARRAY *gradient_acc)
+                              NLK_ARRAY *grad_acc)
 {
     /* gradient at input (accumulate) */
-    nlk_add_scaled_row_vector(grad_out, layer->weights, index, gradient_acc);
+    nlk_add_scaled_row_vector(grad_out, layer->weights, index, 1, grad_acc);
     
 
      /* learn weights for this layer */
     nlk_add_scaled_vector_row(grad_out, input, layer->weights, index);
 }
 
-
+/**
+ *
+ */
 void
 nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer, 
                                  const size_t *indices, const size_t n_indices, 
@@ -370,7 +380,22 @@ nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer,
     /* no need to calc grad at input - 1st layer*/
 }
 
-/** @fn void nlk_layer_lookup_free(struct nlk_layer_lookup_t *layer)
+/**
+ *
+ */
+void
+nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *layer, 
+                                     const size_t index, 
+                                     const NLK_ARRAY *grad_out)
+{
+    /* update weights */
+    nlk_array_add_carray(grad_out,
+                &layer->weights->data[index * layer->weights->cols]);
+
+    /* no need to calc grad at input - 1st layer*/
+}
+
+/** 
  * Free Lookup Layer memory 
  *
  * @param layer the Lookup Layer
@@ -391,7 +416,7 @@ nlk_layer_lookup_free(struct nlk_layer_lookup_t *layer)
  */
 int
 nlk_layer_lookup_export(char *filepath, const nlk_Format format,
-                        nlk_Vocab **vocab, struct nlk_layer_lookup_t *layer)
+                        struct nlk_vocab_t **vocab, struct nlk_layer_lookup_t *layer)
 {
     FILE *out = fopen(filepath, "wb");
     if(out == NULL) {
@@ -412,12 +437,13 @@ nlk_layer_lookup_export(char *filepath, const nlk_Format format,
  *
  */
 void
-nlk_layer_lookup_export_file(FILE *out, nlk_Format format, nlk_Vocab **vocab, 
+nlk_layer_lookup_export_file(FILE *out, nlk_Format format, 
+                             struct nlk_vocab_t **vocab, 
                              struct nlk_layer_lookup_t *layer)
 {
     size_t w_idx;
     size_t cc;
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     size_t vocab_size = layer->weights->rows;
     size_t layer_size = layer->weights->cols;
 

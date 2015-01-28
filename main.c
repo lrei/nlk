@@ -30,7 +30,7 @@ static void print_usage()
 
 int main(int argc, char **argv)
 {
-    nlk_Vocab *vocab; 
+    struct nlk_vocab_t *vocab; 
     size_t vocab_size = 0;
     size_t vocab_words = 0;
     size_t vocab_total = 0;

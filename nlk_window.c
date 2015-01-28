@@ -38,10 +38,8 @@
 #include "nlk_random.h"
 #include "nlk_window.h"
 
-/** @fn size_t nlk_context_window(nlk_Vocab **line_array,
- *                                const size_t line_length,
-                                  const bool self, const size_t before, 
-                                  const size_t after, nlk_Context **contexts)
+/** 
+ * Creates a context window from a vocabularized line/sentence/pararaph
  *
  *  @param varray           vocab items for the line/paragraph/document
  *  @param line_length      lengh of the line array
@@ -68,18 +66,18 @@
  *  @endnote
  */
 size_t
-nlk_context_window(nlk_Vocab **varray, const size_t line_length,
+nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
                    const bool self, const size_t _before, const size_t _after,
                    const bool random_windows,
-                   nlk_Vocab *vocab_par,  bool center_par,
-                   nlk_Context **contexts)
+                   struct nlk_vocab_t *vocab_par,  bool center_par,
+                   struct nlk_context_t **contexts)
 {
     size_t line_pos         = 0;        /* position in line/par (input) */
     int window_pos          = 0;        /* position in window for line/par */
     int window_end          = 0;        /* end of window */
     size_t window_idx       = 0;        /* position in the current window */
     size_t context_idx      = 0;        /* position in the contexts array */
-    nlk_Vocab *vocab_word   = NULL;     /* current center of the window */
+    struct nlk_vocab_t *vocab_word   = NULL;     /* current center of the window */
     size_t random_window    = 0;        /* random window size */
     size_t before           = _before;  /* reduced window before current w */
     size_t after            = _after;   /* reduced window after current w */
@@ -180,7 +178,7 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
                     contexts[context_idx]->center = varray[window_pos];
                     continue;
                 }
-                contexts[context_idx]->window[window_idx] = varray[window_pos];;
+                contexts[context_idx]->window[window_idx] = varray[window_pos];
                 window_idx++;
             }
             context_idx++;
@@ -190,25 +188,25 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
     return context_idx;
 }
 
-/** @fn nlk_Context *nlk_context_create(size_t max_context_size) 
+/** @fn struct nlk_context_t *nlk_context_create(size_t max_context_size) 
  * Creates a context window of size max_context_size
  *
  * @param max_context_size  maximum size of the context window
  * 
  * @return the context or NULL
  */
-nlk_Context *
+struct nlk_context_t *
 nlk_context_create(size_t max_context_size) 
 {
-    nlk_Context *context;
-    context = (nlk_Context *) malloc(sizeof(nlk_Context));
+    struct nlk_context_t *context;
+    context = (struct nlk_context_t *) malloc(sizeof(struct nlk_context_t));
     if(context == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for context struct", 
                        NLK_ENOMEM);
         /* unreachable */
     }
-    context->window = (nlk_Vocab **) malloc(max_context_size *
-                                            sizeof(nlk_Vocab *));
+    context->window = (struct nlk_vocab_t **) malloc(max_context_size *
+                                                sizeof(struct nlk_vocab_t *));
     if(context->window == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for context", 
                        NLK_ENOMEM);
@@ -218,22 +216,22 @@ nlk_context_create(size_t max_context_size)
     return context;
 }
 
-/** @fn void nlk_context_free(nlk_Context *context)
+/** @fn void nlk_context_free(struct nlk_context_t *context)
  * Free context
  *
  * @param the context to free
  */
 void
-nlk_context_free(nlk_Context *context)
+nlk_context_free(struct nlk_context_t *context)
 {
     free(context->window);
     free(context);
 }
 
-/** @fn void nlk_context_print(nlk_Context *context)
+/** @fn void nlk_context_print(struct nlk_context_t *context)
  * Print a context
  */
-void nlk_context_print(nlk_Context *context)
+void nlk_context_print(struct nlk_context_t *context)
 {
     printf("%s (%zu): ", context->center->word, context->size);
     fflush(stdout);

@@ -87,41 +87,41 @@ typedef struct nlk_array_t NLK_ARRAY;
 /*
  * Constructors, copy
  */
-NLK_ARRAY *nlk_array_create(const size_t, const size_t);
-NLK_ARRAY *nlk_array_create_view(const size_t, const size_t);
+struct nlk_array_t *nlk_array_create(const size_t, const size_t);
+struct nlk_array_t *nlk_array_create_view(const size_t, const size_t);
 
-NLK_ARRAY *nlk_array_resize(NLK_ARRAY *, const size_t, const size_t);
+struct nlk_array_t *nlk_array_resize(struct nlk_array_t *, const size_t, const size_t);
 
-NLK_ARRAY *nlk_array_create_copy(const NLK_ARRAY *);
+struct nlk_array_t *nlk_array_create_copy(const struct nlk_array_t *);
 
-int nlk_array_copy_row(NLK_ARRAY *, const size_t, const NLK_ARRAY *,
+int nlk_array_copy_row(struct nlk_array_t *, const size_t, const struct nlk_array_t *,
                        const size_t);
-int nlk_array_copy_row_vector(NLK_ARRAY *, const unsigned int, 
-                              const NLK_ARRAY *, const size_t);
+int nlk_array_copy_row_vector(struct nlk_array_t *, const unsigned int, 
+                              const struct nlk_array_t *, const size_t);
 
 
-void nlk_array_copy(NLK_ARRAY *, const NLK_ARRAY *);
+void nlk_array_copy(struct nlk_array_t *, const struct nlk_array_t *);
 void nlk_carray_copy_carray(nlk_real *, const nlk_real *, size_t);
 
-bool nlk_array_compare_carray(NLK_ARRAY *, nlk_real *, nlk_real);
+bool nlk_array_compare_carray(struct nlk_array_t *, nlk_real *, nlk_real);
 bool nlk_carray_compare_carray(nlk_real *, nlk_real *, size_t, nlk_real);
 
 
-void nlk_print_array(const NLK_ARRAY *, const size_t, const size_t);
+void nlk_print_array(const struct nlk_array_t *, const size_t, const size_t);
 
 /*
  * Init functions
  */
-void nlk_array_init_wity_carray(NLK_ARRAY *, const nlk_real *);
+void nlk_array_init_wity_carray(struct nlk_array_t *, const nlk_real *);
 
-void nlk_array_init_sigmoid(NLK_ARRAY *, const uint8_t);
+void nlk_array_init_sigmoid(struct nlk_array_t *, const uint8_t);
 
-void nlk_array_zero(NLK_ARRAY *);
+void nlk_array_zero(struct nlk_array_t *);
 
 /*
  * Random numbers & Index Table
  */
-void nlk_array_init_uniform(NLK_ARRAY *, const nlk_real, const nlk_real, 
+void nlk_array_init_uniform(struct nlk_array_t *, const nlk_real, const nlk_real, 
                             tinymt32_t *);
 void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
                              size_t, tinymt32_t *);
@@ -129,65 +129,65 @@ void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
 /* 
  * Save/Load 
  */
-void nlk_array_save(NLK_ARRAY *, FILE *fp);
-NLK_ARRAY *nlk_array_load(FILE *fp);
+void nlk_array_save(struct nlk_array_t *, FILE *fp);
+struct nlk_array_t *nlk_array_load(FILE *fp);
 
 
 /*
  * Free Array
  */
-void nlk_array_free(NLK_ARRAY *);
+void nlk_array_free(struct nlk_array_t *);
 
 
 /*
  * Basic Linear Algebra Operations
  */
 /* scale */
-void nlk_array_scale(const nlk_real, NLK_ARRAY *);
+void nlk_array_scale(const nlk_real, struct nlk_array_t *);
 
 /* normalize matrix row vectors */
-void nlk_array_normalize_row_vectors(NLK_ARRAY *);
+void nlk_array_normalize_row_vectors(struct nlk_array_t *);
 
 /* normalize a vector */
-void nlk_array_normalize_vector(NLK_ARRAY *);
+void nlk_array_normalize_vector(struct nlk_array_t *);
 
 /* vector dot product */
-nlk_real nlk_array_dot(const NLK_ARRAY *, NLK_ARRAY *, uint8_t);
-nlk_real nlk_array_dot_carray(const NLK_ARRAY *, nlk_real *);
-nlk_real nlk_array_row_dot(const NLK_ARRAY *, size_t, NLK_ARRAY *, size_t);
+nlk_real nlk_array_dot(const struct nlk_array_t *, struct nlk_array_t *, uint8_t);
+nlk_real nlk_array_dot_carray(const struct nlk_array_t *, nlk_real *);
+nlk_real nlk_array_row_dot(const struct nlk_array_t *, size_t, struct nlk_array_t *, size_t);
 
 
 /* elementwise addition */
-void nlk_array_add(const NLK_ARRAY *, NLK_ARRAY *);
-void nlk_array_add_carray(const NLK_ARRAY *, nlk_real *);
-void nlk_vector_add_row(const NLK_ARRAY *, NLK_ARRAY *, size_t);
-void nlk_row_add_vector(const NLK_ARRAY *, size_t, NLK_ARRAY *);
-void nlk_add_scaled_row_vector(const nlk_real, const NLK_ARRAY *, 
-                               const size_t, NLK_ARRAY *);
-void nlk_add_scaled_vector_row(const nlk_real, const NLK_ARRAY *, NLK_ARRAY *, 
+void nlk_array_add(const struct nlk_array_t *, struct nlk_array_t *);
+void nlk_array_add_carray(const struct nlk_array_t *, nlk_real *);
+void nlk_vector_add_row(const struct nlk_array_t *, struct nlk_array_t *, size_t);
+void nlk_row_add_vector(const struct nlk_array_t *, size_t, struct nlk_array_t *);
+void nlk_add_scaled_row_vector(const nlk_real, const struct nlk_array_t *, const size_t, 
+                               unsigned int dim, struct nlk_array_t *);
+void nlk_add_scaled_vector_row(const nlk_real, const struct nlk_array_t *, struct nlk_array_t *, 
                                const size_t row);
 
 
 
 
 /* elementwise multiplication */
-void nlk_array_mul(const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_array_mul(const struct nlk_array_t *, struct nlk_array_t *);
 
 /* sum of absolute array values */
-nlk_real nlk_array_abs_sum(const NLK_ARRAY *arr);
+nlk_real nlk_array_abs_sum(const struct nlk_array_t *arr);
 nlk_real nlk_carray_abs_sum(const nlk_real *, size_t);
 
 /* number of non-zero elements in array */
-size_t nlk_array_non_zero(const NLK_ARRAY *arr);
+size_t nlk_array_non_zero(const struct nlk_array_t *arr);
 
 /* scaled vector addition */
-void nlk_add_scaled_vectors(const nlk_real, const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_add_scaled_vectors(const nlk_real, const struct nlk_array_t *, struct nlk_array_t *);
 
-void nlk_vector_transposed_multiply_add(const NLK_ARRAY *, const NLK_ARRAY *, 
-                                        NLK_ARRAY *);
+void nlk_vector_transposed_multiply_add(const struct nlk_array_t *, const struct nlk_array_t *, 
+                                        struct nlk_array_t *);
 
-void nlk_matrix_vector_multiply_add(const NLK_ARRAY *, const NLK_OPTS, 
-                                    const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_matrix_vector_multiply_add(const struct nlk_array_t *, const NLK_OPTS, 
+                                    const struct nlk_array_t *, struct nlk_array_t *);
 
 /*
  * Lookup Math & Transfer Function Math
@@ -195,11 +195,11 @@ void nlk_matrix_vector_multiply_add(const NLK_ARRAY *, const NLK_OPTS,
 
 nlk_real *nlk_table_sigmoid_create();
 nlk_real nlk_sigmoid_lookup(const nlk_real *, const nlk_real);
-int nlk_sigmoid_array(const nlk_real *, NLK_ARRAY *);
+int nlk_sigmoid_array(const nlk_real *, struct nlk_array_t *);
 
-void nlk_array_sigmoid_approx(NLK_ARRAY *);
+void nlk_array_sigmoid_approx(struct nlk_array_t *);
 
-void nlk_array_log(const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_array_log(const struct nlk_array_t *, struct nlk_array_t *);
 
 __END_DECLS
-#endif /* __NLK_ARRAY__ */
+#endif /* __NLK_ARRAY_H__ */

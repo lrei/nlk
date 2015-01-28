@@ -51,28 +51,28 @@ __BEGIN_DECLS
 /** @struct nlk_context
  * The context window for a given word
  */
-struct nlk_context {
+struct nlk_context_t {
     size_t size;                /**< size of the context words array */
-    nlk_Vocab *center;          /**< the vocab item that has this context */
-    nlk_Vocab **window;        /**< the context window */
+    struct nlk_vocab_t *center;          /**< the vocab item that has this context */
+    struct nlk_vocab_t **window;        /**< the context window */
 };
-typedef struct nlk_context nlk_Context;
+typedef struct nlk_context_t NLK_CONTEXT;
 
-size_t          nlk_context_window(nlk_Vocab **, const size_t, const bool, 
-                                   const size_t, const size_t, const bool,
-                                   nlk_Vocab *,  bool, nlk_Context **);
+size_t          nlk_context_window(struct nlk_vocab_t **, const size_t, 
+                                   const bool, const size_t, const size_t, 
+                                   const bool, struct nlk_vocab_t *,  bool, 
+                                   struct nlk_context_t **);
 
-
-unsigned int    nlk_window_for_word(nlk_Vocab **, const unsigned int,
+unsigned int    nlk_window_for_word(struct nlk_vocab_t **, const unsigned int,
                                     const unsigned int, bool,  
                                     unsigned int *, size_t *, unsigned int *, 
                                     unsigned int *, size_t *);
                            
 
 
-nlk_Context *nlk_context_create(size_t); 
-void nlk_context_free(nlk_Context *);
-void nlk_context_print(nlk_Context *context);
+struct nlk_context_t *nlk_context_create(size_t); 
+void nlk_context_free(struct nlk_context_t *);
+void nlk_context_print(struct nlk_context_t *context);
 
 __END_DECLS
 #endif /* __NLK_WINDOW__ */

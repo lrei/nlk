@@ -103,32 +103,51 @@ int nlk_layer_lookup_resize(struct nlk_layer_lookup_t *, const size_t);
 /* Initialize the lookup layer */
 void nlk_layer_lookup_init(struct nlk_layer_lookup_t *, tinymt32_t *);
 void nlk_layer_lookup_init_from(struct nlk_layer_lookup_t *, size_t, tinymt32_t *);
-/* Simple lookup forward pass (1st layer) */
-void nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *, const size_t *,
+
+/*
+ * Simple Lookup (1st Layer)
+ */
+/* Simple lookup forward pass with multiple inputs */
+void nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *, 
+                                     const size_t *, 
                                      const size_t, NLK_ARRAY *);
-/* Lookup forward pass with built-in averaging */
-void nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *, const size_t *, 
-                                  const size_t, NLK_ARRAY *);
-/* */
-void nlk_layer_lookup_forward_one(struct nlk_layer_lookup_t *, const size_t, 
-                                  NLK_ARRAY *);
+/* Lookup forward pass with built-in averaging of multiple inputs */
+void nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *, const size_t *, 
+                                         const size_t, NLK_ARRAY *);
+/* Lookup forward for just one input */
+void nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *,
+                                         const size_t, NLK_ARRAY *);
 
-
+/*
+ * Lookup with input (not 1st Layer)
+ */
 /* Lookup with input (not 1st layer */
 void nlk_layer_lookup_forward(struct nlk_layer_lookup_t *, const NLK_ARRAY *, 
                               const size_t, nlk_real *output);
-/* Lookup Layer backward pass */
+
+/*
+ * Lookup Backprop
+ */
+/* Lookup Layer backprop with multiple inputs */
 void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *, 
                                       const size_t *, const size_t, 
                                       const NLK_ARRAY *);
+/* Lookup Layer backprop with a single input */
+void nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *, 
+                                          const size_t, const NLK_ARRAY *);
+/* Lookup Backprop with accumulator */
 void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, 
                                    const NLK_ARRAY *, const size_t, 
                                    const nlk_real, NLK_ARRAY *);
+
+/*
+ * Serialization (Save & Load)
+ */
 /* save */
 void nlk_layer_lookup_save(struct nlk_layer_lookup_t *, FILE *);
-int nlk_layer_lookup_export(char *, nlk_Format, nlk_Vocab **, 
+int nlk_layer_lookup_export(char *, nlk_Format, struct nlk_vocab_t **, 
                             struct nlk_layer_lookup_t *);
-void nlk_layer_lookup_export_file(FILE *, nlk_Format, nlk_Vocab **, 
+void nlk_layer_lookup_export_file(FILE *, nlk_Format, struct nlk_vocab_t **, 
                                  struct nlk_layer_lookup_t *);
 /* load */
 struct nlk_layer_lookup_t *nlk_layer_lookup_load(FILE *);

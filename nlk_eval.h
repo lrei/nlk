@@ -50,19 +50,20 @@ __BEGIN_DECLS
 /** @struct nlk_analogy_test
  * An individual word analogy test
  */
-struct nlk_analogy_test {
-    nlk_Vocab *question[3]; /**< the question as an array of 3 words */
-    nlk_Vocab *answer;      /**< the answer to w1 - w2 + w3 */
+struct nlk_analogy_test_t {
+    struct nlk_vocab_t *question[3]; /**< the question as an array of 3 words */
+    struct nlk_vocab_t *answer;      /**< the answer to w1 - w2 + w3 */
 };
-typedef struct nlk_analogy_test nlk_Analogy_Test;
+typedef struct nlk_analogy_test nlk_ANALOGY_TEST;
 
-int nlk_eval_on_questions(const char *, nlk_Vocab **, const NLK_ARRAY *, 
-                          const size_t, const bool, nlk_real *accuracy);
+int nlk_eval_on_questions(const char *, struct nlk_vocab_t **, 
+                          const NLK_ARRAY *, const size_t, const bool, 
+                          nlk_real *accuracy);
 
-void nlk_analogy_test_free(nlk_Analogy_Test *);
+void nlk_analogy_test_free(struct nlk_analogy_test_t *);
 
-int nlk_eval_on_paraphrases(const char *, nlk_Vocab **, const NLK_ARRAY *,  
-                            const bool, nlk_real *);
+int nlk_eval_on_paraphrases(const char *, struct nlk_vocab_t **, 
+                            const NLK_ARRAY *,  const bool, nlk_real *);
 
 __END_DECLS
 #endif /* __NLK_EVAL_H__ */

@@ -60,8 +60,8 @@ struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, bool hs, bool neg);
 
 /* train */
 void nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
-                  bool, char *, nlk_Vocab **, size_t, float, nlk_real, 
-                  unsigned int, int);
+                  bool, char *, struct nlk_vocab_t **, size_t, float, 
+                  nlk_real, unsigned int, int);
 
 __END_DECLS
 #endif /* __NLK_W2V_H__ */

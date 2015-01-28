@@ -42,17 +42,17 @@
 
 
 /**
- * Create and allocate an NLK_ARRAY
+ * Create and allocate an struct nlk_array_t
  *
  * @param rows      the number of rows
  * @param cols      the number of columns
  *
- * @return NLK_ARRAY or NULL on error
+ * @return struct nlk_array_t or NULL on error
  */
-NLK_ARRAY *
+struct nlk_array_t *
 nlk_array_create(const size_t rows, const size_t cols)
 {
-    NLK_ARRAY *array;
+    struct nlk_array_t *array;
     int r;
 
     /* 0 dimensions are not allowed */
@@ -63,7 +63,7 @@ nlk_array_create(const size_t rows, const size_t cols)
     }
 
     /* allocate space for array struct */
-    array = (NLK_ARRAY *) malloc(sizeof(NLK_ARRAY));
+    array = (struct nlk_array_t *) malloc(sizeof(struct nlk_array_t));
     if(array == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for array struct", 
                        NLK_ENOMEM);
@@ -86,20 +86,19 @@ nlk_array_create(const size_t rows, const size_t cols)
 }
 
 /**
- * Create and an NLK_ARRAY view
+ * Create and an struct nlk_array_t view
  * A view's internal data pointer is meant to be assigned and not memory is
  * allocated
  *
  * @param rows      the number of rows
  * @param cols      the number of columns
  *
- * @return NLK_ARRAY or NULL on error
+ * @return struct nlk_array_t or NULL on error
  */
-NLK_ARRAY *
+struct nlk_array_t *
 nlk_array_create_view(const size_t rows, const size_t cols)
 {
-    NLK_ARRAY *array;
-    int r;
+    struct nlk_array_t *array;
 
     /* 0 dimensions are not allowed */
     if (rows == 0 || cols == 0) {
@@ -109,7 +108,7 @@ nlk_array_create_view(const size_t rows, const size_t cols)
     }
 
     /* allocate space for array struct */
-    array = (NLK_ARRAY *) malloc(sizeof(NLK_ARRAY));
+    array = (struct nlk_array_t *) malloc(sizeof(struct nlk_array_t));
     if(array == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for array struct", 
                        NLK_ENOMEM);
@@ -139,13 +138,13 @@ nlk_array_create_view(const size_t rows, const size_t cols)
  * copied. If new size is larger, the new values are NOT initialized.
  * @endnote
  */
-NLK_ARRAY *
-nlk_array_resize(NLK_ARRAY *old, const size_t rows, const size_t cols)
+struct nlk_array_t *
+nlk_array_resize(struct nlk_array_t *old, const size_t rows, const size_t cols)
 {
     size_t row_limit;
     size_t col_limit;
 
-    NLK_ARRAY *array = nlk_array_create(rows, cols);
+    struct nlk_array_t *array = nlk_array_create(rows, cols);
     if(array == NULL) {
         return NULL;
     }
@@ -180,10 +179,10 @@ nlk_array_resize(NLK_ARRAY *old, const size_t rows, const size_t cols)
  *
  * @return the copy
  */
-NLK_ARRAY *
-nlk_array_create_copy(const NLK_ARRAY *source)
+struct nlk_array_t *
+nlk_array_create_copy(const struct nlk_array_t *source)
 {
-    NLK_ARRAY *dest = nlk_array_create(source->rows, source->cols);
+    struct nlk_array_t *dest = nlk_array_create(source->rows, source->cols);
     if(dest == NULL) {
         NLK_ERROR_NULL("failed to create empty array", NLK_FAILURE);
         /* unreachable */
@@ -213,8 +212,8 @@ nlk_array_create_copy(const NLK_ARRAY *source)
  * @endnote
  */
 int
-nlk_array_copy_row(NLK_ARRAY *dest, const size_t dest_row, const 
-                   NLK_ARRAY *source, const size_t source_row)
+nlk_array_copy_row(struct nlk_array_t *dest, const size_t dest_row, const 
+                   struct nlk_array_t *source, const size_t source_row)
 {
 #ifndef NCHECKS
     if(dest_row >= dest->rows) {
@@ -249,8 +248,8 @@ nlk_array_copy_row(NLK_ARRAY *dest, const size_t dest_row, const
  * @return NLK_SUCCESS or NLK_EINVAL or NLK_EBADLEN
  */
 int
-nlk_array_copy_row_vector(NLK_ARRAY *dest, const unsigned int dim, 
-                          const NLK_ARRAY *source, const size_t source_row)
+nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim, 
+                          const struct nlk_array_t *source, const size_t source_row)
 {
 #ifndef NCHECKS
     if(source_row > source->rows) {
@@ -289,7 +288,7 @@ nlk_array_copy_row_vector(NLK_ARRAY *dest, const unsigned int dim,
  */
 
 void
-nlk_array_copy(NLK_ARRAY *dest, const NLK_ARRAY *source)
+nlk_array_copy(struct nlk_array_t *dest, const struct nlk_array_t *source)
 {
     const size_t len = dest->rows * dest->cols;
 
@@ -313,7 +312,7 @@ nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
  * Initialize an array with the values from a C array
  */
 void 
-nlk_array_init_wity_carray(NLK_ARRAY *arr, const nlk_real *carr)
+nlk_array_init_wity_carray(struct nlk_array_t *arr, const nlk_real *carr)
 {
     const size_t len = arr->rows * arr->cols;
     cblas_scopy(len, carr, 1, arr->data, 1);
@@ -330,7 +329,7 @@ nlk_array_init_wity_carray(NLK_ARRAY *arr, const nlk_real *carr)
  * @param rng       the random number generator
  */
 void 
-nlk_array_init_uniform(NLK_ARRAY *array, const nlk_real low, 
+nlk_array_init_uniform(struct nlk_array_t *array, const nlk_real low, 
                        const nlk_real high, tinymt32_t *rng)
 {
     size_t ii;
@@ -375,7 +374,7 @@ nlk_carray_init_uniform(nlk_real *carr, const nlk_real low,
  * @return no return (void); array data is zeroed.
  */
 void
-nlk_array_zero(NLK_ARRAY *array)
+nlk_array_zero(struct nlk_array_t *array)
 {
     memset(array->data, 0, array->rows * array->cols * sizeof(nlk_real));
 }
@@ -390,7 +389,7 @@ nlk_array_zero(NLK_ARRAY *array)
  * @return true if forall ii, abs(arr[ii] - carr[ii]) < tolerance, else false 
  */
 bool
-nlk_array_compare_carray(NLK_ARRAY *arr, nlk_real *carr, nlk_real tolerance)
+nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr, nlk_real tolerance)
 {
     const size_t len = arr->rows * arr->cols;
     return nlk_carray_compare_carray(arr->data, carr, len, tolerance);
@@ -427,7 +426,7 @@ nlk_carray_compare_carray(nlk_real *carr1, nlk_real *carr2, size_t len,
  *  @param col_limit    the maximum number of columns to print
  */
 void
-nlk_print_array(const NLK_ARRAY *array, const size_t row_limit, 
+nlk_print_array(const struct nlk_array_t *array, const size_t row_limit, 
                 const size_t col_limit)
 {
     size_t rr;
@@ -471,7 +470,7 @@ nlk_print_array(const NLK_ARRAY *array, const size_t row_limit,
  *  @param fp           the file pointer
  */
 void
-nlk_array_save(NLK_ARRAY *array, FILE *fp)
+nlk_array_save(struct nlk_array_t *array, FILE *fp)
 {
     const size_t len = array->cols * array->rows;
 
@@ -489,14 +488,14 @@ nlk_array_save(NLK_ARRAY *array, FILE *fp)
  *
  *  @return the array or NULL
  */
-NLK_ARRAY *
+struct nlk_array_t *
 nlk_array_load(FILE *fp)
 {
     size_t rows;
     size_t cols;
     size_t ret;
     size_t len;
-    NLK_ARRAY *array;
+    struct nlk_array_t *array;
 
     /* read header */
     ret = fscanf(fp, "%zu", &rows);
@@ -537,7 +536,7 @@ nlk_array_load_err:
  * @param array the array to free
  */
 void 
-nlk_array_free(NLK_ARRAY *array)
+nlk_array_free(struct nlk_array_t *array)
 {
     if(array != NULL) {
         free(array->data);
@@ -557,7 +556,7 @@ nlk_array_free(NLK_ARRAY *array)
  * @return no return (void), array is overwritten
  */
 void
-nlk_array_scale(const nlk_real scalar, NLK_ARRAY *array)
+nlk_array_scale(const nlk_real scalar, struct nlk_array_t *array)
 {
     size_t len = array->rows * array->cols;
 
@@ -572,7 +571,7 @@ nlk_array_scale(const nlk_real scalar, NLK_ARRAY *array)
  * @return no return, matrix is overwritten
  */
 void
-nlk_array_normalize_row_vectors(NLK_ARRAY *m)
+nlk_array_normalize_row_vectors(struct nlk_array_t *m)
 {
     size_t row;
     nlk_real len;
@@ -591,7 +590,7 @@ nlk_array_normalize_row_vectors(NLK_ARRAY *m)
  * @return no return, vector is overwritten
  */
 void
-nlk_array_normalize_vector(NLK_ARRAY *v)
+nlk_array_normalize_vector(struct nlk_array_t *v)
 {
     const nlk_real len = cblas_snrm2(v->rows, v->data, 1);
 
@@ -606,7 +605,7 @@ nlk_array_normalize_vector(NLK_ARRAY *v)
  * @param dim   0 (for row vectors) or 1 (for column vectors)
  */
 nlk_real
-nlk_array_dot(const NLK_ARRAY *v1, NLK_ARRAY *v2, uint8_t dim)
+nlk_array_dot(const struct nlk_array_t *v1, struct nlk_array_t *v2, uint8_t dim)
 {
 #ifndef NCHECKS
     if(dim == 0 && v1->rows != v2->rows) {
@@ -640,7 +639,7 @@ nlk_array_dot(const NLK_ARRAY *v1, NLK_ARRAY *v2, uint8_t dim)
  * @return the dot product of the matrix rows
  */
 nlk_real
-nlk_array_row_dot(const NLK_ARRAY *m1, size_t row1, NLK_ARRAY *m2, size_t row2)
+nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1, struct nlk_array_t *m2, size_t row2)
 {
 #ifndef NCHECKS
     if(m1->cols != m2->cols) {
@@ -661,7 +660,7 @@ nlk_array_row_dot(const NLK_ARRAY *m1, size_t row1, NLK_ARRAY *m2, size_t row2)
  * @return the dot product
  */
 nlk_real
-nlk_array_dot_carray(const NLK_ARRAY *v1, nlk_real *carr)
+nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
 {
     return cblas_sdot(v1->rows, v1->data, 1, carr, 1);
 }
@@ -673,7 +672,7 @@ nlk_array_dot_carray(const NLK_ARRAY *v1, nlk_real *carr)
  * @param a2    array, will be overwritten with the result
  */
 void
-nlk_array_add(const NLK_ARRAY *a1, NLK_ARRAY *a2)
+nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 {
 #ifndef NCHECKS
     if(a1->cols != a2->cols || a1->rows != a2->rows) {
@@ -693,7 +692,7 @@ nlk_array_add(const NLK_ARRAY *a1, NLK_ARRAY *a2)
  * @param row   the matrix row, overwritten with the result
  */
 void
-nlk_vector_add_row(const NLK_ARRAY *v, NLK_ARRAY *m, size_t row)
+nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m, size_t row)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -718,7 +717,7 @@ nlk_vector_add_row(const NLK_ARRAY *v, NLK_ARRAY *m, size_t row)
  * @param row   the matrix row
  */
 void
-nlk_row_add_vector(const NLK_ARRAY *m, size_t row, NLK_ARRAY *v)
+nlk_row_add_vector(const struct nlk_array_t *m, size_t row, struct nlk_array_t *v)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -747,7 +746,7 @@ nlk_row_add_vector(const NLK_ARRAY *m, size_t row, NLK_ARRAY *v)
  * of matrix.
  */
 void
-nlk_add_scaled_vector_row(const nlk_real s, const NLK_ARRAY *v, NLK_ARRAY *m, 
+nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v, struct nlk_array_t *m, 
                           const size_t row)
 {
     
@@ -768,18 +767,25 @@ nlk_add_scaled_vector_row(const nlk_real s, const NLK_ARRAY *v, NLK_ARRAY *m,
  * @param s     the scalar
  * @param m     a matrix
  * @param row   the matrix row
- * @param v     a vector (column vector), overwritten
+ * @param dim   row vector (0) or column vector (1)
+ * @param v     a vector , overwritten
  *
  * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes vector.
  */
 void
-nlk_add_scaled_row_vector(const nlk_real s, const NLK_ARRAY *m, 
-                          const size_t row, NLK_ARRAY *v)
+nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m, 
+                          const size_t row, const unsigned int dim, 
+                          struct nlk_array_t *v)
 {
     
 #ifndef NCHECKS
-    if(v->cols != m->cols) {
-        NLK_ERROR_VOID("array dimensions do not match matrix columns.", 
+    if(dim == 0 && v->rows != m->cols) {
+        NLK_ERROR_VOID("vector columns do not match matrix columns.", 
+                       NLK_EBADLEN);
+        /* unreachable */
+    }
+    if(dim == 1 && v->cols != m->cols) {
+        NLK_ERROR_VOID("vector columns do not match matrix columns.", 
                        NLK_EBADLEN);
         /* unreachable */
     }
@@ -797,7 +803,7 @@ nlk_add_scaled_row_vector(const nlk_real s, const NLK_ARRAY *m,
  * @return no return, overwittes carray
  */
 void
-nlk_array_add_carray(const NLK_ARRAY *arr, nlk_real *carr)
+nlk_array_add_carray(const struct nlk_array_t *arr, nlk_real *carr)
 {
     cblas_saxpy(arr->rows * arr->cols, 1, arr->data, 1, carr, 1); 
 }
@@ -809,7 +815,7 @@ nlk_array_add_carray(const NLK_ARRAY *arr, nlk_real *carr)
  *  @param a2   second array (overwritten)
  */
 void
-nlk_array_mul(const NLK_ARRAY *a1, NLK_ARRAY *a2)
+nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 {
     const size_t len = a1->rows * a1->cols;
     
@@ -834,7 +840,7 @@ nlk_array_mul(const NLK_ARRAY *a1, NLK_ARRAY *a2)
  * @return the sum of absolute array values
  */
 nlk_real
-nlk_array_abs_sum(const NLK_ARRAY *arr)
+nlk_array_abs_sum(const struct nlk_array_t *arr)
 {
     return cblas_sasum(arr->rows * arr->cols, arr->data, 1);
 }
@@ -860,7 +866,7 @@ nlk_carray_abs_sum(const nlk_real *carr, size_t length)
  * @return number of non-zero elements in the array
  */
 size_t
-nlk_array_non_zero(const NLK_ARRAY *arr)
+nlk_array_non_zero(const struct nlk_array_t *arr)
 {
     size_t ii = 0;
     size_t non_zero = 0;
@@ -884,7 +890,7 @@ nlk_array_non_zero(const NLK_ARRAY *arr)
  * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes a2.
  */
 void
-nlk_add_scaled_vectors(const nlk_real s, const NLK_ARRAY *v1, NLK_ARRAY *v2)
+nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1, struct nlk_array_t *v2)
 {
     
 #ifndef NCHECKS
@@ -911,8 +917,8 @@ nlk_add_scaled_vectors(const nlk_real s, const NLK_ARRAY *v1, NLK_ARRAY *v2)
  *
  */
 void
-nlk_vector_transposed_multiply_add(const NLK_ARRAY *v1, const NLK_ARRAY *v2, 
-                                   NLK_ARRAY *m)
+nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1, const struct nlk_array_t *v2, 
+                                   struct nlk_array_t *m)
 {
 #ifndef NCHECKS
     if(v1->rows != m->rows) {
@@ -943,8 +949,8 @@ nlk_vector_transposed_multiply_add(const NLK_ARRAY *v1, const NLK_ARRAY *v2,
  *
  */
 void 
-nlk_matrix_vector_multiply_add(const NLK_ARRAY *m, const NLK_OPTS trans, 
-                               const NLK_ARRAY *v1, NLK_ARRAY *v2)
+nlk_matrix_vector_multiply_add(const struct nlk_array_t *m, const NLK_OPTS trans, 
+                               const struct nlk_array_t *v1, struct nlk_array_t *v2)
 {
 #ifndef NCHECKS
      /* First we need to make sure all dimensions make sense */
@@ -1059,7 +1065,7 @@ nlk_sigmoid_lookup(const nlk_real *sigmoid_table, const nlk_real x)
  * @return NLK_SUCCESS or NLK_E* on error
  */
 int
-nlk_sigmoid_array(const nlk_real *sigmoid_table, NLK_ARRAY *arr)
+nlk_sigmoid_array(const nlk_real *sigmoid_table, struct nlk_array_t *arr)
 {
     const size_t len = arr->rows * arr->cols;
 
@@ -1091,7 +1097,7 @@ nlk_sigmoid_array(const nlk_real *sigmoid_table, NLK_ARRAY *arr)
  * @endnote
  */
 void
-nlk_array_log(const NLK_ARRAY *input, NLK_ARRAY *output)
+nlk_array_log(const struct nlk_array_t *input, struct nlk_array_t *output)
 {
     const size_t len = input->rows * input->cols;
 

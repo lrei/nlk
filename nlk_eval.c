@@ -51,11 +51,11 @@
  * @return false on failure, true on success
  */
 bool
-__nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line, 
-                         nlk_Analogy_Test *test)
+__nlk_read_question_line(struct nlk_vocab_t **vocab, bool lower_words, 
+                         char *line, struct nlk_analogy_test_t *test)
 {
     char *word;
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     size_t ii = 0;
 
     if(vocab == NULL) {
@@ -109,13 +109,13 @@ __nlk_read_question_line(nlk_Vocab **vocab, bool lower_words, char *line,
  *
  * @return an array of word analogy tests
  */
-nlk_Analogy_Test *
-__nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
+struct nlk_analogy_test_t *
+__nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
                              const bool lower_words, size_t *total_tests)
 {
     char line[NLK_WORD_REL_MAX_LINE_SIZE];
     char *fr;
-    nlk_Analogy_Test *tests;    /* array that will contain all test cases */
+    struct nlk_analogy_test_t *tests;    /* array that will contain all test cases */
     void *re_tests;
     size_t alloc_size = 0;      /* allocated size of the tests array  */
     size_t test_number;         /* number of tests read into array */
@@ -128,7 +128,8 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
 
     /* alloc */
     alloc_size = NLK_WORD_REL_DEFAULT_SIZE;
-    tests = (nlk_Analogy_Test *) calloc(alloc_size, sizeof(nlk_Analogy_Test));
+    tests = (struct nlk_analogy_test_t *) calloc(alloc_size, 
+                                            sizeof(struct nlk_analogy_test_t));
     if(tests == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for the test set", 
                        NLK_ENOMEM);
@@ -201,11 +202,11 @@ __nlk_read_analogy_test_file(const char *filepath, nlk_Vocab **vocab,
  * @endnote
  */
 int
-nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
+nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
                       const NLK_ARRAY *weights, const size_t limit, 
                       const bool lower_words, nlk_real *accuracy)
 {
-    nlk_Analogy_Test *tests;    /* array that will contain all test cases */
+    struct nlk_analogy_test_t *tests; /* will contain all test cases */
     size_t total_tests;
 
     size_t _limit;
@@ -241,7 +242,7 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
     NLK_ARRAY *sub = nlk_array_create(1, weights->cols);
     NLK_ARRAY *add = nlk_array_create(1, weights->cols);
     NLK_ARRAY *word_vector = nlk_array_create(1, weights->cols);
-    nlk_Analogy_Test *test;     /* iteration test case*/
+    struct nlk_analogy_test_t *test;     /* iteration test case*/
     
 
 #pragma omp for 
@@ -261,7 +262,8 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
         }
 
         /* vector for the second word in test: word_vector2 */
-        nlk_array_copy_row(predicted, 0, weights_norm, test->question[1]->index);
+        nlk_array_copy_row(predicted, 0, weights_norm, 
+                           test->question[1]->index);
 
         /* word_vector1 (vector for first word)  */
         nlk_array_copy_row(sub, 0, weights_norm, test->question[0]->index);
@@ -314,7 +316,7 @@ nlk_eval_on_questions(const char *filepath, nlk_Vocab **vocab,
 }
 
 int
-nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab, 
+nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab, 
                         const NLK_ARRAY *weights,  const bool lower_words, 
                         nlk_real *accuracy)
 {
@@ -339,10 +341,10 @@ nlk_eval_on_paraphrases(const char *test_file, nlk_Vocab **vocab,
     }
     size_t num_lines = nlk_text_count_lines(fin);
 
-    nlk_Vocab **par1 = (nlk_Vocab **) malloc(num_lines / 2 * 
-                                             sizeof(nlk_Vocab *));
-    nlk_Vocab **par2 = (nlk_Vocab **) malloc(num_lines / 2 *
-                                             sizeof(nlk_Vocab *));
+    struct nlk_vocab_t **par1 = (struct nlk_vocab_t **) malloc(num_lines / 2 * 
+                                             sizeof(struct nlk_vocab_t *));
+    struct nlk_vocab_t **par2 = (struct nlk_vocab_t **) malloc(num_lines / 2 *
+                                             sizeof(struct nlk_vocab_t *));
 
     if(par1 == NULL || par2 == NULL) {
         NLK_ERROR("failed to allocate memory for test items",  NLK_ENOMEM);

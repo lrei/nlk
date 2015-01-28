@@ -88,14 +88,14 @@ nlk_vocab_display_progress(size_t count_actual, size_t total, clock_t start)
  * 0 count should only be used for end_sent_symbol (id=0) and paragraphs. 
  * @endnote
  */
-static inline nlk_Vocab *
-nlk_vocab_add_item(nlk_Vocab **vocab, const char *word,
-                     const uint64_t count, const nlk_Vocab_Type type)
+static inline struct nlk_vocab_t *
+nlk_vocab_add_item(struct nlk_vocab_t **vocab, const char *word,
+                     const uint64_t count, const NLK_VOCAB_TYPE type)
 {
-    nlk_Vocab *vocab_word;
+    struct nlk_vocab_t *vocab_word;
     size_t length = strlen(word);
     
-    vocab_word = (nlk_Vocab *) calloc(1, sizeof(nlk_Vocab));
+    vocab_word = (struct nlk_vocab_t *) calloc(1, sizeof(struct nlk_vocab_t));
     if(vocab_word == NULL) {
         NLK_ERROR_NULL("failed to allocate memory for vocabulary item struct", 
                   NLK_ENOMEM);
@@ -122,17 +122,18 @@ nlk_vocab_add_item(nlk_Vocab **vocab, const char *word,
     return vocab_word;
 }
 
-/** @fn nlk_Vocab *nlk_vocab_init()
+/** @fn struct nlk_vocab_t *nlk_vocab_init()
  * Returns an initialized vocabulary (i.e. with an end symbol)
  */
-static nlk_Vocab *
+static struct nlk_vocab_t *
 nlk_vocab_init()
 {
-    nlk_Vocab *vocab = NULL;
+    struct nlk_vocab_t *vocab = NULL;
 
    /* word 0 is reserved for end symbol </s> */
-    nlk_Vocab *end_symbol = nlk_vocab_add_item(&vocab, NLK_END_SENT_SYMBOL, 
-                                                 0, NLK_VOCAB_WORD);
+    struct nlk_vocab_t *end_symbol = nlk_vocab_add_item(&vocab, 
+                                                        NLK_END_SENT_SYMBOL, 
+                                                        0, NLK_VOCAB_WORD);
     if(end_symbol == NULL) {
         return NULL;
     }
@@ -140,7 +141,7 @@ nlk_vocab_init()
 }
 
 static int
-nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
+nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
                    const size_t max_word_size, const size_t max_line_size, 
                    const bool lower_words, const bool verbose) 
 {
@@ -178,7 +179,7 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
     }
 
     /* create and initialize vocabularies */
-    nlk_Vocab *vocabs[NLK_MAX_VOCABS];
+    struct nlk_vocab_t *vocabs[NLK_MAX_VOCABS];
     for(size_t vv = 0; vv < num_threads; vv++) {
         vocabs[vv] = nlk_vocab_init();
     }
@@ -188,7 +189,7 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
 #pragma omp parallel
 {
     /* vocabulary */
-    nlk_Vocab *vocab_word;
+    struct nlk_vocab_t *vocab_word;
 
     /* word */
     char *word;
@@ -252,8 +253,8 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
         file_pos = ftell(file);
         file_pos_last = file_pos;
 
-        nlk_Vocab *vocab = vocabs[thread_id];
-        nlk_Vocab *end_symbol;
+        struct nlk_vocab_t *vocab = vocabs[thread_id];
+        struct nlk_vocab_t *end_symbol;
         HASH_FIND_STR(vocab, NLK_END_SENT_SYMBOL, end_symbol);
 
         while(1) {
@@ -379,7 +380,7 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
     return NLK_SUCCESS;
 }
 
-/** @fn void nlk_vocabulary_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
+/** @fn void nlk_vocabulary_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * Add a vocabulary to another vocabulary. 
  * If an item exists in dest, it's count will be updated by adding the source's
  * count to it.
@@ -390,10 +391,10 @@ nlk_vocab_read_add(nlk_Vocab **vocabulary, char *filepath,
  * @param source    the source vocabulary (will not be changed)
  */
 void
-nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
+nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
 {
-    nlk_Vocab *si;
-    nlk_Vocab *di;
+    struct nlk_vocab_t *si;
+    struct nlk_vocab_t *di;
 
     for(si = *source; si != NULL; si = si->hh.next) {
         HASH_FIND_STR(*dest, si->word, di);
@@ -427,12 +428,12 @@ nlk_vocab_add_vocab(nlk_Vocab **dest, nlk_Vocab **source)
  * Line vocabulary items always have a zero count.
  * @endnote
  */
-nlk_Vocab *
+struct nlk_vocab_t *
 nlk_vocab_create(char *filepath, const size_t max_word_size, 
                  const size_t max_line_size, const bool lower_words,
                  const bool verbose) {
 
-    nlk_Vocab *vocab = nlk_vocab_init();
+    struct nlk_vocab_t *vocab = nlk_vocab_init();
     
     nlk_vocab_read_add(&vocab, filepath, max_word_size, max_line_size, 
                          lower_words, verbose);
@@ -440,30 +441,30 @@ nlk_vocab_create(char *filepath, const size_t max_word_size,
     return vocab;
 }
 
-/** @fn void nlk_vocab_extend(nlk_Vocab **vocab, char *filepath, 
+/** @fn void nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath, 
  *                            const size_t max_word_size, 
  *                            const size_t max_line_size, 
  *                            const bool lower_words)
  * Extend a vocabulary
  */
 void
-nlk_vocab_extend(nlk_Vocab **vocab, char *filepath, const size_t max_word_size, 
+nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath, const size_t max_word_size, 
                  const size_t max_line_size, const bool lower_words) {
 
     nlk_vocab_read_add(vocab, filepath, max_word_size, max_line_size,
                        lower_words, false);
 }
 
-/** @fn void nlk_vocab_free(nlk_Vocab *vocab)
+/** @fn void nlk_vocab_free(struct nlk_vocab_t *vocab)
  * Free all memory associated with the vocabulary
  *
  * @param vocab the vocabulary structure
  */
 void
-nlk_vocab_free(nlk_Vocab **vocab)
+nlk_vocab_free(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vocab_word;
-    nlk_Vocab *tmp;
+    struct nlk_vocab_t *vocab_word;
+    struct nlk_vocab_t *tmp;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
         /* free structure contents */
@@ -476,13 +477,13 @@ nlk_vocab_free(nlk_Vocab **vocab)
     }
 }
 
-/** @fn void nlk_vocab_size(nlk_Vocab *vocab)
+/** @fn void nlk_vocab_size(struct nlk_vocab_t *vocab)
  * Count of unique elements in vocabulary
  *
  * @param vocab the vocabulary structure
  */
 size_t
-nlk_vocab_size(nlk_Vocab **vocab)
+nlk_vocab_size(struct nlk_vocab_t **vocab)
 {
     return HASH_COUNT(*vocab);
 }
@@ -495,10 +496,10 @@ nlk_vocab_size(nlk_Vocab **vocab)
  * @return number of unique words in dictionary
  */
 size_t
-nlk_vocab_words_size(nlk_Vocab **vocab)
+nlk_vocab_words_size(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vocab_word;
-    nlk_Vocab *tmp;
+    struct nlk_vocab_t *vocab_word;
+    struct nlk_vocab_t *tmp;
     size_t n = 0;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
@@ -517,10 +518,10 @@ nlk_vocab_words_size(nlk_Vocab **vocab)
  * @return the highest index in the vocabulary
  */
 size_t
-nlk_vocab_last_index(nlk_Vocab **vocab)
+nlk_vocab_last_index(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vocab_word;
-    nlk_Vocab *tmp;
+    struct nlk_vocab_t *vocab_word;
+    struct nlk_vocab_t *tmp;
     size_t n = 0;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
@@ -533,17 +534,17 @@ nlk_vocab_last_index(nlk_Vocab **vocab)
     return n;
 }
 
-/** @fn void nlk_vocab_total(nlk_Vocab *vocab)
+/** @fn void nlk_vocab_total(struct nlk_vocab_t *vocab)
  * Total of word counts in vocabulary
  *
  * @param vocab the vocabulary structure
  */
 uint64_t
-nlk_vocab_total(nlk_Vocab **vocab)
+nlk_vocab_total(struct nlk_vocab_t **vocab)
 {
     uint64_t total = 0;
-    nlk_Vocab *vocab_word;
-    nlk_Vocab *tmp;
+    struct nlk_vocab_t *vocab_word;
+    struct nlk_vocab_t *tmp;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
         total += vocab_word->count;
@@ -551,7 +552,7 @@ nlk_vocab_total(nlk_Vocab **vocab)
     return total;
 }
 
-/** @fn void nlk_vocab_reduce(nlk_Vocab *vocab, const size_t min_count)
+/** @fn void nlk_vocab_reduce(struct nlk_vocab_t *vocab, const size_t min_count)
  * Remove words with count smaller (<) than min_count. Calls sort after.
  *
  * @param vocab     the vocabulary structure
@@ -563,11 +564,11 @@ nlk_vocab_total(nlk_Vocab **vocab)
  * @endnotesed 1d msr_paraphrase_train.txt | awk -F"\t" -v OFS="\t" '$1="1" {print $4,$5}' >
  */
 void
-nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
+nlk_vocab_reduce(struct nlk_vocab_t **vocab, const size_t min_count)
 {
-    nlk_Vocab *vi;
-    nlk_Vocab *tmp;
-    nlk_Vocab *end_symbol;
+    struct nlk_vocab_t *vi;
+    struct nlk_vocab_t *tmp;
+    struct nlk_vocab_t *end_symbol;
 
     HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, end_symbol);
 
@@ -589,7 +590,7 @@ nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
     nlk_vocab_sort(vocab);
 }
 
-/** @fn void nlk_vocab_reduce_replace(nlk_Vocab *vocab, const size_t min_count)
+/** @fn void nlk_vocab_reduce_replace(struct nlk_vocab_t *vocab, const size_t min_count)
  * Remove words with count smaller (<) than min_count and replace them with 
  * a special token/symbol. This special token will have the sum of the counts 
  * of the words it replaced. Call sort.
@@ -603,12 +604,12 @@ nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
  * @endnote
  */
 void
-nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
+nlk_vocab_reduce_replace(struct nlk_vocab_t **vocab, const size_t min_count)
 {
-    nlk_Vocab *vi;
-    nlk_Vocab *tmp;
-    nlk_Vocab *unk_symbol;
-    nlk_Vocab *end_symbol;
+    struct nlk_vocab_t *vi;
+    struct nlk_vocab_t *tmp;
+    struct nlk_vocab_t *unk_symbol;
+    struct nlk_vocab_t *end_symbol;
     uint64_t unk_count = 0;
 
     HASH_FIND_STR(*vocab, NLK_UNK_SYMBOL, unk_symbol);
@@ -652,7 +653,7 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
     nlk_vocab_sort(vocab);
 }
 
-/** @fn void nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
+/** 
  * Vocab item comparator - used for sorting with most frequent words first
  *
  * @param a vocab item
@@ -661,12 +662,12 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
  * @returns positive if b.count > a.count, negative if b.count < a.count
  */
 static int 
-nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
+nlk_vocab_item_comparator(struct nlk_vocab_t *a, struct nlk_vocab_t *b)
 {
     return (b->count - a->count);
 }
 
-/** @fn void nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
+/**
  * Vocab item comparator - used for sorting with the least frequent words first
  *
  * @param a vocab item
@@ -675,21 +676,21 @@ nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
  * @returns positive if b.count < a.count, negative if b.count > a.count
  */
 int 
-nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
+nlk_vocab_item_comparator_reverse(struct nlk_vocab_t *a, struct nlk_vocab_t *b)
 {
     return (a->count - b->count);
 }
 
 
-/** @fn void nlk_vocab_sort(nlk_Vocab **vocab)
+/** @fn void nlk_vocab_sort(struct nlk_vocab_t **vocab)
  * Sort the vocabulary by word count, most frequent first i.e. desc by count.
  * Also updates the *index* property.
  *
  * @param vocab     the vocabulary structure
  */
-void nlk_vocab_sort(nlk_Vocab **vocab)
+void nlk_vocab_sort(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     size_t ii = 0;  /* 0 is the end symbol */
 
     HASH_SORT(*vocab, nlk_vocab_item_comparator);
@@ -699,7 +700,7 @@ void nlk_vocab_sort(nlk_Vocab **vocab)
     }
 }
 
-/* @fn nlk_vocab_encode_huffman(nlk_Vocab **vocab)
+/**
  * Create Huffman binary tree for hierarchical softmax (HS).
  * Adds *code* (huffman encoded representation) and HS *point* fields to 
  * vocabulary items.
@@ -726,9 +727,9 @@ void nlk_vocab_sort(nlk_Vocab **vocab)
  * @endnote
  */
 void
-nlk_vocab_encode_huffman(nlk_Vocab **vocab)
+nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab        *vi;                   /* vocabulary iterator */
+    struct nlk_vocab_t        *vi;                   /* vocabulary iterator */
     size_t            vsize;                /* the vocabulary size */ 
     size_t            nn;                   /* for indexing over nodes */
     size_t            min1;                 /*  the minimum index */
@@ -836,7 +837,7 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
 
     /* iterate over all the vocabulary */
     nn = 0;
-    for(vi = *vocab; vi != NULL; vi = (nlk_Vocab *)(vi->hh.next)) {
+    for(vi = *vocab; vi != NULL; vi = (struct nlk_vocab_t *)(vi->hh.next)) {
         if(vi->type == NLK_VOCAB_PAR) {
             continue;
         }
@@ -863,7 +864,7 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
     free(binary);
 }
 
-/** @fn size_t vocab_max_code_length(nlk_Vocab **vocab)
+/** @fn size_t vocab_max_code_length(struct nlk_vocab_t **vocab)
  * Return the maximum code length of any word in the vocabulary
  *
  * @param vocab the vocabulary
@@ -871,9 +872,9 @@ nlk_vocab_encode_huffman(nlk_Vocab **vocab)
  * @return the maximum code length of any word in the vocabulary
  */
 size_t 
-vocab_max_code_length(nlk_Vocab **vocab)
+vocab_max_code_length(struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     size_t code_length = 0;
 
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
@@ -885,7 +886,7 @@ vocab_max_code_length(nlk_Vocab **vocab)
 }
 
 
-/** @fn int nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
+/** @fn int nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
  * Save the vocabulary - only strings and counts
  * 
  * @param filepath  the path of the file to which the vocabulary will be saved
@@ -901,10 +902,10 @@ vocab_max_code_length(nlk_Vocab **vocab)
  * @endnote
  */
 int
-nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
+nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vi;
-    nlk_Vocab *end;
+    struct nlk_vocab_t *vi;
+    struct nlk_vocab_t *end;
     FILE *out = fopen(filepath, "wb");
     if(out == NULL) {
         NLK_ERROR(strerror(errno), errno);
@@ -925,7 +926,7 @@ nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
 }
 
 /** @fn int nlk_vocab_load(const char *filepath, const size_t max_word_size, 
- *                         nlk_Vocab **vocab)
+ *                         struct nlk_vocab_t **vocab)
  * Load the (simple) vocabulary structure from disk, saved via *nlk_save_vocab*
  *
  * @param filepath          the path of the file to which will be read
@@ -934,11 +935,11 @@ nlk_vocab_save(const char *filepath, nlk_Vocab **vocab)
  *
  * @returns NLK_SUCCESS or errno
  */
-nlk_Vocab *
+struct nlk_vocab_t *
 nlk_vocab_load(const char *filepath, const size_t max_word_size)
 {
-    nlk_Vocab *vocab = nlk_vocab_init();
-    nlk_Vocab *end;
+    struct nlk_vocab_t *vocab = nlk_vocab_init();
+    struct nlk_vocab_t *end;
 
     uint64_t count = 0;
     char *word = (char *) calloc(max_word_size, sizeof(char));
@@ -972,7 +973,7 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
     return vocab;
 }
 
-/** @fn int nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
+/** @fn int nlk_vocab_save_full(const char *filepath, struct nlk_vocab_t **vocab)
  * Save the vocabulary structure to disk.
  *
  * @param filepath  the path of the file to which the vocabulary will be saved
@@ -988,9 +989,9 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
  * @returns 0 or errno
  */
 int
-nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
+nlk_vocab_save_full(const char *filepath, struct nlk_vocab_t **vocab)
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     FILE *file;
     size_t ii;
 
@@ -1026,7 +1027,7 @@ nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
 }
 
 /* @fn size_t nlk_vocab_vectorize_paragraph(
- *              nlk_Vocab **vocab, char **paragraph, bool replace_missing,
+ *              struct nlk_vocab_t **vocab, char **paragraph, bool replace_missing,
  *              size_t replacement, size_t *vector)
  * Vectorizes a series of words: for each word, the output vector will contain
  * the respective index of that word.
@@ -1049,11 +1050,11 @@ nlk_vocab_save_full(const char *filepath, nlk_Vocab **vocab)
  * @endnote
  */
 size_t
-nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing, 
+nlk_vectorize(struct nlk_vocab_t **vocab, char **paragraph, bool replace_missing, 
               size_t replacement, size_t *vector) 
               
 {
-    nlk_Vocab *vocab_word;  /* vocabulary item that corresponds to word */
+    struct nlk_vocab_t *vocab_word;  /* vocabulary item that corresponds to word */
     size_t par_idx;         /* position in paragraph */
     size_t vec_idx = 0;     /* position in vector */
 
@@ -1112,14 +1113,14 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
  * @endnote
  */
 size_t
-nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words, 
+nlk_vocab_vocabularize(struct nlk_vocab_t **vocab, const uint64_t total_words, 
                        char **paragraph, const float sample,
-                       nlk_Vocab *replacement, const bool end_symbol,
-                       nlk_Vocab **varray, size_t *n_subsampled,
-                       nlk_Vocab *vocab_paragraph, char *tmp, char *word) 
+                       struct nlk_vocab_t *replacement, const bool end_symbol,
+                       struct nlk_vocab_t **varray, size_t *n_subsampled,
+                       struct nlk_vocab_t *vocab_paragraph, char *tmp, char *word) 
               
 {
-    nlk_Vocab *vocab_word;  /* vocabulary item that corresponds to word */
+    struct nlk_vocab_t *vocab_word;  /* vocabulary item that corresponds to word */
     size_t par_idx;         /* position in paragraph */
     float prob;             /* probability of being sampled */
     float r;                /* random number */
@@ -1169,7 +1170,7 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words,
     return vec_idx;
 }
 
-/** @fn nlk_vocab *nlk_vocab_find(nlk_Vocab **vocab, char *word)
+/** @fn nlk_vocab *nlk_vocab_find(struct nlk_vocab_t **vocab, char *word)
  * Find a word (string) in the vocabulary
  *
  * @param vocab     the vocabulary
@@ -1177,10 +1178,10 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words,
  *
  * @return the vocabulary item corresponding to the word or NULL if not found
  */
-nlk_Vocab *
-nlk_vocab_find(nlk_Vocab **vocab, char *word)
+struct nlk_vocab_t *
+nlk_vocab_find(struct nlk_vocab_t **vocab, char *word)
 {
-    nlk_Vocab *vocab_word;
+    struct nlk_vocab_t *vocab_word;
 
     HASH_FIND_STR(*vocab, word, vocab_word);
     
@@ -1195,10 +1196,10 @@ nlk_vocab_find(nlk_Vocab **vocab, char *word)
  *
  * @return the vocabulary item corresponding to the word index or NULL
  */
-nlk_Vocab *
-nlk_vocab_at_index(nlk_Vocab **vocab, size_t index)
+struct nlk_vocab_t *
+nlk_vocab_at_index(struct nlk_vocab_t **vocab, size_t index)
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
 
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
         if(vi->index == index) {
@@ -1209,7 +1210,7 @@ nlk_vocab_at_index(nlk_Vocab **vocab, size_t index)
     return NULL;
 }
 
-/** @fn nlk_vocab_first_paragraph(nlk_Vocab **vocab) 
+/** @fn nlk_vocab_first_paragraph(struct nlk_vocab_t **vocab) 
  * Find the index of the first paragraph in the vocabulary
  *
  * @param vocab the vocabulary
@@ -1217,9 +1218,9 @@ nlk_vocab_at_index(nlk_Vocab **vocab, size_t index)
  * @return the index of the first paragraph or 0 if none are found
  */
 size_t
-nlk_vocab_first_paragraph(nlk_Vocab **vocab) 
+nlk_vocab_first_paragraph(struct nlk_vocab_t **vocab) 
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
 
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
         if(vi->type == NLK_VOCAB_PAR) {
@@ -1229,11 +1230,11 @@ nlk_vocab_first_paragraph(nlk_Vocab **vocab)
     return 0;
 }
 
-/** @fn void nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
+/** @fn void nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length)
  * Print a vocabularized line.
  */
 void
-nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
+nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length)
 {
     for(size_t ii = 0; ii < length; ii++) {
         printf("%s ", varray[ii]->word);
@@ -1245,14 +1246,14 @@ nlk_vocab_print_line(nlk_Vocab **varray, size_t length)
  * Save a NEG table to disk, used for debug purposes
  */
 void
-nlk_vocab_neg_table_save(nlk_Vocab **vocab, size_t *neg_table, size_t size, 
+nlk_vocab_neg_table_save(struct nlk_vocab_t **vocab, size_t *neg_table, size_t size, 
                          char *filepath)
 {
     FILE *fp;
     size_t target;
     size_t ii;
     size_t count;
-    nlk_Vocab *word;
+    struct nlk_vocab_t *word;
 
 
     fp = fopen(filepath, "w");
@@ -1292,9 +1293,9 @@ nlk_vocab_neg_table_save(nlk_Vocab **vocab, size_t *neg_table, size_t size,
  * @param power defaults (power=0) to 0.75
  */
 size_t *
-nlk_vocab_neg_table_create(nlk_Vocab **vocab, const size_t size, double power)
+nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, double power)
 {
-    nlk_Vocab *vi;
+    struct nlk_vocab_t *vi;
     size_t z = 0;
     size_t table_pos = 0;
     size_t index = 0;
