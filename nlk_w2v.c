@@ -166,9 +166,11 @@ nlk_word2vec_create(size_t vocab_size, size_t layer_size, bool hs, bool neg)
  */
 static inline void
 negative_sampling(NLK_LAYER_LOOKUP *lk2neg, const size_t *neg_table,
-                  const size_t negative, const nlk_real learn_rate,
-                  struct nlk_vocab_t *center_word, NLK_ARRAY *lk1_out, 
-                  nlk_real *sigmoid_table, NLK_ARRAY *grad_acc)
+                  const size_t negative, const size_t vocab_size,
+                  const nlk_real learn_rate, 
+                  const struct nlk_vocab_t *center_word, 
+                  const NLK_ARRAY *lk1_out, const nlk_real *sigmoid_table, 
+                  NLK_ARRAY *grad_acc)
 {
     nlk_real out;
     unsigned short int label;
@@ -184,7 +186,11 @@ negative_sampling(NLK_LAYER_LOOKUP *lk2neg, const size_t *neg_table,
         } else { /* negative examples */
             label = 0;
             random = nlk_random_xs1024(); 
-            target = neg_table[random % NLK_NEG_TABLE_SIZE];
+            if(random == 0) {
+                target = nlk_random_xs1024() % (vocab_size - 1) + 1; 
+            } else {
+                target = neg_table[random % NLK_NEG_TABLE_SIZE];
+            }
             if(target == center_word->index) {
                 /* ignore if this is the actual word */
                 continue;
@@ -223,11 +229,13 @@ negative_sampling(NLK_LAYER_LOOKUP *lk2neg, const size_t *neg_table,
  * Train CBOW for a series of word contexts
  *
  */
-void
+static inline void
 nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-                     bool hs, NLK_LAYER_LOOKUP *lk2neg, size_t negative, 
-                     size_t *neg_table, nlk_real learn_rate, 
-                     nlk_real *sigmoid_table, struct nlk_context_t *context,
+                     const bool hs, NLK_LAYER_LOOKUP *lk2neg, 
+                     const size_t negative, const size_t *neg_table, 
+                     const size_t vocab_size, const nlk_real learn_rate, 
+                     const nlk_real *sigmoid_table, 
+                     const struct nlk_context_t *context,
                      size_t *ctx_ids, NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
     nlk_real lk2_out;
@@ -302,7 +310,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
     /** @section CBOW NEG Sampling Forward
      */
     if(negative) {
-        negative_sampling(lk2neg, neg_table, negative, learn_rate,
+        negative_sampling(lk2neg, neg_table, negative, vocab_size, learn_rate,
                           center_word, lk1_out, sigmoid_table, grad_acc);
 
     }
@@ -321,8 +329,8 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
 void
 nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                          bool hs, NLK_LAYER_LOOKUP *lk2neg, size_t negative,
-                         size_t *neg_table, nlk_real learn_rate, 
-                         nlk_real *sigmoid_table, 
+                         size_t *neg_table, const size_t vocab_size, 
+                         nlk_real learn_rate, nlk_real *sigmoid_table, 
                          struct nlk_context_t *context,
                          NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
@@ -395,8 +403,9 @@ nlk_skipgram_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
         /** @section Skipgram NEG Sampling Forward 
          */
         if(negative) {
-            negative_sampling(lk2neg, neg_table, negative, learn_rate,
-                              center_word, lk1_out, sigmoid_table, grad_acc);
+            negative_sampling(lk2neg, neg_table, negative, vocab_size, 
+                              learn_rate, center_word, lk1_out, sigmoid_table, 
+                              grad_acc);
 
         }   /* end of NEG sampling specific code */
 
@@ -445,7 +454,9 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
         lkneg = nn->layers[layer_n].lk;
     }
 
-    size_t layer_size = lk1->weights->cols;
+    const size_t layer_size = lk1->weights->cols;
+    const size_t vocab_size = nlk_vocab_size(vocab);
+    const size_t train_words = nlk_vocab_total(vocab);
 
     /** @section Shared Initializations
      * All variables declared in this section are shared among threads.
@@ -490,9 +501,6 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
     fseek(in, 0, SEEK_END);
     train_file_size = ftell(in);
     fclose(in);
-
-
-    size_t train_words = nlk_vocab_total(vocab);
 
 
     /** @subsection Neural Net initializations
@@ -677,12 +685,12 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
 
                 if(model_type == NLK_SKIPGRAM) {
                     nlk_skipgram_for_context(lk1, lkhs, hs, lkneg,
-                                                negative, neg_table, 
-                                                learn_rate, sigmoid_table, 
-                                                context, grad_acc, lk1_out);
+                                             negative, neg_table, vocab_size,
+                                             learn_rate, sigmoid_table, 
+                                             context, grad_acc, lk1_out);
                 } else if(model_type == NLK_CBOW) {
                     nlk_cbow_for_context(lk1, lkhs, hs, lkneg, negative,
-                                             neg_table, learn_rate, 
+                                             neg_table, vocab_size, learn_rate, 
                                              sigmoid_table, context, ctx_ids, 
                                              grad_acc, lk1_out);
                 } else {

@@ -48,7 +48,7 @@
 
 
 /**
- * @brief Displays the progress stats while building a vocabulary from a file
+ * Displays the progress stats while building a vocabulary from a file
  *
  * @param count_actual  the number of bytes read so far
  * @param total         the total size in bytes of the file
@@ -76,7 +76,7 @@ nlk_vocab_display_progress(size_t count_actual, size_t total, clock_t start)
 
 
 /**  
- * @brief Adds an item (word) to a vocabulary
+ * Adds an item (word) to a vocabulary
  *
  * @param vocab     the vocabulary
  * @param word      the word to add
@@ -534,7 +534,7 @@ nlk_vocab_last_index(struct nlk_vocab_t **vocab)
     return n;
 }
 
-/** @fn void nlk_vocab_total(struct nlk_vocab_t *vocab)
+/**
  * Total of word counts in vocabulary
  *
  * @param vocab the vocabulary structure
@@ -590,7 +590,7 @@ nlk_vocab_reduce(struct nlk_vocab_t **vocab, const size_t min_count)
     nlk_vocab_sort(vocab);
 }
 
-/** @fn void nlk_vocab_reduce_replace(struct nlk_vocab_t *vocab, const size_t min_count)
+/**
  * Remove words with count smaller (<) than min_count and replace them with 
  * a special token/symbol. This special token will have the sum of the counts 
  * of the words it replaced. Call sort.
@@ -682,19 +682,26 @@ nlk_vocab_item_comparator_reverse(struct nlk_vocab_t *a, struct nlk_vocab_t *b)
 }
 
 
-/** @fn void nlk_vocab_sort(struct nlk_vocab_t **vocab)
+/**
  * Sort the vocabulary by word count, most frequent first i.e. desc by count.
- * Also updates the *index* property.
+ * Also updates the *index* property, the end symbol's index is always 0.
  *
  * @param vocab     the vocabulary structure
  */
 void nlk_vocab_sort(struct nlk_vocab_t **vocab)
 {
     struct nlk_vocab_t *vi;
-    size_t ii = 0;  /* 0 is the end symbol */
+    struct nlk_vocab_t *end_symbol;
+    size_t ii = 1;  /* 0 is the end symbol */
+
+    HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, end_symbol);
+    end_symbol->index = 0;
 
     HASH_SORT(*vocab, nlk_vocab_item_comparator);
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
+        if(vi == end_symbol) {
+            continue;
+        }
         vi->index = ii;
         ii++;
     }
