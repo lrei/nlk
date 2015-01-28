@@ -84,32 +84,6 @@ struct nlk_array_t {
 };
 typedef struct nlk_array_t NLK_ARRAY;
 
-
-/** @struct nlk_table
- * For (fast) precalculated lookup based math.
- * E.g. Exponent table for use with softmax
- */
-struct nlk_table_t {
-    NLK_ARRAY *table;
-    size_t size;
-    nlk_real max;
-    nlk_real min;
-};
-typedef struct nlk_table_t NLK_TABLE;
-
-/** @struct nlk_table_index
- * Table Lookup of Indexes
- * E.g. NEG table
- */
-struct nlk_table_index_t {
-    size_t *table;
-    size_t size;
-    size_t max;
-    size_t pos;
-};
-typedef struct nlk_table_index_t NLK_TABLE_INDEX;
-
-
 /*
  * Constructors, copy
  */
@@ -151,8 +125,6 @@ void nlk_array_init_uniform(NLK_ARRAY *, const nlk_real, const nlk_real,
                             tinymt32_t *);
 void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
                              size_t, tinymt32_t *);
-NLK_TABLE_INDEX *nlk_table_index_create(size_t, size_t);
-
 
 /* 
  * Save/Load 
@@ -220,15 +192,10 @@ void nlk_matrix_vector_multiply_add(const NLK_ARRAY *, const NLK_OPTS,
 /*
  * Lookup Math & Transfer Function Math
  */
-void nlk_table_free(NLK_TABLE *);
 
-NLK_TABLE *nlk_table_sigmoid_create(const size_t, const nlk_real);
-nlk_real nlk_sigmoid_table(const NLK_TABLE *, const double);
-int nlk_array_sigmoid_table(const NLK_TABLE *, NLK_ARRAY *);
-
-NLK_TABLE_INDEX *nlk_table_index_create(size_t table_size, size_t max);
-void nlk_table_index_free(NLK_TABLE_INDEX *table);
-
+nlk_real *nlk_table_sigmoid_create();
+nlk_real nlk_sigmoid_lookup(const nlk_real *, const nlk_real);
+int nlk_sigmoid_array(const nlk_real *, NLK_ARRAY *);
 
 void nlk_array_sigmoid_approx(NLK_ARRAY *);
 

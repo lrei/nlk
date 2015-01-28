@@ -27,6 +27,7 @@
  * Pseudo Random Number Functions
  */
 
+#include <stdint.h>
 
 #include "tinymt32.h"
 
@@ -68,12 +69,13 @@ nlk_random_uint(tinymt32_t *rng)
  * xorshift 32 bit pseudo random number generator
  * @param x the previous value of the xorshift ouput or seed
  */
-void
+uint32_t
 nlk_random_xs32(uint32_t *x)
 {
     *x ^= *x << 13;
     *x ^= *x >> 17;
     *x ^= *x << 5;
+    return *x;
 }
 
 /**
@@ -108,6 +110,14 @@ nlk_random_xs1024() {
 	s1 ^= s1 >> 11; // b
 	s0 ^= s0 >> 30; // c
 	return ( s[p] = s0 ^ s1 ) * 1181783497276652981LL; 
+}
+
+/**
+* Ramdon number Float between [0, 1[ from nlk_random_xs1024
+*/
+float 
+nlk_random_xs1024_float() { 
+   return (nlk_random_xs1024() % UINT16_MAX) / (float) UINT16_MAX;
 }
 
 /**

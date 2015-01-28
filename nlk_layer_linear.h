@@ -121,9 +121,9 @@ void nlk_layer_lookup_forward(struct nlk_layer_lookup_t *, const NLK_ARRAY *,
 void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *, 
                                       const size_t *, const size_t, 
                                       const NLK_ARRAY *);
-void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, const NLK_ARRAY *, 
-                                   const size_t, const nlk_real, 
-                                   NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *);
+void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, 
+                                   const NLK_ARRAY *, const size_t, 
+                                   const nlk_real, NLK_ARRAY *);
 /* save */
 void nlk_layer_lookup_save(struct nlk_layer_lookup_t *, FILE *);
 int nlk_layer_lookup_export(char *, nlk_Format, nlk_Vocab **, 

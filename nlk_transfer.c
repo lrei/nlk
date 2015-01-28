@@ -88,8 +88,7 @@ nlk_transfer_concat_backprop(const NLK_ARRAY *grad_out,
 
 
 
-/** @fn void nlk_sigmoid_forward(const NLK_TABLE *sigmoid_table, 
- *                               const NLK_ARRAY *input,  NLK_ARRAY *output)
+/**  
  * Sigmoid transfer function
  *
  * @param sigmoid_table     precomputed sigmoid table
@@ -99,9 +98,9 @@ nlk_transfer_concat_backprop(const NLK_ARRAY *grad_out,
  * @return NLK_SUCCESS or error code NLK_E*
  */
 void
-nlk_sigmoid_forward_table(const NLK_TABLE *sigmoid_table, NLK_ARRAY *input)
+nlk_sigmoid_forward_table(const nlk_real *sigmoid_table, NLK_ARRAY *input)
 {
-    nlk_array_sigmoid_table(sigmoid_table, input);
+    nlk_sigmoid_array(sigmoid_table, input);
 }
 
 /** @fn nlk_sigmoid_backprop

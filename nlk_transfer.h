@@ -52,7 +52,7 @@ void nlk_transfer_concat_backprop(const NLK_ARRAY *, NLK_ARRAY *);
 
 void nlk_average(const NLK_ARRAY *, size_t, NLK_ARRAY *);
 
-void nlk_sigmoid_forward_table (const NLK_TABLE *, NLK_ARRAY *);
+void nlk_sigmoid_forward_table (const nlk_real *, NLK_ARRAY *);
 void nlk_sigmoid_forward(NLK_ARRAY *input);
 int nlk_sigmoid_backprop(const NLK_ARRAY *, const NLK_ARRAY *, NLK_ARRAY *);
 

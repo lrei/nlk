@@ -119,9 +119,8 @@ int          nlk_vocab_save_full(const char *, nlk_Vocab **);
 
 /* vocabularize */
 size_t       nlk_vocab_vocabularize(nlk_Vocab **, const uint64_t , char **, 
-                                    const float sample, 
-                                    tinymt32_t *, nlk_Vocab *, const bool, 
-                                    nlk_Vocab **, size_t *,
+                                    const float sample, nlk_Vocab *, 
+                                    const bool, nlk_Vocab **, size_t *,
                                     nlk_Vocab *, char *, char *);
 void         nlk_vocab_print_line(nlk_Vocab **, size_t);
 

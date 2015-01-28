@@ -344,8 +344,7 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
 void
 nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *input,
                               const size_t index, const nlk_real grad_out, 
-                              NLK_ARRAY *gradient, NLK_ARRAY *gradient_acc, 
-                              NLK_ARRAY *temp)
+                              NLK_ARRAY *gradient_acc)
 {
     /* gradient at input (accumulate) */
     nlk_add_scaled_row_vector(grad_out, layer->weights, index, gradient_acc);

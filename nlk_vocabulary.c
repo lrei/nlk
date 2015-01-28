@@ -41,6 +41,7 @@
 #include "nlk_err.h"
 #include "nlk_text.h"
 #include "nlk_array.h"
+#include "nlk_random.h"
 #include "nlk_tic.h"
 
 #include "nlk_vocabulary.h"
@@ -1112,7 +1113,7 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
  */
 size_t
 nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words, 
-                       char **paragraph, const float sample, tinymt32_t *rng,
+                       char **paragraph, const float sample,
                        nlk_Vocab *replacement, const bool end_symbol,
                        nlk_Vocab **varray, size_t *n_subsampled,
                        nlk_Vocab *vocab_paragraph, char *tmp, char *word) 
@@ -1134,7 +1135,7 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words,
             prob *= (sample * total_words) / (float) vocab_word->count;
 
             /* "flip coin " */
-            r = tinymt32_generate_float(rng);
+            r = nlk_random_xs1024_float();
             if(prob < r) {
                 *n_subsampled += 1;
                 continue;   /* ignore this word - undersample */

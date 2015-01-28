@@ -976,35 +976,30 @@ nlk_matrix_vector_multiply_add(const NLK_ARRAY *m, const NLK_OPTS trans,
 /**
 * Initialize an array with the values of the sigmoid between 
 * [-max_exp, max_exp] split evenly into the number of elements in the array.
+* max_exp is defined NLK_MAX_EXP
+* size is defined by NLK_SIGMOID_TABLE_SIZE
 *
-* @param array     the nlk_array to initialize
-* @param max_exp   function domain will be [-max_exp, max_exp]
+* @param carray     the C array to initialize
 *
 * @return no return (void); array data is initialized accordingly.
-*
-* @note
-* Intended for use within a sigmoid table.
-* Not Parallel.
-* @endnote
 */
 void
-nlk_array_init_sigmoid(NLK_ARRAY *array, const uint8_t max_exp) {
-    size_t size = array->rows * array->cols;
+nlk_carray_init_sigmoid(nlk_real *carray) {
 
     /* this splits the range [sigma(-max), sigma(max)] into *size* pieces */
-    for(size_t ii = 0; ii < size; ii++) {
-        array->data[ii] = exp(((nlk_real) ii / (nlk_real) size * 2 - 1) 
-                              * max_exp);
-        array->data[ii] = array->data[ii] / (array->data[ii] + 1);
+    for(size_t ii = 0; ii < NLK_SIGMOID_TABLE_SIZE; ii++) {
+        carray[ii] = exp(((nlk_real) ii / 
+                        (nlk_real) NLK_SIGMOID_TABLE_SIZE * 2 - 1) * 
+                        NLK_MAX_EXP);
+
+        carray[ii] = carray[ii] / (carray[ii] + 1);
     }
 }
-
 
 /**
  * Create a sigmoid table for computing 1/(exp(-x) + 1)
  * 
  * @param size      table size
- * @param max_exp   table range is [-max_exp, max_exp]
  *
  * @return  returns the sigmoid table or NULL
  *
@@ -1013,99 +1008,23 @@ nlk_array_init_sigmoid(NLK_ARRAY *array, const uint8_t max_exp) {
  * Another trick (not used) is Leon Bottou approx exp(-x) in Torch7
  * @endnote
  */
-NLK_TABLE *
-nlk_table_sigmoid_create(const size_t table_size, const nlk_real max_exp)
+nlk_real *
+nlk_table_sigmoid_create()
 {
-    NLK_TABLE *table;
-
-    /* allocate structure */
-    table = (NLK_TABLE *) malloc(sizeof(NLK_TABLE));
-    if(table == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for table struct",
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
+    nlk_real *table;
 
     /* allocate array and set fields */
-    table->table = nlk_array_create(table_size, 1);
-    if(table->table == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for table array",
+    table = malloc(NLK_SIGMOID_TABLE_SIZE * sizeof(nlk_real));
+    if(table == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for sigmoid table",
                        NLK_ENOMEM);
         /* unreachable */
     }
-    table->size = table_size;
-    table->max =  max_exp;
-    table->min = -max_exp;
 
     /* precompute the values */
-    nlk_array_init_sigmoid(table->table, max_exp);
+    nlk_carray_init_sigmoid(table);
 
     return table;
-}
-
-/**
- * Index table creation (positive integers).
- *
- * @param table_size    the table size
- * @param max           the maximum value to generate
- *
- * @return the table
- */
-NLK_TABLE_INDEX *nlk_table_index_create(size_t table_size, size_t max)
-{
-    NLK_TABLE_INDEX *table;
-
-    /* allocate structure */
-    table = (NLK_TABLE_INDEX *) malloc(sizeof(NLK_TABLE));
-    if(table == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for table struct",
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
-
-    /* allocate array and set fields */
-    table->table = (size_t *) malloc(table_size *  sizeof(size_t));
-    if(table->table == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for table array",
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
-    table->size = table_size;
-    table->pos = (size_t)0;
-    table->max = max;
-
-    return table;
-}
-
-
-/**
- * Free a table.
- *
- * @param table the table to free
- */
-void
-nlk_table_free(NLK_TABLE *table)
-{
-    if(table != NULL) {
-        nlk_array_free(table->table);
-        free(table);
-        table = NULL;
-    }
-}
-
-/**
- * Free an index table.
- *
- * @param table the table to free
- */
-void
-nlk_table_index_free(NLK_TABLE_INDEX *table)
-{
-    if(table != NULL) {
-        free(table->table);
-        free(table);
-        table = NULL;
-    }
 }
 
 /**
@@ -1117,7 +1036,7 @@ nlk_table_index_free(NLK_TABLE_INDEX *table)
  * @return the sigmoid of x
  */
 nlk_real
-nlk_sigmoid_table(const NLK_TABLE *sigmoid_table, const double x) 
+nlk_sigmoid_lookup(const nlk_real *sigmoid_table, const nlk_real x) 
 {
     int idx;
 
@@ -1125,16 +1044,10 @@ nlk_sigmoid_table(const NLK_TABLE *sigmoid_table, const double x)
         return 1.0 / (1.0 + exp(-x));
     }
 
-    if(x >= sigmoid_table->max) {
-        return 1;
-    } else if(x <= sigmoid_table->min) {
-        return 0;
-    }
+    idx = ((x + NLK_MAX_EXP) * 
+           ((double) NLK_SIGMOID_TABLE_SIZE / (nlk_real) NLK_MAX_EXP / 2.0));
 
-    idx = ((x + sigmoid_table->max) * 
-           ((double) sigmoid_table->size / sigmoid_table->max / 2.0));
-
-    return sigmoid_table->table->data[idx];
+    return sigmoid_table[idx];
 }
 
 /**
@@ -1146,25 +1059,22 @@ nlk_sigmoid_table(const NLK_TABLE *sigmoid_table, const double x)
  * @return NLK_SUCCESS or NLK_E* on error
  */
 int
-nlk_array_sigmoid_table(const NLK_TABLE *sigmoid_table, NLK_ARRAY *arr)
+nlk_sigmoid_array(const nlk_real *sigmoid_table, NLK_ARRAY *arr)
 {
     const size_t len = arr->rows * arr->cols;
 
 
     /*#pragma omp parallel for*/
     for(size_t ii = 0; ii < len; ii++) {
-        size_t idx;
-        if(arr->data[ii] >= sigmoid_table->max) {
+        if(arr->data[ii] >= NLK_MAX_EXP) {
             arr->data[ii] = 1;
-        } else if(arr->data[ii] <= -sigmoid_table->max) {
+        } else if(arr->data[ii]  <= -NLK_MAX_EXP) {
             arr->data[ii] = 0;
         }
         else {
-            idx = (arr->data[ii] + sigmoid_table->max) * 
-                  (sigmoid_table->size / sigmoid_table->max / 2);
-            arr->data[ii] = sigmoid_table->table->data[idx];
-
+            arr->data[ii] = nlk_sigmoid_lookup(sigmoid_table, arr->data[ii]);
         }
+
     }
 
     return NLK_SUCCESS;

@@ -59,22 +59,9 @@ typedef enum nlk_lm_t NLK_LM;
 struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, bool hs, bool neg);
 
 /* train */
-nlk_real    nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
-                         bool, char *, nlk_Vocab **, 
-                         size_t, float, nlk_real, unsigned int, int);
-
-nlk_real    nlk_skipgram_for_context(NLK_LAYER_LOOKUP *, NLK_LAYER_LOOKUP *, 
-                                     bool, NLK_LAYER_LOOKUP *, size_t,
-                                     size_t *, nlk_real, NLK_TABLE *, 
-                                     nlk_Context *, 
-                                     NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *, 
-                                     NLK_ARRAY *, NLK_ARRAY *);
-
-nlk_real    nlk_cbow_for_context(NLK_LAYER_LOOKUP *, NLK_LAYER_LOOKUP *,
-                                 bool, NLK_LAYER_LOOKUP *, size_t, size_t *,
-                                 nlk_real, NLK_TABLE *, nlk_Context *, 
-                                 size_t *ctx_ids, NLK_ARRAY *, NLK_ARRAY *, 
-                                 NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *);
+void nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
+                  bool, char *, nlk_Vocab **, size_t, float, nlk_real, 
+                  unsigned int, int);
 
 __END_DECLS
 #endif /* __NLK_W2V_H__ */
