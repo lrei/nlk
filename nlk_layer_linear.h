@@ -106,12 +106,17 @@ void nlk_layer_lookup_init_from(struct nlk_layer_lookup_t *, size_t, tinymt32_t 
 /* Simple lookup forward pass (1st layer) */
 void nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *, const size_t *,
                                      const size_t, NLK_ARRAY *);
+/* Lookup forward pass with built-in averaging */
+void nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *, const size_t *, 
+                                  const size_t, NLK_ARRAY *);
+
 /* Lookup with input (not 1st layer */
 void nlk_layer_lookup_forward(struct nlk_layer_lookup_t *, const NLK_ARRAY *, 
                               const size_t, nlk_real *output);
 /* Lookup Layer backward pass */
-void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *, const size_t *,
-                                      const size_t, const NLK_ARRAY *);
+void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *, 
+                                      const size_t *, const size_t, 
+                                      const NLK_ARRAY *);
 void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, const NLK_ARRAY *, 
                                    const size_t, const nlk_real, 
                                    NLK_ARRAY *, NLK_ARRAY *, NLK_ARRAY *);

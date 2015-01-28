@@ -127,6 +127,7 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
             window_end = line_length;
         } else {
             window_end = line_pos + after + 1;
+            /** @TODO check, was: window_end = line_pos + after ? */
         }
         
         if(center_par == true && vocab_par != NULL) {
@@ -168,6 +169,10 @@ nlk_context_window(nlk_Vocab **varray, const size_t line_length,
              */
              /* self not in its own context window so -1 */
             contexts[context_idx]->size = window_end - window_pos - 1;
+
+            if(contexts[context_idx]->size == 0) { 
+                continue; 
+            }
             window_idx = 0;
 
             for(; window_pos < window_end; window_pos++) {
@@ -239,3 +244,4 @@ void nlk_context_print(nlk_Context *context)
     printf("\n");
 
 }
+

@@ -114,6 +114,8 @@ typedef struct nlk_table_index_t NLK_TABLE_INDEX;
  * Constructors, copy
  */
 NLK_ARRAY *nlk_array_create(const size_t, const size_t);
+NLK_ARRAY *nlk_array_create_view(const size_t, const size_t);
+
 NLK_ARRAY *nlk_array_resize(NLK_ARRAY *, const size_t, const size_t);
 
 NLK_ARRAY *nlk_array_create_copy(const NLK_ARRAY *);
@@ -185,6 +187,13 @@ void nlk_array_add(const NLK_ARRAY *, NLK_ARRAY *);
 void nlk_array_add_carray(const NLK_ARRAY *, nlk_real *);
 void nlk_vector_add_row(const NLK_ARRAY *, NLK_ARRAY *, size_t);
 void nlk_row_add_vector(const NLK_ARRAY *, size_t, NLK_ARRAY *);
+void nlk_add_scaled_row_vector(const nlk_real, const NLK_ARRAY *, 
+                               const size_t, NLK_ARRAY *);
+void nlk_add_scaled_vector_row(const nlk_real, const NLK_ARRAY *, NLK_ARRAY *, 
+                               const size_t row);
+
+
+
 
 /* elementwise multiplication */
 void nlk_array_mul(const NLK_ARRAY *, NLK_ARRAY *);

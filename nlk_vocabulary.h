@@ -118,7 +118,8 @@ nlk_Vocab   *nlk_vocab_load(const char *, const size_t);
 int          nlk_vocab_save_full(const char *, nlk_Vocab **);
 
 /* vocabularize */
-size_t       nlk_vocab_vocabularize(nlk_Vocab **, char **, const float sample, 
+size_t       nlk_vocab_vocabularize(nlk_Vocab **, const uint64_t , char **, 
+                                    const float sample, 
                                     tinymt32_t *, nlk_Vocab *, const bool, 
                                     nlk_Vocab **, size_t *,
                                     nlk_Vocab *, char *, char *);
@@ -131,7 +132,8 @@ size_t      *nlk_vocab_neg_table_create(nlk_Vocab **, const size_t, double);
 nlk_Vocab   *nlk_vocab_find(nlk_Vocab **, char *);
 nlk_Vocab   *nlk_vocab_at_index(nlk_Vocab **, size_t);
 size_t       nlk_vocab_first_paragraph(nlk_Vocab **); 
-size_t       nlk_vocab_last_id(nlk_Vocab **);
+/*size_t       nlk_vocab_last_id(nlk_Vocab **); */
+size_t       nlk_vocab_last_index(nlk_Vocab **);
 
 
 __END_DECLS

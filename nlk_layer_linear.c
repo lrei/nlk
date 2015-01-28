@@ -219,9 +219,9 @@ nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer, size_t from
  * @param layer         the lookup layer
  * @param indices       the indices to lookup 
  * @param n_indices     the number of indices in the indices array (array size)
- * @param output_view   the output of the lookup forward pass
+ * @param output        the output of the lookup forward pass
  *
- * return no return, output_view is overwritten with result
+ * return no return, output is overwritten with result: n_indices * layer->cols
  */
 void
 nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *indices, 
@@ -230,21 +230,58 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, const size_t *
     size_t ii;
     size_t ret;
 
+#ifndef NCHECKS
     if (n_indices == 0) {
         NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
                        NLK_EINVAL);
         /* unreachable */
     }
+#endif
 
     /* copy content from indices to the ouput */
     for(ii = 0; ii < n_indices; ii++) {
        ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
+#ifndef NCHECKS
        if(ret != NLK_SUCCESS) {
            NLK_ERROR_VOID("Invalid lookup", ret);
-           abort();
        }
+#endif
     }
+}
 
+/** 
+ * Lookup Layer forward pass with just ids (1st layer) but averages them
+ * together
+ *
+ * @param layer         the lookup layer
+ * @param indices       the indices to lookup 
+ * @param n_indices     the number of indices in the indices array (array size)
+ * @param output        the output of the lookup forward pass
+ *
+ * return no return, output is overwritten with result: 1 * layer->cols
+ */
+void
+nlk_layer_lookup_forward_avg(struct nlk_layer_lookup_t *layer, 
+                             const size_t *indices, const size_t n_indices, 
+                             NLK_ARRAY *output)
+{
+    size_t ii;
+    nlk_real s;
+
+#ifndef NCHECKS
+    if (n_indices == 0) {
+        NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
+                       NLK_EINVAL);
+        /* unreachable */
+    }
+#endif
+
+    s =  1.0 / (nlk_real) n_indices;
+
+    /* copy content from indices to the ouput */
+    for(ii = 0; ii < n_indices; ii++) {
+       nlk_add_scaled_row_vector(s, layer->weights, indices[ii], output);
+    }
 }
 
 /** 
@@ -284,16 +321,11 @@ nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, const NLK_ARRAY 
                               NLK_ARRAY *temp)
 {
     /* gradient at input (accumulate) */
-    nlk_array_copy_row(gradient, 0, layer->weights, index);
-    nlk_array_scale(grad_out, gradient);
-    nlk_array_add(gradient, gradient_acc);
+    nlk_add_scaled_row_vector(grad_out, layer->weights, index, gradient_acc);
+    
 
-    /* learn weights for this layer */
-    if(index >= layer->frozen_limit) {
-        nlk_array_copy(temp, input);
-        nlk_array_scale(grad_out, temp);
-        nlk_vector_add_row(temp, layer->weights, index);
-    }
+     /* learn weights for this layer */
+    nlk_add_scaled_vector_row(grad_out, input, layer->weights, index);
 }
 
 

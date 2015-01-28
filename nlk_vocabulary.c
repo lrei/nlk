@@ -111,7 +111,7 @@ nlk_vocab_add_item(nlk_Vocab **vocab, const char *word,
     strcpy(vocab_word->word, word);
 
     /* set index and count */
-    vocab_word->index = 1;
+    vocab_word->index = 0;
     vocab_word->count = count;
     vocab_word->code_length = 0;
     vocab_word->type = type;
@@ -486,10 +486,12 @@ nlk_vocab_size(nlk_Vocab **vocab)
     return HASH_COUNT(*vocab);
 }
 
-/** @fn void nlk_vocab_words_size(nlk_Vocab *vocab)
+/**
  * Count of unique words in vocabulary
  *
  * @param vocab the vocabulary structure
+ *
+ * @return number of unique words in dictionary
  */
 size_t
 nlk_vocab_words_size(nlk_Vocab **vocab)
@@ -506,6 +508,29 @@ nlk_vocab_words_size(nlk_Vocab **vocab)
     return n;
 }
 
+/**
+ * Highest index in vocabulary
+ *
+ * @param vocab the vocabulary structure
+ * 
+ * @return the highest index in the vocabulary
+ */
+size_t
+nlk_vocab_last_index(nlk_Vocab **vocab)
+{
+    nlk_Vocab *vocab_word;
+    nlk_Vocab *tmp;
+    size_t n = 0;
+
+    HASH_ITER(hh, *vocab, vocab_word, tmp) {
+        if(vocab_word->word != NULL) {
+            if(vocab_word->index > n) {
+                n = vocab_word->index;
+            }
+        }
+    }
+    return n;
+}
 
 /** @fn void nlk_vocab_total(nlk_Vocab *vocab)
  * Total of word counts in vocabulary
@@ -541,10 +566,13 @@ nlk_vocab_reduce(nlk_Vocab **vocab, const size_t min_count)
 {
     nlk_Vocab *vi;
     nlk_Vocab *tmp;
+    nlk_Vocab *end_symbol;
+
+    HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, end_symbol);
 
     HASH_ITER(hh, *vocab, vi, tmp) {
-        /* always protect end symbol vi->index = 0 and paragraphs */
-        if(vi->count < min_count && vi->index != 0 && vi->count != 0) {
+        /* always protect end symbol and paragraphs */
+        if(vi->count < min_count && vi->count != 0 && vi != end_symbol) {
             /* free structure contents */
             if(vi->word != NULL) {
                 free(vi->word);
@@ -579,32 +607,35 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
     nlk_Vocab *vi;
     nlk_Vocab *tmp;
     nlk_Vocab *unk_symbol;
+    nlk_Vocab *end_symbol;
     uint64_t unk_count = 0;
 
     HASH_FIND_STR(*vocab, NLK_UNK_SYMBOL, unk_symbol);
+    HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, end_symbol);
 
     HASH_ITER(hh, *vocab, vi, tmp) {
-        if(vi->count < min_count && vi->index != 0) {
-
-            if(unk_symbol == NULL || vi != unk_symbol) {
-                unk_count += vi->count;
-
-                /* free structure contents */
-                if(vi->word != NULL) {
-                    free(vi->word);
-                    vi->word = NULL;
-                }
-                /* delete from hashmap and free structure **/
-                HASH_DEL(*vocab, vi);
-                free(vi);
+        if(vi->count < min_count) {
+            /* ignore special symbols */
+            if(vi == end_symbol || vi == unk_symbol) {
+                continue;
             }
+
+            unk_count += vi->count;
+
+            /* free structure contents */
+            if(vi->word != NULL) {
+                free(vi->word);
+                vi->word = NULL;
+            }
+            /* delete from hashmap and free structure **/
+            HASH_DEL(*vocab, vi);
+            free(vi);
         }
     }
 
     /* 
      * does the symbol already exist? i.e. not first call to this function 
      */
-
     if(unk_symbol == NULL) { /* nope, lets create it */
         if(unk_count == 0) {
             unk_count = 1; /* 0 count is just for end_sent and paragraphs */
@@ -631,11 +662,6 @@ nlk_vocab_reduce_replace(nlk_Vocab **vocab, const size_t min_count)
 static int 
 nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
 {
-    if(a->index == 0) { 
-        return -1; 
-    } else if(b->index == 0) {
-        return 1;
-    }
     return (b->count - a->count);
 }
 
@@ -650,11 +676,6 @@ nlk_vocab_item_comparator(nlk_Vocab *a, nlk_Vocab *b)
 int 
 nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
 {
-    if(a->index == 0) { 
-        return 1; 
-    } else if(b->index == 0) {
-        return 0;
-    }
     return (a->count - b->count);
 }
 
@@ -668,13 +689,10 @@ nlk_vocab_item_comparator_reverse(nlk_Vocab *a, nlk_Vocab *b)
 void nlk_vocab_sort(nlk_Vocab **vocab)
 {
     nlk_Vocab *vi;
-    size_t ii = 1;  /* 0 is the end symbol */
+    size_t ii = 0;  /* 0 is the end symbol */
 
     HASH_SORT(*vocab, nlk_vocab_item_comparator);
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->index == 0) {
-            continue;   /* keep end symbol at position 0 */
-        }
         vi->index = ii;
         ii++;
     }
@@ -1093,8 +1111,8 @@ nlk_vectorize(nlk_Vocab **vocab, char **paragraph, bool replace_missing,
  * @endnote
  */
 size_t
-nlk_vocab_vocabularize(nlk_Vocab **vocab, char **paragraph,
-                       const float sample, tinymt32_t *rng,
+nlk_vocab_vocabularize(nlk_Vocab **vocab, const uint64_t total_words, 
+                       char **paragraph, const float sample, tinymt32_t *rng,
                        nlk_Vocab *replacement, const bool end_symbol,
                        nlk_Vocab **varray, size_t *n_subsampled,
                        nlk_Vocab *vocab_paragraph, char *tmp, char *word) 
@@ -1104,7 +1122,6 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, char **paragraph,
     size_t par_idx;         /* position in paragraph */
     float prob;             /* probability of being sampled */
     float r;                /* random number */
-    size_t total_words = nlk_vocab_total(vocab);
     size_t vec_idx = 0;     /* position in vector */
     *n_subsampled = 0;
 
@@ -1148,7 +1165,7 @@ nlk_vocab_vocabularize(nlk_Vocab **vocab, char **paragraph,
         vocab_paragraph = nlk_vocab_find(vocab, word);
     }
     
-        return vec_idx;
+    return vec_idx;
 }
 
 /** @fn nlk_vocab *nlk_vocab_find(nlk_Vocab **vocab, char *word)
@@ -1169,7 +1186,7 @@ nlk_vocab_find(nlk_Vocab **vocab, char *word)
     return vocab_word;
 }
 
-/** @fn nlk_vocab *nlk_vocab_at_index(nlk_Vocab **vocab, size_t index)
+/**
  * Find a word (string) in the vocabulary
  *
  * @param vocab     the vocabulary

@@ -306,7 +306,7 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
     /* output of the first layer */
     NLK_ARRAY *lk1_out;
     if(model_type == NLK_CBOW) {
-        lk1_out = nlk_array_create(ctx_size, layer_size);
+        lk1_out = nlk_array_create(layer_size, 1);
     } else { /* NLK_SKIPGRAM */
         lk1_out = nlk_array_create(1, layer_size);
     }
@@ -428,7 +428,7 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
             line_count++;
             
             /* vocabularize */
-            line_len = nlk_vocab_vocabularize(vocab, text_line, sample_rate, 
+            line_len = nlk_vocab_vocabularize(vocab, train_words, text_line, sample_rate, 
                                               &rng, NULL, false,
                                               vectorized, &n_subsampled,
                                               vocab_par, tmp, word); 
@@ -464,7 +464,7 @@ nlk_word2vec(NLK_LM model_type,  struct nlk_neuralnet_t *nn, bool hs,
                 }
                 err += e;
             }
-            word_count += n_examples;
+            word_count += n_examples + n_subsampled;
 
             /** @subsection Epoch End Check
              * Decrement thread private epoch counter if necessary
@@ -679,7 +679,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                      size_t *neg_table, nlk_real learn_rate, 
                      NLK_TABLE *sigmoid_table, nlk_Context *context,
                      size_t *ctx_ids, NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out, 
-                     NLK_ARRAY *avg_out, NLK_ARRAY *lk2_grad,
+                     NLK_ARRAY *yada, NLK_ARRAY *lk2_grad,
                      NLK_ARRAY *lk2_temp)
 {
     nlk_real lk2_out;
@@ -708,10 +708,10 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
      * The context words get forwarded through the first lookup layer
      * and their vectors are averaged.
      */
-    nlk_layer_lookup_forward_lookup(lk1, ctx_ids, context->size, lk1_out);
+    nlk_array_zero(lk1_out);
+    nlk_layer_lookup_forward_avg(lk1, ctx_ids, context->size, lk1_out);
 
-    nlk_average(lk1_out, context->size, avg_out);
-    
+
     /** @section 
      * CBOW Hierarchical Softmax Forward
      * The center word gets forwarded through the second lookup 
@@ -725,7 +725,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
             code = center_word->code[pp];
 
             /* forward with lookup for point pp */
-            nlk_layer_lookup_forward(lk2hs, avg_out, point, &lk2_out);
+            nlk_layer_lookup_forward(lk2hs, lk1_out, point, &lk2_out);
             
             /* ignore points with outputs outside of sigm bounds */
             if(lk2_out >= sigmoid_table->max) {
@@ -748,7 +748,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
             grad_out *= learn_rate;
             
             /* layer2 backprop, accumulate gradient for all points */
-            nlk_layer_lookup_backprop_acc(lk2hs, avg_out, point, grad_out, 
+            nlk_layer_lookup_backprop_acc(lk2hs, lk1_out, point, grad_out, 
                                           lk2_grad, grad_acc, lk2_temp);
         } /* end of context points/codes */
     } 
@@ -774,7 +774,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
                 }
             }
             /* forward with lookup for target word */
-            nlk_layer_lookup_forward(lk2neg, avg_out, target, &lk2_out);
+            nlk_layer_lookup_forward(lk2neg, lk1_out, target, &lk2_out);
 
             /* outside of sigm bounds round to 1 or 0 respectively */
             if(lk2_out >= sigmoid_table->max) {
@@ -794,7 +794,7 @@ nlk_cbow_for_context(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
             grad_out *= learn_rate;
 
             /* layer2neg backprop, accumulate gradient for all examples */
-            nlk_layer_lookup_backprop_acc(lk2neg, avg_out, target, grad_out, 
+            nlk_layer_lookup_backprop_acc(lk2neg, lk1_out, target, grad_out, 
                                           lk2_grad, grad_acc, lk2_temp);
 
             } /* end of examples */

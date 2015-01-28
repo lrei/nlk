@@ -31,6 +31,7 @@
 #ifndef __NLK_WINDOW_H__
 #define __NLK_WINDOW_H__
 
+#include <stdbool.h>
 
 #include "nlk_vocabulary.h"
 
@@ -57,9 +58,18 @@ struct nlk_context {
 };
 typedef struct nlk_context nlk_Context;
 
-size_t nlk_context_window(nlk_Vocab **, const size_t, const bool, const size_t,
-                          const size_t, const bool,
-                          nlk_Vocab *,  bool, nlk_Context **);
+size_t          nlk_context_window(nlk_Vocab **, const size_t, const bool, 
+                                   const size_t, const size_t, const bool,
+                                   nlk_Vocab *,  bool, nlk_Context **);
+
+
+unsigned int    nlk_window_for_word(nlk_Vocab **, const unsigned int,
+                                    const unsigned int, bool,  
+                                    unsigned int *, size_t *, unsigned int *, 
+                                    unsigned int *, size_t *);
+                           
+
+
 nlk_Context *nlk_context_create(size_t); 
 void nlk_context_free(nlk_Context *);
 void nlk_context_print(nlk_Context *context);

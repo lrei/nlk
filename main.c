@@ -196,7 +196,7 @@ int main(int argc, char **argv)
         nlk_vocab_encode_huffman(&vocab);
     }
 
-    vocab_size = nlk_vocab_size(&vocab);
+    vocab_size = nlk_vocab_last_index(&vocab);
     vocab_words = nlk_vocab_words_size(&vocab);
     vocab_total = nlk_vocab_total(&vocab);
 
@@ -255,12 +255,11 @@ int main(int argc, char **argv)
     } else {
         nn = nlk_word2vec_create(vocab_size, vector_size, hs, negative);
         if(verbose) {
-            printf("Neural Network created v=%zu x size=%zu\n",
-                   vocab_size, vector_size);
+            printf("Neural Network created v=%zu x size=%zu\n"
+                   "hs = %d, neg = %d\n", vocab_size, vector_size, hs,
+                   negative);
         }
     }
-
-    nlk_real learn_err;
 
     /* set learn_rate if necessary */
     if(cbow && learn_rate == 0) {
@@ -291,14 +290,14 @@ int main(int argc, char **argv)
     if(train_file != NULL) {
         //nlk_set_error_handler_off();
         printf("training %s...\n", model_type);
-        learn_err = nlk_word2vec(lm_type, nn, hs, negative, learn_par, 
-                                 train_file, &vocab, window, sample_rate, 
-                                 learn_rate, epochs, verbose);
-        if(verbose) {
-            printf("\nerror for final epoch = %f\n", learn_err);
-        }
+        nlk_word2vec(lm_type, nn, hs, negative, learn_par, 
+                     train_file, &vocab, window, sample_rate, 
+                     learn_rate, epochs, verbose);
     }
     nlk_tic_reset();
+    if(verbose) { 
+        printf("\n");
+    }
     
     /* save */
     if(nn_save_file != NULL) {

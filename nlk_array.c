@@ -86,6 +86,43 @@ nlk_array_create(const size_t rows, const size_t cols)
 }
 
 /**
+ * Create and an NLK_ARRAY view
+ * A view's internal data pointer is meant to be assigned and not memory is
+ * allocated
+ *
+ * @param rows      the number of rows
+ * @param cols      the number of columns
+ *
+ * @return NLK_ARRAY or NULL on error
+ */
+NLK_ARRAY *
+nlk_array_create_view(const size_t rows, const size_t cols)
+{
+    NLK_ARRAY *array;
+    int r;
+
+    /* 0 dimensions are not allowed */
+    if (rows == 0 || cols == 0) {
+        NLK_ERROR_NULL("Array rows and column numbers must be non-zero "
+                       "positive integers", NLK_EINVAL);
+        /* unreachable */
+    }
+
+    /* allocate space for array struct */
+    array = (NLK_ARRAY *) malloc(sizeof(NLK_ARRAY));
+    if(array == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for array struct", 
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    array->cols = cols;
+    array->rows = rows;
+
+    return array;
+}
+
+/**
  * "Resizes" an array. In reality, creates a new array and copies the contents
  * of the old array. If creation fails returns NULL and the original array
  * remains intact. If creation succeeds the old array is freed and the pointer
@@ -659,6 +696,59 @@ nlk_row_add_vector(const NLK_ARRAY *m, size_t row, NLK_ARRAY *v)
 #endif
 
     cblas_saxpy(m->cols, 1, &m->data[row * m->cols], 1, v->data, 1); 
+}
+
+/**
+ * Scaled Vector-Row addition (?axpy): a2  = s * a1 + a2
+ * 
+ * @param s     the scalar
+ * @param v     a vector (row vector)
+ * @param m     a matrix, will be overwritten with the result
+ * @param row   the matrix row
+ *
+ * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes row 
+ * of matrix.
+ */
+void
+nlk_add_scaled_vector_row(const nlk_real s, const NLK_ARRAY *v, NLK_ARRAY *m, 
+                          const size_t row)
+{
+    
+#ifndef NCHECKS
+    if(v->rows != m->cols) {
+        NLK_ERROR_VOID("array dimensions do not match matrix columns.", 
+                       NLK_EBADLEN);
+        /* unreachable */
+    }
+#endif
+
+    cblas_saxpy(m->cols, s, v->data, 1, &m->data[m->cols * row], 1);
+}
+
+/**
+ * Scaled Row-Vector addition (?axpy): a2  = s * a1 + a2
+ * 
+ * @param s     the scalar
+ * @param m     a matrix
+ * @param row   the matrix row
+ * @param v     a vector (column vector), overwritten
+ *
+ * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes vector.
+ */
+void
+nlk_add_scaled_row_vector(const nlk_real s, const NLK_ARRAY *m, 
+                          const size_t row, NLK_ARRAY *v)
+{
+    
+#ifndef NCHECKS
+    if(v->cols != m->cols) {
+        NLK_ERROR_VOID("array dimensions do not match matrix columns.", 
+                       NLK_EBADLEN);
+        /* unreachable */
+    }
+#endif
+
+    cblas_saxpy(m->cols, s, &m->data[m->cols * row], 1, v->data, 1);
 }
 
 /**
