@@ -120,7 +120,8 @@ nlk_layer_lookup_create_from_array(NLK_ARRAY *weights)
  * @return NLK_SUCCESS or NLK_FAILURE
  */
 int
-nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer, const size_t table_size)
+nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer, 
+                        const size_t table_size)
 {
     NLK_ARRAY *weights = nlk_array_resize(layer->weights, table_size,
                                           layer->weights->cols);
@@ -185,7 +186,8 @@ nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer, size_t frozen_limit)
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer, tinymt32_t *rng)
+nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer, 
+                              tinymt32_t *rng)
 {
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
                                                 layer->weights->cols));
@@ -201,8 +203,8 @@ nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer, tinymt32_t *rng)
  * @param from  the starting row
  */
 void
-nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer, size_t from,
-                                   tinymt32_t *rng)
+nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer, 
+                                   size_t from, tinymt32_t *rng)
 {
     size_t len = (layer->weights->rows - from) * layer->weights->cols;
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
@@ -350,9 +352,9 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
  * return no return, 
  */
 void
-nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *input,
-                              const size_t index, const nlk_real grad_out, 
-                              NLK_ARRAY *grad_acc)
+nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, 
+                              const NLK_ARRAY *input, const size_t index, 
+                              const nlk_real grad_out, NLK_ARRAY *grad_acc)
 {
     /* gradient at input (accumulate) */
     nlk_add_scaled_row_vector(grad_out, layer->weights, index, 1, grad_acc);
@@ -490,6 +492,19 @@ void
 nlk_layer_lookup_save(struct nlk_layer_lookup_t *layer, FILE *fp)
 {
     nlk_array_save(layer->weights, fp);
+}
+
+
+void 
+nlk_layer_lookup_save_path(struct nlk_layer_lookup_t *layer, char *filepath)
+{
+    FILE *fp = fopen(filepath, "wb");
+    if(fp == NULL) {
+        NLK_ERROR_VOID("unable to open file.", NLK_FAILURE);
+        /* unreachable */
+    }
+
+    nlk_layer_lookup_save(layer, fp);
 }
 
 /** 

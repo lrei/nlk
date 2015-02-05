@@ -43,24 +43,14 @@
 #endif
 __BEGIN_DECLS
 
-/** @enum NLK_LM_TYPE
- * The type of the language model
- */
-enum nlk_lm_t { 
-    NLK_CBOW      = 0,  /**< CBOW and PVDM */
-    NLK_SKIPGRAM  = 1,  /**< Skipgram and PVDBOW */
-    NLK_PVDM      = 2,  /**< PVDM */
-    NLK_PVDBOW    = 3,  /**< PVDBOW */
-};
-typedef enum nlk_lm_t NLK_LM;
-
 
 /* create */
-struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, bool hs, bool neg);
+struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, size_t, bool hs, 
+                                            bool neg);
 
 /* train */
 void nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
-                  bool, char *, struct nlk_vocab_t **, size_t, float, 
+                  char *, struct nlk_vocab_t **, size_t, size_t, float, 
                   nlk_real, unsigned int, int);
 
 __END_DECLS

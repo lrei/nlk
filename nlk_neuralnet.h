@@ -46,6 +46,17 @@
 __BEGIN_DECLS
 
 
+/** @enum NLK_LM_TYPE
+ * The type of the language model
+ */
+enum nlk_lm_t { 
+    NLK_CBOW      = 0,  /**< CBOW and PVDM */
+    NLK_SKIPGRAM  = 1,  /**< Skipgram and PVDBOW */
+    NLK_PVDM      = 2,  /**< PVDM */
+    NLK_PVDBOW    = 3,  /**< PVDBOW */
+};
+typedef enum nlk_lm_t NLK_LM;
+
 /** @enum NLK_LAYER_T
  * The type of layer
  */

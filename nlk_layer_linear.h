@@ -145,6 +145,7 @@ void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *,
  */
 /* save */
 void nlk_layer_lookup_save(struct nlk_layer_lookup_t *, FILE *);
+void nlk_layer_lookup_save_path(struct nlk_layer_lookup_t *, char *);
 int nlk_layer_lookup_export(char *, nlk_Format, struct nlk_vocab_t **, 
                             struct nlk_layer_lookup_t *);
 void nlk_layer_lookup_export_file(FILE *, nlk_Format, struct nlk_vocab_t **, 

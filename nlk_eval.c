@@ -222,7 +222,7 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
     }
 
     /* normalize weights to make distance calculations easier */
-    weights_norm = nlk_array_create_copy(weights);
+    weights_norm = nlk_array_create_copy(weights, 0);
     nlk_array_normalize_row_vectors(weights_norm);
 
 
@@ -331,7 +331,7 @@ nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab,
 
     NLK_ARRAY *weights_norm;    /* for the normalized copy of the weights */
     /* normalize weights to make distance calculations easier */
-    weights_norm = nlk_array_create_copy(weights);
+    weights_norm = nlk_array_create_copy(weights, 0);
     nlk_array_normalize_row_vectors(weights_norm);
     size_t limit = weights_norm->rows;
 
@@ -371,12 +371,14 @@ nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab,
     }
 
     /* find the index of the first paragraph vector */
-    size_t start_pos = nlk_vocab_first_paragraph(vocab);
+    /* @TODO change to generate PVs */
+    size_t start_pos = 0;
 
     /* read file into memory */
     char *word = (char *) malloc(max_word_size * sizeof(char));
     char *tmp = (char *) malloc((max_word_size * max_line_size 
                                  + max_line_size) * sizeof(char));
+
     for(ii = 0; ii < num_lines / 2; ii++) {
         nlk_read_line(fin, line1, low_tmp, max_word_size, max_line_size);
         nlk_read_line(fin, line2, low_tmp, max_word_size, max_line_size);

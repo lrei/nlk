@@ -87,15 +87,13 @@ typedef struct nlk_array_t NLK_ARRAY;
 /*
  * Constructors, copy
  */
-struct nlk_array_t *nlk_array_create(const size_t, const size_t);
-struct nlk_array_t *nlk_array_create_view(const size_t, const size_t);
-
-struct nlk_array_t *nlk_array_resize(struct nlk_array_t *, const size_t, const size_t);
-
-struct nlk_array_t *nlk_array_create_copy(const struct nlk_array_t *);
-
-int nlk_array_copy_row(struct nlk_array_t *, const size_t, const struct nlk_array_t *,
-                       const size_t);
+struct  nlk_array_t *nlk_array_create(const size_t, const size_t);
+struct  nlk_array_t *nlk_array_create_view(const size_t, const size_t);
+struct  nlk_array_t *nlk_array_resize(struct nlk_array_t *, const size_t, 
+                                      const size_t);
+struct  nlk_array_t *nlk_array_create_copy(const struct nlk_array_t *, size_t);
+int     nlk_array_copy_row(struct nlk_array_t *, const size_t,
+                           const struct nlk_array_t *,const size_t);
 int nlk_array_copy_row_vector(struct nlk_array_t *, const unsigned int, 
                               const struct nlk_array_t *, const size_t);
 

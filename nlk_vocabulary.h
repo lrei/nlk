@@ -62,12 +62,13 @@ __BEGIN_DECLS
  */
 enum nlk_vocab_type_t { 
     NLK_VOCAB_WORD      = 0, 
-    NLK_VOCAB_PAR       = 1 
+    NLK_VOCAB_SPECIAL   = 1,
+    NLK_VOCAB_CHAR      = 2
 };
 typedef enum nlk_vocab_type_t NLK_VOCAB_TYPE;
 
 
-/** @struct nlk_vocab
+/** @struct nlk_vocab_t
  * Vocabulary structure - a hashmap from words to their huffman code and count
  *
  * @note
@@ -79,21 +80,21 @@ typedef enum nlk_vocab_type_t NLK_VOCAB_TYPE;
  * @endnote
  */
 struct nlk_vocab_t {
-    char            *word;                  /**< the word string (key) */
-    NLK_VOCAB_TYPE   type;                  /**< vocab item type */
-    size_t           index;                 /**< sorted index position */
-    uint64_t         count;                 /**< word count */
-    size_t           code_length;           /**< length of *code array */
-    uint8_t          code[NLK_MAX_CODE];    /**< huffman code */
-    size_t           point[NLK_MAX_CODE];   /**< hierarchical softmax nodes */
-    UT_hash_handle   hh;                    /**< handle for hash table */
+    char                 *word;                  /**< the word string (key) */
+    enum nlk_vocab_type_t type;                  /**< vocab item type */
+    size_t                index;                 /**< sorted index position */
+    uint64_t              count;                 /**< word count */
+    size_t                code_length;           /**< length of *code array */
+    uint8_t               code[NLK_MAX_CODE];    /**< huffman code */
+    size_t                point[NLK_MAX_CODE];   /**< HS Softmax nodes */
+    UT_hash_handle        hh;                    /**< handle for hash table */
 };
 typedef struct nlk_vocab_t NLK_VOCAB;
 
 
 /* creation */
-struct nlk_vocab_t   *nlk_vocab_create(char *, const size_t, const size_t, 
-                                       const bool, const bool); 
+struct nlk_vocab_t   *nlk_vocab_create(char *, const size_t, const bool, 
+                                       const bool); 
 void                  nlk_vocab_extend(struct nlk_vocab_t **, char *, 
                                        const size_t, const size_t, 
                                        const bool); 
@@ -126,12 +127,12 @@ size_t       nlk_vocab_vocabularize(struct nlk_vocab_t **, const uint64_t , char
 void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t);
 
 /* NEG table */
-size_t      *nlk_vocab_neg_table_create(struct nlk_vocab_t **, const size_t, double);
+size_t      *nlk_vocab_neg_table_create(struct nlk_vocab_t **, const size_t, 
+                                        double);
 
 /* find */
 struct nlk_vocab_t   *nlk_vocab_find(struct nlk_vocab_t **, char *);
 struct nlk_vocab_t   *nlk_vocab_at_index(struct nlk_vocab_t **, size_t);
-size_t       nlk_vocab_first_paragraph(struct nlk_vocab_t **); 
 /*size_t       nlk_vocab_last_id(struct nlk_vocab_t **); */
 size_t       nlk_vocab_last_index(struct nlk_vocab_t **);
 

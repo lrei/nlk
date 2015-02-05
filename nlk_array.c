@@ -176,19 +176,24 @@ nlk_array_resize(struct nlk_array_t *old, const size_t rows, const size_t cols)
  * Create a copy of an array.
  *
  * @param source    array to copy
+ * @param n_rows    number of rows to copy (0 to copy all)
  *
  * @return the copy
  */
 struct nlk_array_t *
-nlk_array_create_copy(const struct nlk_array_t *source)
+nlk_array_create_copy(const struct nlk_array_t *source, size_t n_rows)
 {
-    struct nlk_array_t *dest = nlk_array_create(source->rows, source->cols);
+    if(n_rows == 0) {
+        n_rows = source->rows;
+    }
+    
+    struct nlk_array_t *dest = nlk_array_create(n_rows, source->cols);
     if(dest == NULL) {
         NLK_ERROR_NULL("failed to create empty array", NLK_FAILURE);
         /* unreachable */
     }
 
-    cblas_scopy(source->rows * source->cols, source->data, 1, dest->data, 1);
+    cblas_scopy(n_rows * source->cols, source->data, 1, dest->data, 1);
 
     return dest;
 }

@@ -24,7 +24,7 @@
 
 
 /** @file nlk_text.c
- * Read text files
+ * Read text files and basic text related operations
  */
 
 #include <stdio.h>
@@ -82,6 +82,19 @@ nlk_text_lower(char *word, wchar_t *tmp) {
 
     if(tmp == NULL) {
         free(low_tmp);
+    }
+}
+
+/**
+ * @brief ASCII in-place convertion to lower case
+ *
+ * @param st    the string (overwritten with lower case version) 
+ */
+void
+nlk_text_ascii_lower(char *st)
+{
+    for(char *p = st; *p != '\0'; p++) {
+        *p = tolower(*p);
     }
 }
 
@@ -212,14 +225,14 @@ nlk_read_line(FILE *file, char **line, wchar_t *low_tmp,
     return EOF;
 }
 
-/** @fn void nlk_text_concat_hash
- * Turns an arbitraly large sequence of strings into a single (128bit) hash 
+/**
+ * Turns an arbitraly large sequence of strings into a single hash 
  * stored as a string in key.
  *
  * @param line  the sequence of strings
  * @param tmp   tempory memory for the concatenated strings
  *              must be at least (size(string) + 1) * size(seq)
- * @param key   the resulting hash in string form
+ * @param key   the resulting hash in string form (output)
  */
 void
 nlk_text_concat_hash(char **line, char *tmp, char *key)
@@ -227,7 +240,7 @@ nlk_text_concat_hash(char **line, char *tmp, char *key)
     size_t ii;
     size_t jj;
     size_t pos = 0;
-    uint64_t hash[2];
+    uint32_t hash;
 
     /* loop through words */
     for(ii = 0; *line[ii] != '\0'; ii++) {  
@@ -242,11 +255,11 @@ nlk_text_concat_hash(char **line, char *tmp, char *key)
     tmp[pos] = '\0'; /* replace final space with null terminator */
 
     /* hash and convert to hexadecimal string */
-    MurmurHash3_x64_128(tmp, pos, 1, hash);
-    sprintf(key, "0x%"PRIX64 "%"PRIX64, hash[0], hash[1]);
+    MurmurHash3_x86_32(tmp, pos, 1, &hash);
+    sprintf(key, "0x%"PRIX32, hash);
 }
 
-/** @fn size_t nlk_text_count_lines(FILE *fp)
+/**
  * Counts lines remaining in a file. Does not change position of file.
  * "Lines" are terminated by NEWLINE or TAB characters
  *
@@ -267,6 +280,9 @@ nlk_text_count_lines(FILE *fp)
 
     /* count lines until the end */
     while((buf = fgetc(fp)) != EOF) {
+        if(lines == 0) {
+            lines++;
+        }
         if(buf == '\n' || buf == '\t') {
             lines++;
         }
@@ -283,7 +299,44 @@ nlk_text_count_lines(FILE *fp)
     return lines;
 }
 
-/** @fn size_t nlk_text_count_words(FILE *fp)
+/**
+ * Get current line number 
+ *
+ * @param fp    file pointer
+ *
+ * @return current line number
+ */
+size_t
+nlk_text_get_line(FILE *fp)
+{
+    size_t line = 0;
+    int buf = 0;
+    long pos = 0;
+    long pos_origin;
+
+    /* save current position */
+    pos_origin = ftell(fp);
+
+    /* go to start */
+    fseek(fp, 0, SEEK_SET);
+
+    /* count until current */
+    while(pos <= pos_origin) {
+        buf = fgetc(fp);
+
+        if(buf == '\n' || buf == '\t') {
+            line++;
+        }
+        pos = ftell(fp);
+    }
+
+    /* restore position */
+    fseek(fp, pos_origin, SEEK_SET);
+
+    return line;
+}
+
+/**
  * Counts words remaining in a file. Does not change position of file.
  *
  * @param fp the FILE pointer
@@ -344,7 +397,7 @@ nlk_text_goto_line(FILE *fp, size_t line)
     }
 }
 
-/** @fn void nlk_text_goto_line_start(FILE *fp)
+/**
 * Set file position to the start of the line
 *
 * @param fp    the file pointer
@@ -388,8 +441,7 @@ nlk_text_goto_word_start(FILE *fp)
     }
 }
 
-/** @fn static size_t nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, 
- *                                     size_t num_threads, int thread_id)
+/**
  * Used to get the start position in a file for a given worker thread
  * @param fp        the file where the position will be set
  * @param use_lines if true, goes to the start of a line instead of a byte
@@ -398,7 +450,7 @@ nlk_text_goto_word_start(FILE *fp)
  *
  * @return end position
  */
-static size_t
+static inline size_t
 nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
                  int thread_id)
 {
@@ -421,9 +473,9 @@ nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
 
 
 
-/** @fn size_t nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, 
- *                              size_t num_threads, int thread_id)
+/**
  * Used to set the start position in a file for a given worker thread
+ *
  * @param fp        the file where the position will be set
  * @param use_lines if true, goes to the start of a line instead of a byte
  * @param total     total number of bytes or lines in file

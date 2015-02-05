@@ -133,7 +133,7 @@ nlk_vocab_init()
    /* word 0 is reserved for end symbol </s> */
     struct nlk_vocab_t *end_symbol = nlk_vocab_add_item(&vocab, 
                                                         NLK_END_SENT_SYMBOL, 
-                                                        0, NLK_VOCAB_WORD);
+                                                        0, NLK_VOCAB_SPECIAL);
     if(end_symbol == NULL) {
         return NULL;
     }
@@ -142,8 +142,8 @@ nlk_vocab_init()
 
 static int
 nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
-                   const size_t max_word_size, const size_t max_line_size, 
-                   const bool lower_words, const bool verbose) 
+                   const size_t max_word_size, const bool lower_words, 
+                   const bool verbose) 
 {
     /** @section Shared Initializations
      */
@@ -151,13 +151,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     size_t count_actual = 0;
     clock_t start = clock();
 
-    /* paragraph mode */
-    bool par_mode;         
-    if(max_line_size > 0) {
-        par_mode = true;
-    } else {
-        par_mode = false;
-    }
     /* open file */
     FILE *in = fopen(filepath, "rb");
     if(in == NULL) {
@@ -196,11 +189,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     int terminator = 0;
     wchar_t *low_tmp = NULL;
 
-    /* line/paragraph */
-    char **line = NULL;
-    char *tmp = NULL;
-    size_t line_pos;
-
+    /* file position */
     size_t file_pos = 0;
     size_t end_pos = 0;
     size_t file_pos_last = 0;
@@ -220,28 +209,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 
     if(lower_words) {
         low_tmp = malloc(max_word_size * sizeof(wchar_t));
-    }
-
-    /* allocate space for paragraphs if necessary */
-    if(par_mode) {
-        line = (char **) malloc(max_line_size * sizeof(char *));
-        if(line == NULL) {
-            NLK_ERROR_ABORT("failed to allocate memory for a line", 
-                            NLK_ENOMEM);
-            /* unreachable */
-        }
-        for(line_pos = 0; line_pos < max_line_size; line_pos++) {
-            line[line_pos] = (char *) malloc(max_word_size * sizeof(char));
-            if(line[line_pos] == NULL) {
-                NLK_ERROR_ABORT("failed to allocate memory for a line", 
-                                NLK_ENOMEM);
-                /* unreachable */
-            }
-        }
-        line_pos = 0;
-        /* the + max_line_size is for the word separators */
-        tmp = (char *) calloc(max_word_size * max_line_size + max_line_size, 
-                              sizeof(char));
     }
 
     /** @section Parallel Creation of Vocabularies (Map)
@@ -280,12 +247,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
                 }
             }
 
-            /* add to line array */
-            if(par_mode) {
-                strcpy(line[line_pos], word);
-                line_pos++;
-            }
-
             /** @subsection Increment Count or Add
              */
             HASH_FIND_STR(vocab, word, vocab_word);
@@ -301,8 +262,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
                 vocab_word->count = vocab_word->count + 1;
             }
             /* line/paragraph */
-            if(terminator == '\n' || terminator == '\t' || terminator == EOF 
-               || line_pos == max_line_size - 1) {
+            if(terminator == '\n' || terminator == '\t' || terminator == EOF) {
 
                 /* all sentences must end with </s> 
                  * unless we're truncating it.
@@ -312,26 +272,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
                     end_symbol->count += 1;
                 }
 
-                /** @subsection Exists or Add Paragraph
-                 */
-                if(par_mode) {
-                    line[line_pos][0] = '\0';
-                    nlk_text_concat_hash(line, tmp, word);
-
-                    HASH_FIND_STR(vocab, word, vocab_word);
-                    if(vocab_word == NULL) {
-                        /* 
-                         * add paragraph to vocabulary, 
-                         */
-                        vocab_word = nlk_vocab_add_item(&vocab, word, 0,
-                                                          NLK_VOCAB_PAR);
-                        if(vocab_word == NULL) {
-                            NLK_ERROR_ABORT("error adding to vocabulary", 
-                                            NLK_FAILURE);
-                        }
-                    }
-                    line_pos = 0;   /* new line */
-                }
             } /* line/paragraph */
             file_pos = ftell(file);
             if(file_pos >= end_pos) {
@@ -344,15 +284,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     /** @section Free Memory and Close File
      */
     free(word);
-
-    if(par_mode) {
-        for(line_pos = 0; line_pos < max_line_size; line_pos++) {
-            free(line[line_pos]);
-        }
-        free(line);
-        free(tmp);
-    }
-
     fclose(file);
 
 } /* end of pragma omp parallel */
@@ -412,9 +343,6 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  *
  * @param filepath        the path of the file to read from
  * @param max_word_size   maximum size of a word including null terminator
- * @param max_line_size   maximum size (number of words) of a line including
- *                        a null terminator. If not zero, lines will be read
- *                        as vobabulary items
  * @param lower_words     convert characters to lowercase
  * @param verbose         display progress
  *
@@ -430,29 +358,23 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  */
 struct nlk_vocab_t *
 nlk_vocab_create(char *filepath, const size_t max_word_size, 
-                 const size_t max_line_size, const bool lower_words,
-                 const bool verbose) {
+                 const bool lower_words, const bool verbose) {
 
     struct nlk_vocab_t *vocab = nlk_vocab_init();
     
-    nlk_vocab_read_add(&vocab, filepath, max_word_size, max_line_size, 
-                         lower_words, verbose);
+    nlk_vocab_read_add(&vocab, filepath, max_word_size, lower_words, verbose);
     
     return vocab;
 }
 
-/** @fn void nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath, 
- *                            const size_t max_word_size, 
- *                            const size_t max_line_size, 
- *                            const bool lower_words)
+/** 
  * Extend a vocabulary
  */
 void
 nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath, const size_t max_word_size, 
                  const size_t max_line_size, const bool lower_words) {
 
-    nlk_vocab_read_add(vocab, filepath, max_word_size, max_line_size,
-                       lower_words, false);
+    nlk_vocab_read_add(vocab, filepath, max_word_size, lower_words, false);
 }
 
 /** @fn void nlk_vocab_free(struct nlk_vocab_t *vocab)
@@ -477,7 +399,7 @@ nlk_vocab_free(struct nlk_vocab_t **vocab)
     }
 }
 
-/** @fn void nlk_vocab_size(struct nlk_vocab_t *vocab)
+/**
  * Count of unique elements in vocabulary
  *
  * @param vocab the vocabulary structure
@@ -500,11 +422,15 @@ nlk_vocab_words_size(struct nlk_vocab_t **vocab)
 {
     struct nlk_vocab_t *vocab_word;
     struct nlk_vocab_t *tmp;
+    enum nlk_vocab_type_t vt;
     size_t n = 0;
 
     HASH_ITER(hh, *vocab, vocab_word, tmp) {
-        if(vocab_word->type == NLK_VOCAB_WORD && vocab_word->word != NULL) {
-            n++;
+        if(vocab_word->word != NULL) {
+            vt = vocab_word->type;
+            if(vt == NLK_VOCAB_WORD || vt == NLK_VOCAB_SPECIAL) {
+                n++;
+            }
         }
     }
     return n;
@@ -552,7 +478,7 @@ nlk_vocab_total(struct nlk_vocab_t **vocab)
     return total;
 }
 
-/** @fn void nlk_vocab_reduce(struct nlk_vocab_t *vocab, const size_t min_count)
+/**
  * Remove words with count smaller (<) than min_count. Calls sort after.
  *
  * @param vocab     the vocabulary structure
@@ -574,7 +500,7 @@ nlk_vocab_reduce(struct nlk_vocab_t **vocab, const size_t min_count)
 
     HASH_ITER(hh, *vocab, vi, tmp) {
         /* always protect end symbol and paragraphs */
-        if(vi->count < min_count && vi->count != 0 && vi != end_symbol) {
+        if(vi->count < min_count && vi->type == NLK_VOCAB_WORD) {
             /* free structure contents */
             if(vi->word != NULL) {
                 free(vi->word);
@@ -643,7 +569,7 @@ nlk_vocab_reduce_replace(struct nlk_vocab_t **vocab, const size_t min_count)
             unk_count = 1; /* 0 count is just for end_sent and paragraphs */
         }
         unk_symbol = nlk_vocab_add_item(vocab, NLK_UNK_SYMBOL, 
-                                          unk_count, NLK_VOCAB_WORD);
+                                        unk_count, NLK_VOCAB_SPECIAL);
     }
     else { /* just an update */
         unk_symbol->count = unk_symbol->count + unk_count;
@@ -775,9 +701,6 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
      */
     nn = 0;
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->type == NLK_VOCAB_PAR) {
-            continue;
-        }
         count[nn] = vi->count;
         nn++;
     }
@@ -845,9 +768,6 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
     /* iterate over all the vocabulary */
     nn = 0;
     for(vi = *vocab; vi != NULL; vi = (struct nlk_vocab_t *)(vi->hh.next)) {
-        if(vi->type == NLK_VOCAB_PAR) {
-            continue;
-        }
         /* now, traverse the tree and assign the code to this word */
         code_length = 0;
         /* traverse the tree from current node to the root */
@@ -1094,7 +1014,6 @@ nlk_vectorize(struct nlk_vocab_t **vocab, char **paragraph, bool replace_missing
  * @param paragraph             an array of strings (char arrays)
  * @param sample                sample rate for subsampling frequent words
  *                              - if <= 0, no subsampling will happen
- * @param rng                   the random number generator
  * @param replacement           vocab to use for words not in the vocabulary
  *                              - NULL means do not replace
  * @param end_symbol            if true, add the end symbol at the end
@@ -1217,26 +1136,6 @@ nlk_vocab_at_index(struct nlk_vocab_t **vocab, size_t index)
     return NULL;
 }
 
-/** @fn nlk_vocab_first_paragraph(struct nlk_vocab_t **vocab) 
- * Find the index of the first paragraph in the vocabulary
- *
- * @param vocab the vocabulary
- *
- * @return the index of the first paragraph or 0 if none are found
- */
-size_t
-nlk_vocab_first_paragraph(struct nlk_vocab_t **vocab) 
-{
-    struct nlk_vocab_t *vi;
-
-    for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->type == NLK_VOCAB_PAR) {
-            return vi->index;
-        }
-    }
-    return 0;
-}
-
 /** @fn void nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length)
  * Print a vocabularized line.
  */
@@ -1320,9 +1219,6 @@ nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, double
     
     /* calculate "z" */
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->type == NLK_VOCAB_PAR) {
-            continue;
-        }
         z += pow(vi->count, power);
     }
 
@@ -1336,7 +1232,7 @@ nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, double
 
         if(table_pos / (float)size > d1) {
             vi = vi->hh.next;
-            if(vi == NULL || vi->type == NLK_VOCAB_PAR) {
+            if(vi == NULL) {
                 vi = vi->hh.prev;
             }
             index = vi->index;

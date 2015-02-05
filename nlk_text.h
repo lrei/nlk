@@ -51,15 +51,17 @@
 #endif
 __BEGIN_DECLS
 
-void nlk_text_lower(char *, wchar_t *);
-int nlk_read_word(FILE *, char *, wchar_t *, const size_t);
-int nlk_read_line(FILE *, char **, wchar_t *, const size_t, const size_t);
-void nlk_text_concat_hash(char **, char *, char *);
 
-size_t nlk_text_count_words(FILE *);
-size_t nlk_text_count_lines(FILE *);
-size_t nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
-void nlk_text_print_line(char **);
+void    nlk_text_lower(char *, wchar_t *);
+void    nlk_text_ascii_lower(char *st);
+int     nlk_read_word(FILE *, char *, wchar_t *, const size_t);
+int     nlk_read_line(FILE *, char **, wchar_t *, const size_t, const size_t);
+void    nlk_text_concat_hash(char **, char *, char *);
+size_t  nlk_text_get_line(FILE *);
+size_t  nlk_text_count_words(FILE *);
+size_t  nlk_text_count_lines(FILE *);
+size_t  nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
+void    nlk_text_print_line(char **);
 
 
 __END_DECLS
