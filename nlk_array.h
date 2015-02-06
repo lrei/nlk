@@ -34,14 +34,13 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef ACCELERATE
 #include <Accelerate/Accelerate.h>
 #else
 #include <cblas.h>
 #endif
-
-#include "tinymt32.h"
 
 
 #define NLK_MAX_EXP             6
@@ -88,7 +87,8 @@ typedef struct nlk_array_t NLK_ARRAY;
  * Constructors, copy
  */
 struct  nlk_array_t *nlk_array_create(const size_t, const size_t);
-struct  nlk_array_t *nlk_array_create_view(const size_t, const size_t);
+void    nlk_array_row_view(const NLK_ARRAY *, const size_t, NLK_ARRAY *);
+
 struct  nlk_array_t *nlk_array_resize(struct nlk_array_t *, const size_t, 
                                       const size_t);
 struct  nlk_array_t *nlk_array_create_copy(const struct nlk_array_t *, size_t);
@@ -119,10 +119,10 @@ void nlk_array_zero(struct nlk_array_t *);
 /*
  * Random numbers & Index Table
  */
-void nlk_array_init_uniform(struct nlk_array_t *, const nlk_real, const nlk_real, 
-                            tinymt32_t *);
+void nlk_array_init_uniform(struct nlk_array_t *, const nlk_real, 
+                            const nlk_real);
 void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
-                             size_t, tinymt32_t *);
+                             size_t);
 
 /* 
  * Save/Load 

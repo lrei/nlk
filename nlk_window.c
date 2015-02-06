@@ -153,7 +153,8 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
 
             for(; window_pos < window_end; window_pos++) {
                 if(window_pos == line_pos) {
-                    continue; /* skip the "target" */
+                    contexts[context_idx]->center = varray[window_pos];
+                    continue;
                 }
                 vocab_word = varray[window_pos];
                 contexts[context_idx]->window[window_idx] = vocab_word->index;

@@ -29,8 +29,6 @@
 
 #include <stdint.h>
 
-#include "tinymt32.h"
-
 
 /**
  * Avalanche function (force mix) from MurmurHash3 applied 2x
@@ -53,36 +51,12 @@ nlk_random_fmix(uint64_t k)
     return k;
 }
 
-/**
- * Returns a random unsigned 32bit integer using tinyMT
- *
- * @return a random unsigned 32bit integer
- */
-uint32_t
-nlk_random_uint(tinymt32_t *rng)
-{
-    return tinymt32_generate_uint32(rng);
-}
-
-
-/**
- * xorshift 32 bit pseudo random number generator
- * @param x the previous value of the xorshift ouput or seed
- */
-uint32_t
-nlk_random_xs32(uint32_t *x)
-{
-    *x ^= *x << 13;
-    *x ^= *x >> 17;
-    *x ^= *x << 5;
-    return *x;
-}
 
 /**
  * xorshift64* 64 bit pseudo random number generator
  * @param x the previous value of the xorshift ouput or seed
  */
-void
+static inline void
 nlk_random_xs64(uint64_t *x) {
 	*x ^= *x >> 12; // a
 	*x ^= *x << 25; // b

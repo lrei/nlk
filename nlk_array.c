@@ -32,12 +32,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <math.h>
 #include <float.h>
 
 #include <cblas.h>
 
 #include "nlk_err.h"
+#include "nlk_random.h"
 #include "nlk_array.h"
 
 
@@ -86,39 +88,29 @@ nlk_array_create(const size_t rows, const size_t cols)
 }
 
 /**
- * Create and an struct nlk_array_t view
+ * Assign an array view from a matrix column
  * A view's internal data pointer is meant to be assigned and not memory is
- * allocated
+ * allocated.
  *
- * @param rows      the number of rows
- * @param cols      the number of columns
+ * @param matrix    the matrix
+ * @param rows      the row in the matrix
  *
  * @return struct nlk_array_t or NULL on error
  */
-struct nlk_array_t *
-nlk_array_create_view(const size_t rows, const size_t cols)
+void
+nlk_array_row_view(const NLK_ARRAY *matrix, const size_t row, NLK_ARRAY *array)
 {
-    struct nlk_array_t *array;
 
-    /* 0 dimensions are not allowed */
-    if (rows == 0 || cols == 0) {
-        NLK_ERROR_NULL("Array rows and column numbers must be non-zero "
-                       "positive integers", NLK_EINVAL);
-        /* unreachable */
+    array->cols = matrix->cols;
+    array->rows = 1;
+
+#ifndef NCHECKS
+    if(row > matrix->rows) {
+        NLK_ERROR_VOID("Row out of range", NLK_EBADLEN);
     }
+#endif
+    array->data = &matrix->data[row * matrix->cols];
 
-    /* allocate space for array struct */
-    array = (struct nlk_array_t *) malloc(sizeof(struct nlk_array_t));
-    if(array == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for array struct", 
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
-
-    array->cols = cols;
-    array->rows = rows;
-
-    return array;
 }
 
 /**
@@ -335,14 +327,14 @@ nlk_array_init_wity_carray(struct nlk_array_t *arr, const nlk_real *carr)
  */
 void 
 nlk_array_init_uniform(struct nlk_array_t *array, const nlk_real low, 
-                       const nlk_real high, tinymt32_t *rng)
+                       const nlk_real high)
 {
     size_t ii;
     const size_t length = array->rows * array->cols;
     nlk_real diff = high - low;
 
     for(ii = 0; ii < length; ii++) {
-        array->data[ii] = low + diff * tinymt32_generate_float(rng);
+        array->data[ii] = low + diff * nlk_random_xs1024_float();
     }
 }
 
@@ -358,17 +350,15 @@ nlk_array_init_uniform(struct nlk_array_t *array, const nlk_real low,
 
 void 
 nlk_carray_init_uniform(nlk_real *carr, const nlk_real low, 
-                        const nlk_real high, size_t length, tinymt32_t *rng)
+                        const nlk_real high, size_t length)
 {
     size_t ii;
     nlk_real diff = high - low;
 
     for(ii = 0; ii < length; ii++) {
-        carr[ii] = low + diff * tinymt32_generate_float(rng);
+        carr[ii] = low + diff * nlk_random_xs1024_float();
     }
 }
-
-
 
 
 /**

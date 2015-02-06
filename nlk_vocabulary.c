@@ -55,7 +55,8 @@
  * @param start         the clocks used just before starting to read the file
  */
 static void
-nlk_vocab_display_progress(size_t count_actual, size_t total, clock_t start)
+nlk_vocab_display_progress(const size_t count_actual, const size_t total, 
+                           const clock_t start)
 {
     double progress;
     double speed;
@@ -1019,11 +1020,6 @@ nlk_vectorize(struct nlk_vocab_t **vocab, char **paragraph, bool replace_missing
  * @param end_symbol            if true, add the end symbol at the end
  * @param varray                the vocabulary item array to be written
  * @param n_subsampled          number of subsampled words (overwritten)
- * @param vocab_paragraph       vocabulary item for the paragraph (overwritten)
- * @param tmp                   temporary memory for generating vocab_paragraph
- *                              pass NULL to this disable vocab_paragraph
- * @param word                  for storing the word representation of the
- *                              paragraph
  *
  * @returns number of words vocabularized (size of the array)
  *
@@ -1042,8 +1038,7 @@ size_t
 nlk_vocab_vocabularize(struct nlk_vocab_t **vocab, const uint64_t total_words, 
                        char **paragraph, const float sample,
                        struct nlk_vocab_t *replacement, const bool end_symbol,
-                       struct nlk_vocab_t **varray, size_t *n_subsampled,
-                       struct nlk_vocab_t *vocab_paragraph, char *tmp, char *word) 
+                       struct nlk_vocab_t **varray, size_t *n_subsampled) 
               
 {
     struct nlk_vocab_t *vocab_word;  /* vocabulary item that corresponds to word */
@@ -1081,16 +1076,11 @@ nlk_vocab_vocabularize(struct nlk_vocab_t **vocab, const uint64_t total_words,
     }
 
     /* add end_symbol? */
-    if(end_symbol) {
+    if(end_symbol && vec_idx) {
         HASH_FIND_STR(*vocab, NLK_END_SENT_SYMBOL, vocab_word);
+        if(varray[vec_idx - 1] != vocab_word)
         varray[vec_idx] = vocab_word;
         vec_idx++;
-    }
-
-    /* paragraph */
-    if(tmp != NULL) {
-        nlk_text_concat_hash(paragraph, tmp, word);
-        vocab_paragraph = nlk_vocab_find(vocab, word);
     }
     
     return vec_idx;

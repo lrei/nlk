@@ -102,12 +102,14 @@ void                  nlk_vocab_add_vocab(struct nlk_vocab_t **dest,
                                           struct nlk_vocab_t **source);
 void                  nlk_vocab_free(struct nlk_vocab_t **);
 
+/* reduce */
+void                  nlk_vocab_reduce(struct nlk_vocab_t **, const size_t);
+void                  nlk_vocab_reduce_replace(struct nlk_vocab_t **, 
+                                               const size_t);
 /* stats */
 size_t       nlk_vocab_size(struct nlk_vocab_t **);
 size_t       nlk_vocab_words_size(struct nlk_vocab_t **);
 uint64_t     nlk_vocab_total(struct nlk_vocab_t **);
-void         nlk_vocab_reduce(struct nlk_vocab_t **, const size_t);
-void         nlk_vocab_reduce_replace(struct nlk_vocab_t **, const size_t);
 size_t       vocab_max_code_length(struct nlk_vocab_t **);
 
 /* sorting */
@@ -120,10 +122,10 @@ struct nlk_vocab_t   *nlk_vocab_load(const char *, const size_t);
 int                   nlk_vocab_save_full(const char *, struct nlk_vocab_t **);
 
 /* vocabularize */
-size_t       nlk_vocab_vocabularize(struct nlk_vocab_t **, const uint64_t , char **, 
-                                    const float sample, struct nlk_vocab_t *, 
-                                    const bool, struct nlk_vocab_t **, size_t *,
-                                    struct nlk_vocab_t *, char *, char *);
+size_t       nlk_vocab_vocabularize(struct nlk_vocab_t **, const uint64_t , 
+                                    char **, const float sample, 
+                                    struct nlk_vocab_t *, const bool, 
+                                    struct nlk_vocab_t **, size_t *);
 void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t);
 
 /* NEG table */

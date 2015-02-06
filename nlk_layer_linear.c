@@ -135,40 +135,42 @@ nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer,
 }
 
 /** 
- * Initializes the lookup layer weights 
+ * Initializes the lookup layer weights (word2vec) 
  * Initializations is done by drawing from a uniform distribution in the range
  * [-0.5 / layer_size, 0.5 / layer_size )
  * This follows the word2vec initialization for the lookup layer
  *
  * @param layer     the Lookup Layer to initialize
- * @param rng       the random number generator
  *
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init(struct nlk_layer_lookup_t *layer, tinymt32_t *rng)
+nlk_layer_lookup_init(struct nlk_layer_lookup_t *layer)
 {
     nlk_real low = -0.5 / layer->weights->cols;
     nlk_real high = 0.5 / layer->weights->cols; 
-    nlk_array_init_uniform(layer->weights, low, high, rng);
+    nlk_array_init_uniform(layer->weights, low, high);
 }
 
-/** @fn void nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer)
- * "Freezes" weight updates in this layer, preventing backpropagation updates
+/** 
+ * Initializes lookup layer weights (word2vec) for a given weights array
+ * Initializations is done by drawing from a uniform distribution in the range
+ * [-0.5 / layer_size, 0.5 / layer_size )
+ * This follows the word2vec initialization for the lookup layer
  *
- * @param layer             the Lookup Layer to initialize
- * @param frozen_limit      after and incl. this index, weights are not frozen
+ * @param weights     the weights to initialize
  *
- * @return no return, the lookup layer's weight matrix will be overwritten
+ * @return no return, the weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer, size_t frozen_limit)
+nlk_layer_lookup_init_array(NLK_ARRAY *weights)
 {
-    layer->frozen_limit = frozen_limit;
+    nlk_real low = -0.5 / weights->cols;
+    nlk_real high = 0.5 / weights->cols; 
+    nlk_array_init_uniform(weights, low, high);
 }
 
-
-/** @fn nlk_layer_lookup_init_sigmoid(NLK_LAYER_LINEAR *layer)
+/**
  * Initializes the linear layer weights 
  *
  *
@@ -186,14 +188,13 @@ nlk_layer_lookup_freeze(struct nlk_layer_lookup_t *layer, size_t frozen_limit)
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer, 
-                              tinymt32_t *rng)
+nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer)
 {
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
                                                 layer->weights->cols));
     nlk_real h =  4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows +
                                                 layer->weights->cols));
-    nlk_array_init_uniform(layer->weights, l, h, rng);
+    nlk_array_init_uniform(layer->weights, l, h);
 }
 
 /** 
@@ -204,7 +205,7 @@ nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer,
  */
 void
 nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer, 
-                                   size_t from, tinymt32_t *rng)
+                                   size_t from)
 {
     size_t len = (layer->weights->rows - from) * layer->weights->cols;
     nlk_real l = -4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows + 
@@ -212,7 +213,7 @@ nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer,
     nlk_real h =  4.0 * sqrtf(6.0 / (nlk_real) (layer->weights->rows +
                                                 layer->weights->cols));
     nlk_carray_init_uniform(&layer->weights->data[from * layer->weights->cols], 
-                            l, h, len, rng);
+                            l, h, len);
 }
 
 /** 
@@ -289,6 +290,45 @@ nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *layer,
     }
 }
 
+/** 
+ * Lookup Layer forward pass with ids for 1st layer vectors and a 
+ * Paragraph Vector. They are averaged together. 
+ *
+ * @param layer         the lookup layer
+ * @param indices       the indices to lookup 
+ * @param n_indices     the number of indices in the indices array (array size)
+ * @param pv            the paragraph vector
+ * @param output        the output of the lookup forward pass
+ *
+ * return no return, output is overwritten with result: 1 * layer->cols
+ */
+void
+nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *layer, 
+                                    const size_t *indices,
+                                    const size_t n_indices, 
+                                    NLK_ARRAY *pv, NLK_ARRAY *output)
+{
+    size_t ii;
+    nlk_real s;
+
+#ifndef NCHECKS
+    if (n_indices == 0) {
+        NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
+                       NLK_EINVAL);
+        /* unreachable */
+    }
+#endif
+
+    s =  1.0 / (nlk_real) (n_indices + 1);
+
+    /* add averaged word vectors */
+    for(ii = 0; ii < n_indices; ii++) {
+       nlk_add_scaled_row_vector(s, layer->weights, indices[ii], 0,  output);
+    }
+    /* add averaged paragraph vector */
+   nlk_add_scaled_vectors(s, pv, output);
+}
+
 
 /** 
  * Lookup Layer forward pass with just one id (1st layer) followed by a
@@ -343,6 +383,7 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
  * Lookup Layer backward pass for accumulating gradient
  *
  * @param layer         the lookup layer
+ * @param update        update weights for this layer (otherwise, frozen)
  * @param index         the index corresponing to this gradient
  * @param grad_out      gradient at the layer above (gradient at output)
  * @param gradient      gradient at input for this step (overwritten)
@@ -353,7 +394,8 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer, const NLK_ARRAY *inpu
  */
 void
 nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, 
-                              const NLK_ARRAY *input, const size_t index, 
+                              const bool update, const NLK_ARRAY *input, 
+                              const size_t index, 
                               const nlk_real grad_out, NLK_ARRAY *grad_acc)
 {
     /* gradient at input (accumulate) */
@@ -361,7 +403,9 @@ nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer,
     
 
      /* learn weights for this layer */
-    nlk_add_scaled_vector_row(grad_out, input, layer->weights, index);
+    if(update) {
+        nlk_add_scaled_vector_row(grad_out, input, layer->weights, index);
+    }
 }
 
 /**
@@ -557,11 +601,11 @@ nlk_layer_lookup_load_path(char *filepath)
  *
  * @return the Linear_Layer or NULL if creation failed
  */
-NLK_LAYER_LINEAR *
+struct nlk_layer_linear_t *
 nlk_layer_linear_create(const size_t input_size,  const size_t layer_size, 
                         bool bias)
 {
-    NLK_LAYER_LINEAR *layer;
+    struct nlk_layer_linear_t *layer;
    
     /* Allocate memory for struct, create the members */
     layer = (NLK_LAYER_LINEAR *) malloc(sizeof(NLK_LAYER_LINEAR));
@@ -583,7 +627,7 @@ nlk_layer_linear_create(const size_t input_size,  const size_t layer_size,
     return layer;
 }
 
-/** @fn nlk_layer_linear_init_sigmoid(NLK_LAYER_LINEAR *layer)
+/** 
  * Initializes the linear layer weights 
  *
  *
@@ -603,11 +647,11 @@ nlk_layer_linear_create(const size_t input_size,  const size_t layer_size,
  * @return no return, the lookup layer's weight matrix will be overwritten
  */
 void
-nlk_layer_linear_init_sigmoid(NLK_LAYER_LINEAR *layer, tinymt32_t *rng)
+nlk_layer_linear_init_sigmoid(struct nlk_layer_linear_t *layer)
 {
     nlk_real l = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
     nlk_real h = -4 * sqrtf(6 / (layer->weights->rows + layer->weights->cols));
-    nlk_array_init_uniform(layer->weights, l, h, rng);
+    nlk_array_init_uniform(layer->weights, l, h);
     if(layer->bias != NULL) {
         nlk_array_zero(layer->bias);
     }

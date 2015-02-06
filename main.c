@@ -182,7 +182,7 @@ int main(int argc, char **argv)
 #ifndef NCHECKS
     if(verbose) {
         printf("Checks enabled!\n");
-        printf("Sizeof nlk_real = %lu\n", sizeof(nlk_real));
+        printf("Sizeof nlk_real = %lu bytes\n", sizeof(nlk_real));
     }
 #endif
     if(locale != NULL) {
@@ -233,9 +233,6 @@ int main(int argc, char **argv)
     /** @section Vocabulary
      */
     bool vocab_changes = false;
-    if(learn_par) {
-        max_line = NLK_LM_MAX_LINE_SIZE;
-    }
 
     if(vocab_load_file == NULL) {
         if(verbose) {

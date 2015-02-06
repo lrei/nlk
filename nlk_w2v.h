@@ -49,9 +49,23 @@ struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, size_t, bool hs,
                                             bool neg);
 
 /* train */
-void nlk_word2vec(NLK_LM, struct nlk_neuralnet_t *, bool, size_t,
-                  char *, struct nlk_vocab_t **, size_t, size_t, float, 
-                  nlk_real, unsigned int, int);
+void nlk_word2vec(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
+                  const unsigned int, const char *, 
+                  struct nlk_vocab_t **, const size_t, const size_t, 
+                  const float, nlk_real, unsigned int, int);
+
+/* paragraph vector generation */
+void         nlk_pv_gen_one(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
+                            unsigned int, nlk_real, const nlk_real, 
+                            struct nlk_vocab_t **, const size_t, char **, 
+                            const size_t *,  const nlk_real *, 
+                            struct nlk_context_t **, NLK_CONTEXT_OPTS *, 
+                            NLK_ARRAY *pv, NLK_ARRAY *, NLK_ARRAY *);
+
+NLK_ARRAY   *nlk_pv(NLK_LM, struct nlk_neuralnet_t *, const bool, 
+                    const unsigned int, const char *, struct nlk_vocab_t **, 
+                    const size_t, nlk_real, nlk_real, int);
+
 
 __END_DECLS
 #endif /* __NLK_W2V_H__ */

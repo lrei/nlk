@@ -88,9 +88,8 @@ typedef struct nlk_layer_linear_t NLK_LAYER_LINEAR;
  *  Initialization for lookup or linear layers
  */
 /* Initialize a linear layer that is followed by a sigmoid */
-void nlk_layer_linear_init_sigmoid(NLK_LAYER_LINEAR *, tinymt32_t *rng);
-void nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *, tinymt32_t *rng);
-
+void nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *);
+void nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *, size_t);
 /*
  * Lookup Layer 
  */
@@ -101,8 +100,8 @@ struct nlk_layer_lookup_t *nlk_layer_lookup_create_from_array(NLK_ARRAY *);
 int nlk_layer_lookup_resize(struct nlk_layer_lookup_t *, const size_t);
 
 /* Initialize the lookup layer */
-void nlk_layer_lookup_init(struct nlk_layer_lookup_t *, tinymt32_t *);
-void nlk_layer_lookup_init_from(struct nlk_layer_lookup_t *, size_t, tinymt32_t *);
+void nlk_layer_lookup_init(struct nlk_layer_lookup_t *);
+void nlk_layer_lookup_init_array(NLK_ARRAY *);
 
 /*
  * Simple Lookup (1st Layer)
@@ -112,8 +111,13 @@ void nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *,
                                      const size_t *, 
                                      const size_t, NLK_ARRAY *);
 /* Lookup forward pass with built-in averaging of multiple inputs */
-void nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *, const size_t *, 
+void nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *, 
+                                         const size_t *, 
                                          const size_t, NLK_ARRAY *);
+void nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *, 
+                                           const size_t *, const size_t, 
+                                           NLK_ARRAY *, NLK_ARRAY *);
+
 /* Lookup forward for just one input */
 void nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *,
                                          const size_t, NLK_ARRAY *);
@@ -136,12 +140,12 @@ void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *,
 void nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *, 
                                           const size_t, const NLK_ARRAY *);
 /* Lookup Backprop with accumulator */
-void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, 
+void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, const bool,
                                    const NLK_ARRAY *, const size_t, 
                                    const nlk_real, NLK_ARRAY *);
 
 /*
- * Serialization (Save & Load)
+ * Lookup Serialization (Save & Load)
  */
 /* save */
 void nlk_layer_lookup_save(struct nlk_layer_lookup_t *, FILE *);
@@ -159,7 +163,14 @@ struct nlk_layer_lookup_t *nlk_layer_lookup_load_path(char *);
  * Linear Layer
  */
 /* Create a Linear Layer */
-NLK_LAYER_LINEAR *nlk_layer_linear_create(const size_t, const size_t, bool);
+struct nlk_layer_linear_t *nlk_layer_linear_create(const size_t, const size_t, bool);
+
+/* Initialize the lookup layer */
+void nlk_layer_linear_init(struct nlk_layer_lookup_t *);
+void nlk_layer_linear_init_from(struct nlk_layer_lookup_t *, size_t);
+void nlk_layer_linear_init_sigmoid(struct nlk_layer_linear_t *);
+
+
 
 
 /* Linear Layer forward pass */
