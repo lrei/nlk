@@ -32,6 +32,9 @@
 #define __NLK_W2V_H__
 
 
+#include "nlk_window.h"
+
+
 #undef __BEGIN_DECLS
 #undef __END_DECLS
 #ifdef __cplusplus
@@ -50,7 +53,7 @@ struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, size_t, bool hs,
 
 /* train */
 void nlk_word2vec(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                  const unsigned int, const char *, 
+                  const unsigned int, const char *, const bool,
                   struct nlk_vocab_t **, const size_t, const size_t, 
                   const float, nlk_real, unsigned int, int);
 
@@ -63,8 +66,9 @@ void         nlk_pv_gen_one(const NLK_LM, struct nlk_neuralnet_t *, const bool,
                             NLK_ARRAY *pv, NLK_ARRAY *, NLK_ARRAY *);
 
 NLK_ARRAY   *nlk_pv(NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                    const unsigned int, const char *, struct nlk_vocab_t **, 
-                    const size_t, nlk_real, nlk_real, int);
+                    const unsigned int, const char *, const  bool,
+                    struct nlk_vocab_t **, const size_t, nlk_real, 
+                    nlk_real, int);
 
 
 __END_DECLS

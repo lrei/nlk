@@ -451,10 +451,10 @@ nlk_skipgram(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
 void
 nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn, 
              const bool hs, const unsigned int negative, 
-             const char *train_file_path, struct nlk_vocab_t **vocab, 
-             const size_t total_lines, const size_t window, 
-             const float sample_rate, nlk_real learn_rate, unsigned int epochs, 
-             int verbose)
+             const char *train_file_path, const bool lower,
+             struct nlk_vocab_t **vocab, const size_t total_lines, 
+             const size_t window, const float sample_rate, 
+             nlk_real learn_rate, unsigned int epochs, int verbose)
 {
     /*goto_set_num_threads(1);*/
 
@@ -594,7 +594,11 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
             /* unreachable */
         }
     }
-    wchar_t *low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
+
+    wchar_t *low_tmp = NULL; 
+    if(lower) {
+        low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
+    }
 
     /* for converting to a vocabularized representation of text */
     struct nlk_vocab_t *vectorized[max_line_size];
@@ -740,6 +744,9 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
         free(text_line[zz]);
     }
     free(text_line);
+    if(low_tmp != NULL) {
+        free(low_tmp);
+    }
     nlk_array_free(lk1_out);
     nlk_array_free(grad_acc);
     fclose(train);
@@ -953,8 +960,8 @@ nlk_pv_display(const size_t generated, const size_t total)
 NLK_ARRAY *
 nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs, 
        const unsigned int negative, const char *par_file_path, 
-       struct nlk_vocab_t **vocab, const size_t window, nlk_real learn_rate,
-       nlk_real tol, int verbose)
+       const bool lower, struct nlk_vocab_t **vocab, const size_t window, 
+       nlk_real learn_rate, nlk_real tol, int verbose)
 {
     /* shortcuts */
     struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
@@ -1048,7 +1055,10 @@ nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs,
             /* unreachable */
         }
     }
-    wchar_t *low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
+    wchar_t *low_tmp = NULL; 
+    if(lower) {
+        low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
+    }
 
 
     /* for converting a sentence to a series of training contexts */
@@ -1123,6 +1133,9 @@ nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs,
         free(text_line[zz]);
     }
     free(text_line);
+    if(low_tmp != NULL) {
+        free(low_tmp);
+    }
     nlk_array_free(lk1_out);
     nlk_array_free(grad_acc);
     fclose(par_file);

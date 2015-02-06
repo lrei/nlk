@@ -59,7 +59,6 @@ int main(int argc, char **argv)
     char *locale                = NULL; /* set the locale */
     char *questions_file        = NULL; /* word2vec word-analogy tests */
     char *paraphrases_file      = NULL; /* MSR paraphrases style file */
-    size_t max_line             = 0;    /* max size of a parapgraph */
     size_t vector_size          = 100;  /* word vector size */    
     int window                  = 8;    /* window, words before and after */    
     int negative                = 0;    /* number of negative examples */
@@ -333,8 +332,8 @@ int main(int argc, char **argv)
         //nlk_set_error_handler_off();
         printf("training %s...\n", model_type);
         nlk_word2vec(lm_type, nn, hs, negative, 
-                     train_file, &vocab, total_lines, window, sample_rate, 
-                     learn_rate, epochs, verbose);
+                     train_file, lower_case, &vocab, total_lines, window, 
+                     sample_rate, learn_rate, epochs, verbose);
     }
     nlk_tic_reset();
     if(verbose) { 
@@ -355,7 +354,7 @@ int main(int argc, char **argv)
     }
     if(nn_save_file != NULL) {
         if(nlk_neuralnet_save_path(nn, nn_save_file) != 0) {
-            printf("Unble to save neural network to %s\n", nn_save_file);
+            printf("Unable to save neural network to %s\n", nn_save_file);
         }
     }
 
@@ -379,60 +378,15 @@ int main(int argc, char **argv)
     }
     
     accuracy = 0;
-
     if(paraphrases_file != NULL) {
-
+        nlk_tic("evaluating paraphrases", true);
+        nlk_eval_on_paraphrases(lm_type, nn, hs, negative, window,
+                                paraphrases_file, &vocab, verbose,
+                                &accuracy);
+        printf("accuracy = %f%%\n", accuracy * 100);
+        
     }
 
        
     return 0;
 }
-
-/*
-     nlk_real tol = 0.01;
-    nlk_real ret = 1;
-    size_t iter = 0;
- 
-        nlk_tic("tested", true);
-
-    return 0;
-    char *pv_test_file = NULL;
-
-    // pass over test
-    freeze = true;
-    learn_rate = 0.01;
-    learn_par = true;
-    // extend the vocabulary with paragraphs
-    size_t max_iter = 1000;
-
-    nlk_vocab_extend(&vocab, pv_test_file, NLK_LM_MAX_WORD_SIZE,
-                     NLK_LM_MAX_LINE_SIZE, lower_words);
-
-    // increase size of layers
-    size_t new_table_size = nlk_vocab_size(&vocab);
-    nlk_layer_lookup_resize(lk1, new_table_size);
-
-    NLK_LAYER_LOOKUP *lk2 = nlk_layer_lookup_load_path("vectors.2.nlk.bin");
-
-    nlk_tic_reset();
-    nlk_tic("Learning PVs", true);
-
-    while(ret > tol && iter < max_iter) {
-        ret = nlk_word2vec(lm_type, lk1, lk2, learn_par, freeze, 
-                           pv_test_file, &vocab, window, window, 0, 
-                           vector_size, learn_rate, 10, verbose, NULL, NULL, 
-                           NLK_FILE_BIN);
-        iter++;
-    }
-    nlk_tic("learned PVs", true);
-    printf("ret = %f\n", ret);
-
-    nlk_tic_reset();
-    nlk_tic("eval PVs", true);
-    nlk_eval_on_paraphrases(pv_test_file, &vocab, lk1->weights,
-                            lower_words, &accuracy);
-    
-
-    //printf("\nii=%zu\n", ii);
- *
- */

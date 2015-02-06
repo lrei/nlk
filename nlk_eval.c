@@ -33,10 +33,14 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "nlk_err.h"
+#include "nlk_array.h"
+#include "nlk_neuralnet.h"
+#include "nlk_w2v.h"
 #include "nlk_text.h"
 #include "nlk_vocabulary.h"
-#include "nlk_array.h"
-#include "nlk_err.h"
+#include "nlk_window.h"
+
 #include "nlk_eval.h"
 
 
@@ -316,8 +320,10 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
 }
 
 int
-nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab, 
-                        const NLK_ARRAY *weights,  const bool lower_words, 
+nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn, 
+                        const bool hs, const unsigned int negative,
+                        const unsigned int window, const char *test_file_path, 
+                        struct nlk_vocab_t **vocab, const int verbose,
                         nlk_real *accuracy)
 {
     /** @section Allocation and Initialization
@@ -325,83 +331,26 @@ nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab,
     *accuracy = 0;
     int correct = 0;
     int total = 0;
-    size_t ii;
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
-    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
 
-    NLK_ARRAY *weights_norm;    /* for the normalized copy of the weights */
-    /* normalize weights to make distance calculations easier */
-    weights_norm = nlk_array_create_copy(weights, 0);
-    nlk_array_normalize_row_vectors(weights_norm);
-    size_t limit = weights_norm->rows;
 
-    FILE *fin = fopen(test_file, "rb");
+    FILE *fin = fopen(test_file_path, "rb");
     if(fin == NULL) {
         NLK_ERROR(strerror(errno), errno);
     }
     size_t num_lines = nlk_text_count_lines(fin);
+    fclose(fin);
 
-    struct nlk_vocab_t **par1 = (struct nlk_vocab_t **) malloc(num_lines / 2 * 
-                                             sizeof(struct nlk_vocab_t *));
-    struct nlk_vocab_t **par2 = (struct nlk_vocab_t **) malloc(num_lines / 2 *
-                                             sizeof(struct nlk_vocab_t *));
+    /* generate paragraph vectors */
+    nlk_real tol = 0.01;
+    nlk_real learn_rate = 0.05;
+    NLK_ARRAY *par_vectors = nlk_pv(model_type, nn, hs, negative, 
+                                    test_file_path, true, vocab, window, 
+                                    learn_rate, tol, verbose);
 
-    if(par1 == NULL || par2 == NULL) {
-        NLK_ERROR("failed to allocate memory for test items",  NLK_ENOMEM);
-    }
 
-    char **line1 = (char **) malloc(max_line_size * sizeof(char *));
-    char **line2 = (char **) malloc(max_line_size * sizeof(char *));
-    if(line1 == NULL || line2 == NULL) {
-        NLK_ERROR("failed to allocate memory for a line",  NLK_ENOMEM);
-        /* unreachable */
-    }
-    for(ii = 0; ii < max_line_size; ii++) {
-        line1[ii] = (char *) malloc(max_word_size * sizeof(char));
-        line2[ii] = (char *) malloc(max_word_size * sizeof(char));
-        if(line1[ii] == NULL || line2[ii]) {
-            NLK_ERROR("failed to allocate memory for a line",  NLK_ENOMEM);
-            /* unreachable */
-        }
-    }
-
-    wchar_t *low_tmp = NULL;
-    if(lower_words) {
-        low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
-    }
-
-    /* find the index of the first paragraph vector */
-    /* @TODO change to generate PVs */
-    size_t start_pos = 0;
-
-    /* read file into memory */
-    char *word = (char *) malloc(max_word_size * sizeof(char));
-    char *tmp = (char *) malloc((max_word_size * max_line_size 
-                                 + max_line_size) * sizeof(char));
-
-    for(ii = 0; ii < num_lines / 2; ii++) {
-        nlk_read_line(fin, line1, low_tmp, max_word_size, max_line_size);
-        nlk_read_line(fin, line2, low_tmp, max_word_size, max_line_size);
-
-        nlk_text_concat_hash(line1, tmp, word);
-        par1[ii] = nlk_vocab_find(vocab, word);
-
-        nlk_text_concat_hash(line2, tmp, word);
-        par2[ii] = nlk_vocab_find(vocab, word);
-    }
-
-    /* free the memory for the file reading */
-    for(ii = 0; ii < max_line_size; ii++) {
-        free(line1[ii]);
-        free(line2[ii]);
-    }
-    free(line1);
-    free(line2);
-    free(word);
-    if(low_tmp != NULL) {
-        free(low_tmp);
-    }
-    free(tmp);
+    /* normalize weights to make distance calculations easier */
+    nlk_array_normalize_row_vectors(par_vectors);
+    size_t limit = par_vectors->rows;
 
 
     /** @section Eval Loop
@@ -413,21 +362,22 @@ nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab,
         nlk_real best_similarity = 0;
         size_t most_similar = 0;
         nlk_real sim = 0;
-        size_t index = start_pos;
-        size_t pos1;
-        if(par1[tt] == NULL || par2[tt] == NULL) {
-            continue;
-        }
-        pos1 = par1[tt]->index;
-        
-        for(; index < limit; index++) {
-            sim = nlk_array_row_dot(weights_norm, pos1, weights_norm, index);
+
+        for(size_t index = 0; index < limit; index++) {
+            if(index == tt) { 
+                continue;   /* ignore self */
+            }
+            sim = nlk_array_row_dot(par_vectors, tt, par_vectors, index);
             if(sim > best_similarity) {
                 best_similarity = sim;
                 most_similar = index;
             }
         }
-        if(most_similar == par2[tt]->index) {
+
+        /* is result correct? */
+        if(tt % 2 == 0 && most_similar == tt + 1) {
+            correct++;
+        } else if(tt % 2 == 1 && most_similar == tt - 1) { 
             correct++;
         }
         total += 1;
@@ -436,9 +386,7 @@ nlk_eval_on_paraphrases(const char *test_file, struct nlk_vocab_t **vocab,
 } /* end of parallel for */
     *accuracy = (nlk_real) correct / (nlk_real) total;
 
-    free(par1);
-    free(par2);
-    nlk_array_free(weights_norm);
+    nlk_array_free(par_vectors);
  
     return NLK_SUCCESS;
 }
