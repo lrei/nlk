@@ -28,6 +28,7 @@
  */
 
 #include <stdint.h>
+#include <time.h>
 
 
 /**
@@ -54,6 +55,7 @@ nlk_random_fmix(uint64_t k)
 
 /**
  * xorshift64* 64 bit pseudo random number generator
+ *
  * @param x the previous value of the xorshift ouput or seed
  */
 static inline void
@@ -96,6 +98,8 @@ nlk_random_xs1024_float() {
 
 /**
  * Initializes xorshift1024* state
+ *
+ * @param seed  the seed
  */
 void
 nlk_random_init_xs1024(uint64_t seed)
@@ -109,3 +113,17 @@ nlk_random_init_xs1024(uint64_t seed)
 
 }
 
+/**
+ * Generates a seed based on the number of seconds since epoch and processor
+ * time used by the program
+ */
+uint64_t
+nlk_random_seed()
+{
+    uint64_t seed;
+    time_t e = time(NULL); /* seconds since epoch (POSIX) */
+
+    seed = 6121984 * clock() * e;
+
+    return seed;
+}

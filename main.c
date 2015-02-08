@@ -239,19 +239,26 @@ int main(int argc, char **argv)
         }
         vocab = nlk_vocab_create(train_file, NLK_LM_MAX_WORD_SIZE, 
                                  lower_case, verbose);
+        nlk_vocab_sort(&vocab);
+
         vocab_changes = true;
+        nlk_tic_reset();
+
+        if(verbose) { /* since tic did not print newlines */
+            printf("\n");
+        }
     } else {
         vocab = nlk_vocab_load(vocab_load_file, NLK_LM_MAX_WORD_SIZE);
         nlk_vocab_sort(&vocab);
         nlk_vocab_encode_huffman(&vocab);
     }
 
-    vocab_size = nlk_vocab_last_index(&vocab);
+    vocab_size = nlk_vocab_size(&vocab);
     vocab_words = nlk_vocab_words_size(&vocab);
     vocab_total = nlk_vocab_total(&vocab);
 
     if(verbose) {
-        printf("Reduced to:\nitems: %zu, words: %zu (total count: %zu)\n", 
+        printf("Vocabulary:\nitems: %zu, words: %zu (total count: %zu)\n", 
                 vocab_size, vocab_words, vocab_total);
     }
     
@@ -270,7 +277,6 @@ int main(int argc, char **argv)
 
     /* sort and huffman encode if newly created or reduced */
     if(vocab_changes) {
-        nlk_vocab_sort(&vocab);
         nlk_vocab_encode_huffman(&vocab);
         if(verbose) {
             printf("Vocabulary sorted & huffman encoded\n");
@@ -371,6 +377,8 @@ int main(int argc, char **argv)
     nlk_real accuracy = 0;
 
     if(questions_file != NULL) {
+        nlk_tic_reset();
+        nlk_tic(NULL, false);
         nlk_tic("evaluating word-analogy", true);
         nlk_eval_on_questions(questions_file, &vocab, lk1->weights, 
                               limit_vocab, lower_case, &accuracy);
@@ -379,6 +387,8 @@ int main(int argc, char **argv)
     
     accuracy = 0;
     if(paraphrases_file != NULL) {
+        nlk_tic_reset();
+        nlk_tic(NULL, false);
         nlk_tic("evaluating paraphrases", true);
         nlk_eval_on_paraphrases(lm_type, nn, hs, negative, window,
                                 paraphrases_file, &vocab, verbose,

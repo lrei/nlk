@@ -226,37 +226,21 @@ nlk_read_line(FILE *file, char **line, wchar_t *low_tmp,
 }
 
 /**
- * Turns an arbitraly large sequence of strings into a single hash 
- * stored as a string in key.
+ * Determine the number of words in a line read with nlk_read_line
  *
- * @param line  the sequence of strings
- * @param tmp   tempory memory for the concatenated strings
- *              must be at least (size(string) + 1) * size(seq)
- * @param key   the resulting hash in string form (output)
+ * @param line  the line
+ * 
+ * @return number of words in line
  */
-void
-nlk_text_concat_hash(char **line, char *tmp, char *key)
+size_t
+nlk_text_line_size(char **line)
 {
-    size_t ii;
-    size_t jj;
-    size_t pos = 0;
-    uint32_t hash;
+    size_t count = 0;
 
-    /* loop through words */
-    for(ii = 0; *line[ii] != '\0'; ii++) {  
-        /* loop through chars */
-        for(jj = 0; line[ii][jj] != '\0'; jj++) {
-            tmp[pos] = line[ii][jj];
-            pos++;
-        }
-        tmp[pos] = ' '; /* space separate words */
-        pos++;
+    while(*line[count] != '\0') {
+        count++;
     }
-    tmp[pos] = '\0'; /* replace final space with null terminator */
-
-    /* hash and convert to hexadecimal string */
-    MurmurHash3_x86_32(tmp, pos, 1, &hash);
-    sprintf(key, "0x%"PRIX32, hash);
+    return count;
 }
 
 /**
@@ -372,7 +356,7 @@ nlk_text_count_words(FILE *fp)
     return words;
 }
 
-/** @fn void nlk_text_goto_line(FILE *fp, size_t line)
+/**
  * Set file position to the beginning of a given line
  *
  * @param fp    the file point
@@ -419,7 +403,7 @@ nlk_text_goto_line_start(FILE *fp)
     }
 }
 
-/** @fn void nlk_text_goto_next_word(FILE *fp)
+/**
 * Set file position to the start of the word
 *
 * @param fp    the file pointer
@@ -494,7 +478,7 @@ nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
     /* determine start position */
     start_pos = nlk_get_file_pos(fp, use_lines, total, num_threads, thread_id);
 
-    /* determine end position */
+    /* determine end position i.e. start pos of next thread */
     next_thread = thread_id + 1;
     if(next_thread == num_threads) {
         /* this is the last thread */

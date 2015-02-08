@@ -86,7 +86,7 @@ nlk_word2vec_learn_rate_update(nlk_real learn_rate, nlk_real start_learn_rate,
  * @param epoch             the current epoch
  * @param start             the clock at the start of the training
  */
-static void
+static inline void
 nlk_word2vec_display(nlk_real learn_rate, size_t word_count_actual, 
                      size_t train_words, int epochs, int epoch, 
                      clock_t start)
@@ -97,15 +97,19 @@ nlk_word2vec_display(nlk_real learn_rate, size_t word_count_actual,
 
     clock_t now = clock();
 
-    progress = word_count_actual / 
-               (double)(epochs * train_words + 1) * 100;
+    /* calculate */
+    progress = (word_count_actual / (double)(epochs * train_words + 1)) * 100;
     speed = word_count_actual / ((double)(now - start + 1) / 
-            (double)CLOCKS_PER_SEC * 1000),
+            (double)CLOCKS_PER_SEC * 1000);
+
+    /* create string */
     snprintf(display_str, 256,
             "Alpha: %f  Progress: %.2f%% (%03d/%03d) "
-            "Words/Thread/sec: %.2fk Threads: %d", 
-            learn_rate, progress, (epochs - epoch) + 1, epochs, speed, 
-            omp_get_num_threads());
+            "Words/Thread/sec: %.2fk Threads: %d/%d", 
+            learn_rate, progress, epoch + 1, epochs, speed, 
+            omp_get_num_threads(), omp_get_num_procs());
+
+    /* display */
     nlk_tic(display_str, false);
 }
 
@@ -165,7 +169,6 @@ nlk_word2vec_create(size_t vocab_size, size_t paragraphs, size_t layer_size,
         lkneg = nlk_layer_lookup_create(vocab_size, layer_size);
         /* [ default initialization: zero ] */
         nlk_neuralnet_add_layer_lookup(nn, lkneg);
-
     }
  
     return nn;
@@ -173,6 +176,13 @@ nlk_word2vec_create(size_t vocab_size, size_t paragraphs, size_t layer_size,
 
 /**
  * Hierarchical Softmax
+ * @param lk2hs         the hierarchical softmax layer
+ * @param update        wether to update the layer weights or not
+ * @param lk1_out       the output of the previous layer, input to this one
+ * @param learn_rate    the learning rate
+ * @param sigmoid_table the sigmoid table
+ * @param center_word   the center/target word
+ * @param grad_acc      the accumulated gradient (output)
  *
  */
 static inline nlk_real
@@ -240,6 +250,18 @@ hierarchical_softmax(NLK_LAYER_LOOKUP *lk2hs, const bool update,
 
 /**
  * Negative Sampling
+ * 
+ * @param lk2neg        the negative sampling layer
+ * @param update        wether to update the layer weights or not
+ * @param neg_table     the negative sampling table
+ * @param negative      the number of negative examples to use
+ * @param vocab_size    the size of the vocabulary
+ * @param learn_rate    the learning rate
+ * @param center_word   the center/target word (i.e. positive example)
+ * @param lk1_out       the output of the previous layer, input to this one
+ * @param sigmoid_table the sigmoid table
+ * @param grad_acc      the accumulated gradient (output)
+ *
  */
 static inline nlk_real
 negative_sampling(NLK_LAYER_LOOKUP *lk2neg, const bool update, 
@@ -364,7 +386,6 @@ nlk_cbow(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
 
     /** @section CBOW Hierarchical Softmax 
      */
-
     if(hs) {
         hierarchical_softmax(lk2hs, true, lk1_out, learn_rate, sigmoid_table,
                              context->center, grad_acc);
@@ -437,10 +458,13 @@ nlk_skipgram(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
  *
  * @param model_type        NLK_SKIPGRAM, NLK_CBOW
  * @param nn                the neural network
- * @param learn_par         learn paragraph vectors
+ * @param hs                use hierarchical softmax
+ * @param negative          number of negative examples to use (NEG sampling)
  * @param train_file_path   the path of the train file
+ * @param lower             convert read words to lower case
  * @param vocab             the vocabulary
- * @param window
+ * @param total_lines       total lines in train file (used for PVs)
+ * @param window            
  * @param sample_rate
  * @param learn_rate
  * @param epochs
@@ -512,14 +536,13 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
     nlk_context_model_opts(model_type, window, &ctx_opts);
 
     /* determine the train file size */
-    size_t train_file_size;
     FILE *in = fopen(train_file_path, "rb");
     if (in == NULL) {
         NLK_ERROR_VOID(strerror(errno), errno);
         /* unreachable */
     }
     fseek(in, 0, SEEK_END);
-    train_file_size = ftell(in);
+    size_t train_file_size = ftell(in);
     fclose(in);
 
 
@@ -529,9 +552,7 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
     nlk_real learn_rate_start = learn_rate;
 
    /* random number generator initialization */
-    uint64_t seed = 6121984 * clock();
-    seed = nlk_random_fmix(seed);
-    nlk_random_init_xs1024(seed);
+    nlk_random_init_xs1024(nlk_random_seed());
 
     /* sigmoid table */
     nlk_real *sigmoid_table = nlk_table_sigmoid_create();
@@ -570,7 +591,7 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
 
     /** @subsection Neural Network thread private initializations
      */
-    int local_epoch = epochs;          /* current epoch (thread local) */
+    int local_epoch = 0;          /* current epoch (thread local) */
 
     /* output of the first layer */
     NLK_ARRAY *lk1_out = nlk_array_create(layer_size, 1);
@@ -624,12 +645,11 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
      * The train file is divided into parts, one part for each thread.
      * Open file and move to thread specific starting point
      */
-    size_t count = 0;
-    size_t file_pos_last = 0;
     size_t file_pos = 0;
     size_t end_pos = 0;
     size_t line_start = 0;
     size_t line_cur = 0;
+    size_t par_id = 0;
     size_t ex = 0;
     FILE *train = fopen(train_file_path, "rb");
 
@@ -639,7 +659,6 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
         end_pos = nlk_set_file_pos(train, learn_par, train_file_size,
                                    num_threads, thread_id);
         file_pos = ftell(train);
-        file_pos_last = file_pos;
 
         /* determine line number */
         if(learn_par) {
@@ -649,14 +668,11 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
 
         /** @section Start of Training Loop (Epoch Loop)
          */
-        while(local_epoch > 0) {
+        while(local_epoch < epochs) {
              /* update learning rate */
             if (word_count - last_word_count > 10000) {
                 word_count_actual += word_count - last_word_count;
                 last_word_count = word_count;
-
-                count += file_pos - file_pos_last;
-                file_pos_last = file_pos;
 
                 /* display progress */
                 if(verbose > 0) {
@@ -683,11 +699,17 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
             /* vocabularize */
             line_len = nlk_vocab_vocabularize(vocab, train_words, text_line, 
                                               sample_rate, 
-                                              NULL, false, vectorized, 
+                                              NULL, true, vectorized, 
                                               &n_subsampled); 
 
+            /* line_len = 1 would be an empty line, nothing to learn */
+            if(line_len < 2) {
+                continue;
+            }
+
             /* context window */
-            n_examples = nlk_context_window(vectorized, line_len, line_cur, 
+            par_id = line_cur + vocab_size;
+            n_examples = nlk_context_window(vectorized, line_len, par_id, 
                                             &ctx_opts, contexts);
 
 
@@ -702,7 +724,7 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
                 }
             /* CBOW & PVDM */
             } else if(model_type == NLK_CBOW || model_type == NLK_PVDM) {
-                for(size_t ex = 0; ex < n_examples; ex++) {
+                for(ex = 0; ex < n_examples; ex++) {
                     nlk_cbow(lk1, lkhs, hs, lkneg, negative, neg_table, 
                              vocab_size, learn_rate, sigmoid_table, 
                              contexts[ex], grad_acc, lk1_out);
@@ -712,18 +734,19 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
                 /* unreachable */
             }
 
+            /* update count/location */
+            word_count += line_len + n_subsampled;
             line_cur++;
-            word_count += n_examples + n_subsampled;
+            file_pos = ftell(train);
 
             /** @subsection Epoch End Check
-             * Decrement thread private epoch counter if necessary
+             * Increment thread private epoch counter if necessary
              */
-            file_pos = ftell(train);
             /* check for end of file part, decrement local epochs, rewind */
             if(file_pos >= end_pos) {
-                /* update */
+                /* update count and epoch */
                 word_count_actual += word_count - last_word_count;
-                local_epoch--;
+                local_epoch++;
 
                 /* rewind */
                 word_count = 0;
@@ -786,9 +809,11 @@ nlk_pv_dm_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
 
     /* The context words get forwarded through the first lookup layer
      * and their vectors are averaged together with the PV.
+     * The window[0] is the paragraph id and should be ignored as the PV
+     * is provided independently of the rest of the lookup layer
      */
-    nlk_layer_lookup_forward_lookup_avg_p(lk1, context->window, context->size, 
-                                          pv, lk1_out);
+    nlk_layer_lookup_forward_lookup_avg_p(lk1, &context->window[1], 
+                                          context->size - 1, pv, lk1_out);
 
     /* Hierarchical Softmax */
     if(hs) {
@@ -812,6 +837,9 @@ nlk_pv_dm_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
 
 /**
  * Generate a PV using PVDBOW
+ *
+ * In PVDBOW each "context" is just the target word which is associated with 
+ * the PV.
  */
 static inline nlk_real
 nlk_pv_dbow_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
@@ -910,11 +938,12 @@ nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool h
 
     if(model_type == NLK_PVDBOW) {
         do {
+            err = 0;
             for(size_t ex = 0; ex < n_examples; ex++) {
-                err = nlk_pv_dbow_gen(lk1, lkhs, hs, lkneg, negative, 
-                                      neg_table, vocab_size, learn_rate, 
-                                      sigmoid_table, contexts[ex], grad_acc, 
-                                      lk1_out, pv);
+                err += nlk_pv_dbow_gen(lk1, lkhs, hs, lkneg, negative, 
+                                       neg_table, vocab_size, learn_rate, 
+                                       sigmoid_table, contexts[ex], grad_acc, 
+                                       lk1_out, pv);
 
                 learn_rate = nlk_pv_learn_rate_update(learn_rate, err_prev, 
                                                       err);
@@ -923,13 +952,14 @@ nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool h
         } while(err > tol);
     } else if(model_type == NLK_PVDM) {
         do {
+            err = 0;
             for(size_t ex = 0; ex < n_examples; ex++) {
-                err = nlk_pv_dm_gen(lk1, lkhs, hs, lkneg, negative, neg_table, 
-                                    vocab_size, learn_rate, sigmoid_table, 
-                                    contexts[ex], grad_acc, lk1_out, pv);
+                err += nlk_pv_dm_gen(lk1, lkhs, hs, lkneg, negative, neg_table, 
+                                     vocab_size, learn_rate, sigmoid_table, 
+                                     contexts[ex], grad_acc, lk1_out, pv);
 
                  learn_rate = nlk_pv_learn_rate_update(learn_rate, err_prev, 
-                                                      err);
+                                                       err);
                 err_prev = err;
             }  
         } while(err > tol);
@@ -941,6 +971,9 @@ nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool h
 
 /**
  * Display progress of paragraph vector generation
+ *
+ * @param generated number of PVs generated so far
+ * @param total     total number of PVs to generate
  */
 static void
 nlk_pv_display(const size_t generated, const size_t total)
@@ -956,6 +989,7 @@ nlk_pv_display(const size_t generated, const size_t total)
 
 /**
  * Learn a series of paragraph vectors from a file
+ *
  */
 NLK_ARRAY *
 nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs, 

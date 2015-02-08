@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "nlk_err.h"
+#include "nlk_tic.h"
 #include "nlk_array.h"
 #include "nlk_neuralnet.h"
 #include "nlk_w2v.h"
@@ -343,6 +344,9 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
     /* generate paragraph vectors */
     nlk_real tol = 0.01;
     nlk_real learn_rate = 0.05;
+    if(verbose) {
+        nlk_tic("generating paragraph vectors", true);
+    }
     NLK_ARRAY *par_vectors = nlk_pv(model_type, nn, hs, negative, 
                                     test_file_path, true, vocab, window, 
                                     learn_rate, tol, verbose);

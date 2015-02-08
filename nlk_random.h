@@ -50,6 +50,7 @@ uint64_t    nlk_random_fmix(uint64_t);
 uint64_t    nlk_random_xs1024();
 float       nlk_random_xs1024_float();
 void        nlk_random_init_xs1024(uint64_t seed);
+uint64_t    nlk_random_seed();
 
 
 
