@@ -351,14 +351,20 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
                                     test_file_path, true, vocab, window, 
                                     learn_rate, tol, verbose);
 
-
     /* normalize weights to make distance calculations easier */
+    if(verbose) {
+        nlk_tic("normalizing paragraph vectors", true);
+    }
     nlk_array_normalize_row_vectors(par_vectors);
     size_t limit = par_vectors->rows;
 
 
     /** @section Eval Loop
      */
+    if(verbose) {
+        nlk_tic("evaluating", true);
+    }
+
 #pragma omp parallel reduction(+ : correct) reduction(+ : total)
 {
 #pragma omp for

@@ -22,9 +22,31 @@
 #include "nlk_w2v.h"
 
 
+#define PROGRAM_NAME "nlktool"
+#define PROGRAM_VERSION "1.0.0"
+#define AUTHOR "Luis Rei <me@luisrei.com>"
+#define LICENSE "MIT"
+
+
+static void print_version()
+{
+    printf("(N)eural (L)anguage (K)it Tool- v %s\n"
+           "Copyright (C) 2014-2015 %s\n"
+           "http://luisrei.com\n"
+           "License: %s\n\n",
+           PROGRAM_VERSION, AUTHOR, LICENSE);
+}
+
 static void print_usage()
 {
-    printf("usage:\n");
+    print_version();
+    printf ("Usage: %s [OPTION]... [FILE]...\n", PROGRAM_NAME);
+    fputs("\
+Neural Network Natural Language Processing Tool.\n\
+\n\
+  -a, --append              append to the given FILEs, do not overwrite\n\
+  -i, --ignore-interrupts   ignore interrupt signals\n\
+", stdout);
 }
 
 
@@ -59,6 +81,7 @@ int main(int argc, char **argv)
     char *locale                = NULL; /* set the locale */
     char *questions_file        = NULL; /* word2vec word-analogy tests */
     char *paraphrases_file      = NULL; /* MSR paraphrases style file */
+    char *paragraphs_file       = NULL; /* Line delimited paragraphs file */
     size_t vector_size          = 100;  /* word vector size */    
     int window                  = 8;    /* window, words before and after */    
     int negative                = 0;    /* number of negative examples */
@@ -96,11 +119,12 @@ int main(int argc, char **argv)
             {"eval-paraphrases",    required_argument, 0,               'p'},
             {"model",               required_argument, 0,               'm'},
             {"ouput-vectors",       required_argument, 0,               'o'},
+            {"gen-par-vectors",     required_argument, 0,               'g'},
             {0,                     0,                 0,               0  }
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        c = getopt_long(argc, argv, "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:",
+        c = getopt_long(argc, argv, "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:g:",
                        long_options, &option_index);
 
         /* Detect the end of the options. */
@@ -169,6 +193,11 @@ int main(int argc, char **argv)
             case 'p':
                 paraphrases_file = optarg;
                 break;
+            case 'g':
+                paragraphs_file = optarg;
+                printf("-g NOT IMPLEMENTED");
+                exit(1);
+                break;
             case '?':
                 print_usage();
                 exit(0);
@@ -177,6 +206,13 @@ int main(int argc, char **argv)
                 exit(1);
         }
     }
+
+    /* check for no options */
+    if(optind == 0) {
+        print_usage();
+        exit(1);
+    }
+
     /** @subsection Process some options */
 #ifndef NCHECKS
     if(verbose) {
@@ -327,9 +363,9 @@ int main(int argc, char **argv)
         nn = nlk_word2vec_create(vocab_size, total_lines, vector_size, hs,
                                  negative);
         if(verbose) {
-            printf("Neural Network created v=%zu x size=%zu\n"
-                   "hs = %d, neg = %d\n", vocab_size, vector_size, hs,
-                   negative);
+            printf("Neural Network created v=%zu (+%zu) x size=%zu\n"
+                   "hs = %d, neg = %d\n", vocab_size, total_lines, vector_size, 
+                   hs, negative);
         }
     }
 
@@ -347,7 +383,7 @@ int main(int argc, char **argv)
     }
     
     /* save */
-    if(learn_par && !save_sents) {
+    if(learn_par && !save_sents && train_file != NULL) {
         if(verbose) {
             printf("Removing sentence vectors from NN\n");
         }

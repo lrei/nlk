@@ -1,7 +1,7 @@
 /******************************************************************************
  * NLK - Neural Language Kit
  *
- * Copyright (c) 2014 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+ * Copyright (c) 2014-2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to 
@@ -23,16 +23,16 @@
  *****************************************************************************/
 
 
-/** @file nlk_w2v.h
- * Word2Vec: CBOW & Skipgram model definitions
+/** @file nlk_learn_rate.h
+ * Learning Rate update function definitions.
  */
 
 
-#ifndef __NLK_W2V_H__
-#define __NLK_W2V_H__
+#ifndef __NLK_LEARN_RATE_H__
+#define __NLK_LEARN_RATE_H__
 
 
-#include "nlk_window.h"
+#include "nlk_array.h"
 
 
 #undef __BEGIN_DECLS
@@ -46,30 +46,10 @@
 #endif
 __BEGIN_DECLS
 
-
-/* create */
-struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, size_t, bool, 
-                                            bool);
-
-/* train */
-void nlk_word2vec(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                  const unsigned int, const char *, const bool,
-                  struct nlk_vocab_t **, const size_t, const size_t, 
-                  const float, nlk_real, unsigned int, int);
-
-/* paragraph vector generation */
-nlk_real nlk_pv_gen_one(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                            unsigned int, nlk_real, const nlk_real, 
-                            struct nlk_vocab_t **, const size_t, char **, 
-                            const size_t *,  const nlk_real *, 
-                            struct nlk_context_t **, NLK_CONTEXT_OPTS *, 
-                            NLK_ARRAY *pv, NLK_ARRAY *, NLK_ARRAY *);
-
-NLK_ARRAY *nlk_pv(NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                  const unsigned int, const char *, const  bool,
-                  struct nlk_vocab_t **, const size_t, nlk_real, 
-                  nlk_real, int);
+nlk_real nlk_learn_rate_w2v_update(nlk_real, nlk_real, size_t, size_t, size_t);
+nlk_real nlk_learn_rate_bold_update(nlk_real, nlk_real, nlk_real);
+nlk_real nlk_learn_rate_dec_update(nlk_real, nlk_real, nlk_real);
 
 
 __END_DECLS
-#endif /* __NLK_W2V_H__ */
+#endif /* __NLK_ARRAY_H__ */
