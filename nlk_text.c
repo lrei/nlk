@@ -643,11 +643,8 @@ nlk_text_mem_count_lines(char *mem_ptr, off_t size) {
 off_t
 nlk_text_mem_get_line_pos(char *mem_ptr, size_t line_num, size_t size)
 {
-    int term;                   /* word terminator */
-    size_t word_idx = 0;        /* word in line index */
     size_t cur_ln = 0;          /* position in file (line number) */
     size_t start = 0;           /* start of the line to retrieve (offset) */
-
 
     for(off_t ii = 0; ii < size && cur_ln <= line_num; ii++) {
         /* check for end of line */

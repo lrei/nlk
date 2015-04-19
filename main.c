@@ -18,13 +18,13 @@
 #include "nlk_criterion.h"
 #include "nlk_tic.h"
 #include "nlk_eval.h"
-
 #include "nlk_w2v.h"
+#include "nlk_pv.h"
 
 
 /* program info */
 #define PROGRAM_NAME "nlktool"
-#define PROGRAM_VERSION "1.0.0"
+#define PROGRAM_VERSION "0.0.1"
 #define AUTHOR "Luis Rei <me@luisrei.com>"
 #define LICENSE "MIT"
 
@@ -80,6 +80,7 @@ int main(int argc, char **argv)
     char *word_vectors_file     = NULL; /* export word vectors to this file */
     char *vectors_output_file   = NULL; /* save word vectors to this file */
     char *pvs_output_file       = NULL; /* save PVs to this file */
+    char *pvs_save_file         = NULL; /* save generatedPVs to this file */
     char *pvs_input_file        = NULL; /* read PVs from this file (eval) */
     char *locale                = NULL; /* set the locale */
     char *questions_file        = NULL; /* word2vec word-analogy tests */
@@ -94,6 +95,7 @@ int main(int argc, char **argv)
     float sample_rate           = 1e-3; /* random undersample of freq words */
     size_t limit_vocab          = 0;    /* only for question answering */
     size_t limit_pvs            = 0;    /* only for pv eval */
+    unsigned int gen_iter       = 100;  /* PV inference iterations (steps) */
 
     while(1) {
         static struct option long_options[] = {
@@ -126,12 +128,14 @@ int main(int argc, char **argv)
             {"model",               required_argument, 0,               'm'},
             {"output-vectors",      required_argument, 0,               'o'},
             {"output-paragraphs",   required_argument, 0,               'z'},
-            {"gen-par-vectors",     required_argument, 0,               'g'},
+            {"gen-pvs",             required_argument, 0,               'g'},
+            {"save-pvs",            required_argument, 0,               'j'},
+            {"gen-iter",            required_argument, 0,               'e'},
             {0,                     0,                 0,               0  }
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        /* "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:g:z:d:b:" */
+        /* "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:g:z:d:b:e:j:" */
         c = getopt_long(argc, argv, "", long_options, &option_index);
 
         /* Detect the end of the options. */
@@ -189,6 +193,7 @@ int main(int argc, char **argv)
                 word_vectors_file = optarg;
                 // @TODO word vectors
                 printf("-x NOT IMPLEMENTED");
+                exit(1);
                 break;
             case 'o':
                 vectors_output_file = optarg;
@@ -197,19 +202,22 @@ int main(int argc, char **argv)
                 questions_file = optarg;
                 break;
             case 'k':
-                limit_vocab = atoi(optarg);
+                limit_vocab = (unsigned int) atoi(optarg);
                 break;
             case 'p':
                 paraphrases_file = optarg;
                 break;
             case 'g':
-                // @TODO gen pvs
                 paragraphs_file = optarg;
-                printf("-g NOT IMPLEMENTED");
-                exit(1);
+                break;
+            case 'e':
+                gen_iter = (unsigned int) atoi(optarg);
+                break;
+            case 'j':
+                pvs_save_file = optarg;
                 break;
             case 'z':
-                pvs_output_file = optarg; /* save PVs to this file */
+                pvs_output_file = optarg; /* export PVs to this file */
                 break;
             case 'd':
                 pvs_input_file  = optarg; /* read PVs from this file (eval) */
@@ -446,13 +454,14 @@ int main(int argc, char **argv)
         }
         
         /* save neural net */
-        if(learn_par && !save_sents && train_file != NULL) {
-            if(verbose) {
-                printf("Removing sentence vectors from NN\n");
+        if(learn_par && train_file != NULL) {
+            if(!save_sents) {
+                if(verbose) {
+                    printf("Removing sentence vectors from NN\n");
+                }
+                /* remove PVs from lookup */
+                vocab_size = nlk_vocab_size(&vocab);
             }
-            /* remove PVs from lookup */
-            vocab_size = nlk_vocab_size(&vocab);
-
             nlk_layer_lookup_resize(lk1, vocab_size);
 
         }
@@ -461,6 +470,34 @@ int main(int argc, char **argv)
                 printf("Unable to save neural network to %s\n", nn_save_file);
             }
         }
+    }
+
+    /** @section Paragraph Vector Inference
+     */
+    if(paragraphs_file != NULL) {
+        if(nn == NULL) {
+            NLK_ERROR_ABORT("no neural network loaded.", NLK_EINVAL);
+        }
+        if(verbose) {
+            nlk_tic("generating paragraph vectors", true);
+        }
+        NLK_ARRAY *par_vectors = nlk_pv(lm_type, nn, hs, negative, 
+                                        paragraphs_file, true, &vocab, window, 
+                                        learn_rate, gen_iter, verbose);
+
+        if(pvs_save_file != NULL) {
+            if(verbose) {
+                printf("Saving paragraph vectors to %s\n", pvs_save_file);
+            }
+            FILE *fp_pv = fopen(pvs_save_file, "wb");
+            if(fp_pv == NULL) {
+                NLK_ERROR_ABORT("unable to open file.", NLK_FAILURE);
+                /* unreachable */
+            }
+            nlk_array_save(par_vectors, fp_pv);
+            fclose(fp_pv);
+        }
+        nlk_array_free(par_vectors);
     }
 
     /** @section Evaluation  (Intrinsic)
@@ -489,9 +526,8 @@ int main(int argc, char **argv)
         nlk_tic_reset();
         nlk_tic(NULL, false);
         nlk_tic("evaluating paraphrases", true);
-        unsigned int steps = 100;
         nlk_eval_on_paraphrases(lm_type, nn, hs, negative, window, learn_rate,
-                                steps, paraphrases_file, &vocab, verbose,
+                                gen_iter, paraphrases_file, &vocab, verbose,
                                 &accuracy);
         printf("accuracy = %f%%\n", accuracy * 100);
         

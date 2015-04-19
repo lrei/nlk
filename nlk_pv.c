@@ -238,7 +238,6 @@ nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs,
     size_t ctx_size = window * 2;   /* max context size */
     size_t context_multiplier = 1;  /* != 1 only for PVDBOW */
 
-    bool learn_par = true;
     if(model_type == NLK_PVDBOW) { /* PVDBOW */
         context_multiplier = ctx_size;
         ctx_size = 1;   /* one (word, paragraph) pair at a time */
