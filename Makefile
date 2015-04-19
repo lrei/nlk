@@ -73,7 +73,7 @@ UTHASHOPTS = -DHASH_BLOOM=32
 OBJS = main.o nlk_err.o nlk_array.o nlk_layer_linear.o nlk_text.o \
 	   nlk_vocabulary.o nlk_tic.o nlk_window.o nlk_transfer.o nlk_criterion.o \
 	   nlk_eval.o nlk_w2v.o MurmurHash3.o nlk_neuralnet.o nlk_random.o \
-	   nlk_learn_rate.o
+	   nlk_learn_rate.o nlk_pv.o
 
 
 all: release
@@ -82,10 +82,13 @@ release: CFLAGS += $(OPT_FLAGS)
 release: LDFLAGS += -fopenmp
 release: nlk
 
-debug: CFLAGS = -g -static-libgcc -DDEBUG
+single: CFLAGS += $(OPT_FLAGS) -DNOMP
+single: nlk
+
+debug: CFLAGS = -g -static-libgcc -DDEBUG -DNOMP
 debug: nlk
 
-debug-multi: CFLAGS = -g -static-libgcc
+debug-multi: CFLAGS = -g -static-libgcc -DDEBUG
 debug-multi: LDFLAGS += -fopenmp
 debug-multi: nlk
 

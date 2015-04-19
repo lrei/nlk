@@ -22,6 +22,7 @@
 #include "nlk_w2v.h"
 
 
+/* program info */
 #define PROGRAM_NAME "nlktool"
 #define PROGRAM_VERSION "1.0.0"
 #define AUTHOR "Luis Rei <me@luisrei.com>"
@@ -78,6 +79,8 @@ int main(int argc, char **argv)
     char *nn_save_file          = NULL; /* save neuralnet to this file */
     char *word_vectors_file     = NULL; /* export word vectors to this file */
     char *vectors_output_file   = NULL; /* save word vectors to this file */
+    char *pvs_output_file       = NULL; /* save PVs to this file */
+    char *pvs_input_file        = NULL; /* read PVs from this file (eval) */
     char *locale                = NULL; /* set the locale */
     char *questions_file        = NULL; /* word2vec word-analogy tests */
     char *paraphrases_file      = NULL; /* MSR paraphrases style file */
@@ -86,10 +89,11 @@ int main(int argc, char **argv)
     int window                  = 8;    /* window, words before and after */    
     int negative                = 0;    /* number of negative examples */
     int epochs                  = 5;    /* number of iterations/epochs */
-    int min_count               = 5;    /* number of iterations/epochs */
+    int min_count               = 0;    /* minimum word frequency (count) */
     nlk_real learn_rate         = 0;    /* learning rate (start) */
     float sample_rate           = 1e-3; /* random undersample of freq words */
     size_t limit_vocab          = 0;    /* only for question answering */
+    size_t limit_pvs            = 0;    /* only for pv eval */
 
     while(1) {
         static struct option long_options[] = {
@@ -98,7 +102,7 @@ int main(int argc, char **argv)
             {"hs",                  no_argument,       &hs,             1  },
             {"binary",              no_argument,       &binary,         1  },
             {"lower-case",          no_argument,       &lower_case,     1  },
-            {"save-sentences",      no_argument,       &save_sents,     1  },
+            {"save-paragraphs",     no_argument,       &save_sents,     1  },
             /* These options don’t set a flag */
             {"train",               required_argument, 0,               't'},
             {"locale",              required_argument, 0,               'a'},
@@ -117,15 +121,18 @@ int main(int argc, char **argv)
             {"eval-questions",      required_argument, 0,               'q'},
             {"limit-vocab",         required_argument, 0,               'k'},
             {"eval-paraphrases",    required_argument, 0,               'p'},
+            {"eval-pvs",            required_argument, 0,               'd'},
+            {"limit-pvs",           required_argument, 0,               'b'},
             {"model",               required_argument, 0,               'm'},
-            {"ouput-vectors",       required_argument, 0,               'o'},
+            {"output-vectors",      required_argument, 0,               'o'},
+            {"output-paragraphs",   required_argument, 0,               'z'},
             {"gen-par-vectors",     required_argument, 0,               'g'},
             {0,                     0,                 0,               0  }
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
-        c = getopt_long(argc, argv, "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:g:",
-                       long_options, &option_index);
+        /* "t:r:c:v:w:a:u:i:m:x:s:l:a:q:p:k:n:y:g:z:d:b:" */
+        c = getopt_long(argc, argv, "", long_options, &option_index);
 
         /* Detect the end of the options. */
         if(c == -1) {
@@ -180,6 +187,8 @@ int main(int argc, char **argv)
                 break;
             case 'x':
                 word_vectors_file = optarg;
+                // @TODO word vectors
+                printf("-x NOT IMPLEMENTED");
                 break;
             case 'o':
                 vectors_output_file = optarg;
@@ -194,9 +203,19 @@ int main(int argc, char **argv)
                 paraphrases_file = optarg;
                 break;
             case 'g':
+                // @TODO gen pvs
                 paragraphs_file = optarg;
                 printf("-g NOT IMPLEMENTED");
                 exit(1);
+                break;
+            case 'z':
+                pvs_output_file = optarg; /* save PVs to this file */
+                break;
+            case 'd':
+                pvs_input_file  = optarg; /* read PVs from this file (eval) */
+                break;
+            case 'b':
+                limit_pvs = atoi(optarg);
                 break;
             case '?':
                 print_usage();
@@ -220,6 +239,12 @@ int main(int argc, char **argv)
         printf("Sizeof nlk_real = %lu bytes\n", sizeof(nlk_real));
     }
 #endif
+#ifdef DEBUG
+    if(verbose) {
+        printf("Running in DEBUG mode!\n");
+    }
+#endif
+
     if(locale != NULL) {
         setlocale(LC_ALL, locale);
     } else {
@@ -269,7 +294,7 @@ int main(int argc, char **argv)
      */
     bool vocab_changes = false;
 
-    if(vocab_load_file == NULL) {
+    if(vocab_load_file == NULL && train_file != NULL) {
         if(verbose) {
             nlk_tic(NULL, false);
         }
@@ -283,32 +308,44 @@ int main(int argc, char **argv)
         if(verbose) { /* since tic did not print newlines */
             printf("\n");
         }
-    } else {
+    } else if(vocab_load_file != NULL) {
         vocab = nlk_vocab_load(vocab_load_file, NLK_LM_MAX_WORD_SIZE);
         nlk_vocab_sort(&vocab);
         nlk_vocab_encode_huffman(&vocab);
+    } else {
+        vocab = NULL;
+        vocab_changes = false;
     }
 
-    vocab_size = nlk_vocab_size(&vocab);
-    vocab_words = nlk_vocab_words_size(&vocab);
-    vocab_total = nlk_vocab_total(&vocab);
-
-    if(verbose) {
-        printf("Vocabulary:\nitems: %zu, words: %zu (total count: %zu)\n", 
-                vocab_size, vocab_words, vocab_total);
-    }
-    
-    if(min_count > 0) {
-        vocab_changes = true;
-        nlk_vocab_reduce(&vocab, min_count);
+    if(vocab != NULL) {
         vocab_size = nlk_vocab_size(&vocab);
         vocab_words = nlk_vocab_words_size(&vocab);
         vocab_total = nlk_vocab_total(&vocab);
-    
+
         if(verbose) {
-            printf("Reduced to:\nitems: %zu, words: %zu (total count: %zu)\n", 
+            printf("Vocabulary:\nitems: %zu, words: %zu (total count: %zu)\n", 
                     vocab_size, vocab_words, vocab_total);
         }
+    
+        if(min_count > 0) {
+            vocab_changes = true;
+            nlk_vocab_reduce(&vocab, min_count);
+            vocab_size = nlk_vocab_size(&vocab);
+            vocab_words = nlk_vocab_words_size(&vocab);
+            vocab_total = nlk_vocab_total(&vocab);
+        
+            if(verbose) {
+                printf("Reduced to:\nitems: %zu, words: %zu (total count: %zu)\n", 
+                        vocab_size, vocab_words, vocab_total);
+            }
+        }
+#ifndef NCHECKS
+        size_t last_index = nlk_vocab_last_index(&vocab);
+        if(last_index + 1 != vocab_words) {
+            printf("last index = %zu\n", last_index);
+            NLK_ERROR_ABORT("Invalid vocabulary.", NLK_FAILURE);
+        }
+#endif
     }
 
     /* sort and huffman encode if newly created or reduced */
@@ -324,7 +361,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(vocab_save_file != NULL) {
+    if(vocab_save_file != NULL && vocab != NULL) {
         nlk_vocab_save(vocab_save_file, &vocab);
         if(verbose) {
             printf("Vocabulary saved to: %s\n", vocab_save_file);
@@ -359,7 +396,7 @@ int main(int argc, char **argv)
         if(verbose) {
             printf("Neural Network loaded from %s\n", nn_load_file);
         }
-    } else {
+    } else if(vocab != NULL && train_file != NULL) {
         nn = nlk_word2vec_create(vocab_size, total_lines, vector_size, hs,
                                  negative);
         if(verbose) {
@@ -367,10 +404,12 @@ int main(int argc, char **argv)
                    "hs = %d, neg = %d\n", vocab_size, total_lines, vector_size, 
                    hs, negative);
         }
+    } else {
+        nn = NULL;
     }
 
     /* train */
-    if(train_file != NULL) {
+    if(train_file != NULL && nn != NULL) {
         //nlk_set_error_handler_off();
         printf("training %s...\n", model_type);
         nlk_word2vec(lm_type, nn, hs, negative, 
@@ -381,38 +420,55 @@ int main(int argc, char **argv)
     if(verbose) { 
         printf("\n");
     }
-    
-    /* save */
-    if(learn_par && !save_sents && train_file != NULL) {
-        if(verbose) {
-            printf("Removing sentence vectors from NN\n");
-        }
-        /* remove PVs from lookup */
-        vocab_size = nlk_vocab_size(&vocab);
 
+     /** @section Save & Export Vectors
+     */
+    if(nn != NULL) {
         lk1 = nn->layers[0].lk;
-        nlk_layer_lookup_resize(lk1, vocab_size);
 
-    }
-    if(nn_save_file != NULL) {
-        if(nlk_neuralnet_save_path(nn, nn_save_file) != 0) {
-            printf("Unable to save neural network to %s\n", nn_save_file);
+        /* save paragraph vectors */
+        if(pvs_output_file != NULL) {
+            if(verbose) {
+                printf("Exporting paragraph vectors to %s", pvs_output_file);
+            }
+            nlk_layer_lookup_save_rows_path(lk1, pvs_output_file, vocab_size, 
+                                            (size_t) -1);
+        }
+
+        /* save word vectors */
+        if(vectors_output_file != NULL) {
+            if(verbose) {
+                printf("Exporting word vectors to %s", vectors_output_file);
+            }
+
+            nlk_layer_lookup_save_rows_path(lk1, vectors_output_file, 0, 
+                                            vocab_size);
+        }
+        
+        /* save neural net */
+        if(learn_par && !save_sents && train_file != NULL) {
+            if(verbose) {
+                printf("Removing sentence vectors from NN\n");
+            }
+            /* remove PVs from lookup */
+            vocab_size = nlk_vocab_size(&vocab);
+
+            nlk_layer_lookup_resize(lk1, vocab_size);
+
+        }
+        if(nn_save_file != NULL) {
+            if(nlk_neuralnet_save_path(nn, nn_save_file) != 0) {
+                printf("Unable to save neural network to %s\n", nn_save_file);
+            }
         }
     }
 
-    /** @section Vectors
+    /** @section Evaluation  (Intrinsic)
      */
 
-    /* save word vectors */
-    if(vectors_output_file != NULL) {
-        nlk_layer_lookup_save_path(lk1, vectors_output_file);
-    }
-
-    /** @section Evaluation 
-     */
     nlk_real accuracy = 0;
 
-    if(questions_file != NULL) {
+    if(questions_file != NULL && nn != NULL) {
         nlk_tic_reset();
         nlk_tic(NULL, false);
         nlk_tic("evaluating word-analogy", true);
@@ -422,12 +478,20 @@ int main(int argc, char **argv)
     }
     
     accuracy = 0;
-    if(paraphrases_file != NULL) {
+    if(pvs_input_file != NULL) {
+        nlk_eval_on_paraphrases_pre_gen(pvs_input_file, limit_pvs, verbose, 
+                                        &accuracy);
+        printf("accuracy = %f%%\n", accuracy * 100);
+    }
+
+    accuracy = 0;
+    if(paraphrases_file != NULL && nn != NULL) {
         nlk_tic_reset();
         nlk_tic(NULL, false);
         nlk_tic("evaluating paraphrases", true);
-        nlk_eval_on_paraphrases(lm_type, nn, hs, negative, window,
-                                paraphrases_file, &vocab, verbose,
+        unsigned int steps = 100;
+        nlk_eval_on_paraphrases(lm_type, nn, hs, negative, window, learn_rate,
+                                steps, paraphrases_file, &vocab, verbose,
                                 &accuracy);
         printf("accuracy = %f%%\n", accuracy * 100);
         

@@ -63,9 +63,11 @@ int nlk_eval_on_questions(const char *, struct nlk_vocab_t **,
 void nlk_analogy_test_free(struct nlk_analogy_test_t *);
 
 int nlk_eval_on_paraphrases(NLK_LM, struct nlk_neuralnet_t *, const bool,
-                            const unsigned int, const unsigned int, 
-                            const char *, struct nlk_vocab_t **, const int, 
-                            nlk_real *);
+                            const unsigned int, const unsigned int, nlk_real,
+                            const unsigned int, const char *, 
+                            struct nlk_vocab_t **, const int, nlk_real *);
+int nlk_eval_on_paraphrases_pre_gen(char *, size_t, const int, nlk_real *);
+
 
 __END_DECLS
 #endif /* __NLK_EVAL_H__ */

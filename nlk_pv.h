@@ -28,11 +28,8 @@
  */
 
 
-#ifndef __NLK_W2V_H__
-#define __NLK_W2V_H__
-
-
-#include "nlk_window.h"
+#ifndef __NLK_PV_H__
+#define __NLK_PV_H__
 
 
 #undef __BEGIN_DECLS
@@ -46,30 +43,20 @@
 #endif
 __BEGIN_DECLS
 
+void nlk_pv_gen_one(const NLK_LM, struct nlk_neuralnet_t *, 
+                    const bool, const unsigned int, nlk_real, 
+                    const unsigned int, struct nlk_vocab_t **, 
+                    const size_t, char **, const size_t *, 
+                    const nlk_real *, struct nlk_context_t **, 
+                    NLK_CONTEXT_OPTS *, NLK_ARRAY *, NLK_ARRAY *, 
+                    NLK_ARRAY *);
 
-/* create */
-struct nlk_neuralnet_t *nlk_word2vec_create(size_t, size_t, size_t, bool, 
-                                            bool);
+NLK_ARRAY *nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs, 
+                 const unsigned int negative, const char *par_file_path, 
+            const bool lower, struct nlk_vocab_t **vocab, const size_t window, 
+            nlk_real learn_rate, const unsigned int steps, int verbose);
 
-/* train */
-nlk_real hierarchical_softmax(NLK_LAYER_LOOKUP *, const bool,
-                              const NLK_ARRAY *, const nlk_real, 
-                              const nlk_real *, const struct nlk_vocab_t *,
-                              NLK_ARRAY *);
-
-
-nlk_real
-negative_sampling(NLK_LAYER_LOOKUP *, const bool, 
-                  const size_t *, const size_t, const size_t,
-                  const nlk_real, const size_t, const NLK_ARRAY *, 
-                  const nlk_real *, NLK_ARRAY *);
-
-
-void nlk_word2vec(const NLK_LM, struct nlk_neuralnet_t *, const bool, 
-                  const unsigned int, const char *, const bool,
-                  struct nlk_vocab_t **, const size_t, const size_t, 
-                  const float, nlk_real, unsigned int, int);
 
 
 __END_DECLS
-#endif /* __NLK_W2V_H__ */
+#endif /* __NLK_PV_H__ */

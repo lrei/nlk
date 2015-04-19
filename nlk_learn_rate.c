@@ -57,6 +57,17 @@ nlk_learn_rate_w2v_update(nlk_real learn_rate, nlk_real start_learn_rate,
     return learn_rate;
 }
 
+/**
+ * Step decrease learning rate update function
+ */
+
+nlk_real
+nlk_learn_rate_step_dec_update(nlk_real learn_rate, const unsigned int step,
+                               const unsigned int steps)
+{
+    return ((learn_rate - 0.0001) / (steps - step)) + 0.0001;
+
+}
 
 /**
  * Bold learning rate update function
@@ -76,22 +87,5 @@ nlk_learn_rate_bold_update(nlk_real learn_rate, nlk_real err_previous,
         learn_rate += learn_rate * 0.05;
     }
 
-    return learn_rate;
-}
-
-
-/**
- * Constant decrease learning rate update function
- */
-
-nlk_real
-nlk_learn_rate_dec_update(nlk_real learn_rate, nlk_real start_learn_rate,
-                          nlk_real multipler)
-{
-    learn_rate = learn_rate * multipler;
-
-    if(learn_rate < start_learn_rate * 0.0001) {
-        learn_rate = start_learn_rate * 0.0001;
-    }
     return learn_rate;
 }

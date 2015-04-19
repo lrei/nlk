@@ -161,7 +161,7 @@ nlk_word2vec_create(size_t vocab_size, size_t paragraphs, size_t layer_size,
  * @param grad_acc      the accumulated gradient (output)
  *
  */
-static inline nlk_real
+nlk_real
 hierarchical_softmax(NLK_LAYER_LOOKUP *lk2hs, const bool update,
                      const NLK_ARRAY *lk1_out, const nlk_real learn_rate, 
                      const nlk_real *sigmoid_table,
@@ -239,7 +239,7 @@ hierarchical_softmax(NLK_LAYER_LOOKUP *lk2hs, const bool update,
  * @param grad_acc      the accumulated gradient (output)
  *
  */
-static inline nlk_real
+nlk_real
 negative_sampling(NLK_LAYER_LOOKUP *lk2neg, const bool update, 
                   const size_t *neg_table,
                   const size_t negative, const size_t vocab_size,
@@ -351,14 +351,16 @@ nlk_cbow(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
     }
 #endif
 
+    nlk_array_zero(lk1_out);
+    nlk_array_zero(grad_acc);
+
+
     /** @section CBOW Forward through the first layer
      * The context words get forwarded through the first lookup layer
      * and their vectors are averaged.
      */
-    nlk_array_zero(lk1_out);
     nlk_layer_lookup_forward_lookup_avg(lk1, context->window, context->size, 
                                         lk1_out);
-    nlk_array_zero(grad_acc);
 
     /** @section CBOW Hierarchical Softmax 
      */
@@ -506,6 +508,7 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
         learn_par = true;
     } else if(model_type == NLK_PVDM) { /* PVDM */
         ctx_size += 1; /* space for the paragraph (1st elem of window) */
+        learn_par = true;
     }
 
     struct nlk_context_opts_t ctx_opts;
@@ -671,12 +674,24 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
             /* read line */
             nlk_read_line(train, text_line, low_tmp, max_word_size,
                           max_line_size);
+#ifdef DEBUGPRINT
+            nlk_text_print_numbered_line(text_line, line_cur, thread_id);
+#endif
             
             /* vocabularize */
             line_len = nlk_vocab_vocabularize(vocab, train_words, text_line, 
                                               sample_rate, 
                                               NULL, true, vectorized, 
                                               &n_subsampled); 
+            
+#ifdef DEBUGRINT
+            for(size_t vv = 0; vv < line_len; vv++) {
+                if(vectorized[vv]->index >= vocab_size) { /* 0 based index */
+                    nlk_vocab_print_line(vectorized, line_len, true);
+                    NLK_ERROR_ABORT("vectorized is wrong", NLK_EDOM);
+                }
+            }
+#endif
 
             /* line_len = 1 would be an empty line, nothing to learn */
             if(line_len < 2) {
@@ -760,415 +775,4 @@ nlk_word2vec(const NLK_LM model_type,  struct nlk_neuralnet_t *nn,
     if(negative) {
         free(neg_table);
     }
-}
-
-/**
- * Generate a PV using PVDM
- */
-static inline nlk_real
-nlk_pv_dm_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-              const bool hs, NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-              const size_t *neg_table, const size_t vocab_size, 
-              const nlk_real learn_rate, const nlk_real *sigmoid_table, 
-              const struct nlk_context_t *context, NLK_ARRAY *grad_acc, 
-              NLK_ARRAY *lk1_out, NLK_ARRAY *pv)
-{
-#ifndef NCHECKS
-    if(context->size == 0) {
-        NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
-    }
-#endif
-
-    nlk_real err = 0;
-
-    /* PVDM Forward through the first layer */
-    nlk_array_zero(lk1_out);
-    nlk_array_zero(grad_acc);
-
-    /* The context words get forwarded through the first lookup layer
-     * and their vectors are averaged together with the PV.
-     * The window[0] is the paragraph id and should be ignored as the PV
-     * is provided independently of the rest of the lookup layer
-     */
-    nlk_layer_lookup_forward_lookup_avg_p(lk1, &context->window[1], 
-                                          context->size - 1, pv, lk1_out);
-
-    /* Hierarchical Softmax */
-    if(hs) {
-        err += hierarchical_softmax(lk2hs, false, lk1_out, learn_rate, 
-                                    sigmoid_table, context->center, grad_acc);
-    } 
-
-    /* NEG Sampling */
-    if(negative) {
-        err += negative_sampling(lk2neg, false, neg_table, negative, 
-                                 vocab_size, learn_rate, 
-                                 context->center->index, lk1_out, 
-                                 sigmoid_table, grad_acc);
-    }
-
-    /* Backprop into the PV: Learn PV weights using the accumulated gradient */
-    nlk_array_add(grad_acc, pv);
-
-    return err;
-}
-
-/**
- * Generate a PV using PVDBOW
- *
- * In PVDBOW each "context" is just the target word which is associated with 
- * the PV.
- */
-static inline nlk_real
-nlk_pv_dbow_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-                const bool hs, NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-                const size_t *neg_table, const size_t vocab_size, 
-                const nlk_real learn_rate, const nlk_real *sigmoid_table, 
-                const struct nlk_context_t *context, NLK_ARRAY *grad_acc, 
-                NLK_ARRAY *lk1_out, NLK_ARRAY *pv)
-{
-    nlk_real err = 0;
-    nlk_array_zero(grad_acc);
-
-    /* Hierarchical Softmax */
-    if(hs) {
-        err += hierarchical_softmax(lk2hs, false, pv, learn_rate, 
-                                    sigmoid_table, context->center, grad_acc);
-    }
-        
-    /* NEG Sampling */
-    if(negative) {
-        err += negative_sampling(lk2neg, false, neg_table, negative, 
-                                 vocab_size, learn_rate, 
-                                 context->center->index, lk1_out, 
-                                 sigmoid_table, grad_acc);
-    }
-
-    /* Backprop into the PV */
-    nlk_array_add(grad_acc, pv);
-
-
-    return err;
-}
-
-
-static void
-nlk_pv_display_one(nlk_real err, nlk_real prev_err, size_t iter) {
-    char display_str[64];
-    nlk_real diff = err - prev_err;
-
-    snprintf(display_str, 64,
-            "Thread: %d,  Iter: %zu, Diff: %.5f; err: %.5f", 
-            omp_get_thread_num(), iter, diff, err);
-    nlk_tic(display_str, true);
-
-}
-
-/**
- * Learn a Paragraph vector for a single line
- */
-nlk_real
-nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn, 
-               const bool hs, unsigned int negative, nlk_real learn_rate, 
-               const nlk_real tol, struct nlk_vocab_t **vocab, 
-               const size_t vocab_size, char **paragraph, 
-               const size_t *neg_table, const nlk_real *sigmoid_table, 
-               struct nlk_context_t **contexts, NLK_CONTEXT_OPTS *ctx_opts, 
-               NLK_ARRAY *pv, NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
-{
-    nlk_real err = 1e20;
-    nlk_real prev_err = 0;
-    nlk_real start_learn_rate = learn_rate;
-    size_t n_examples;
-    size_t n_subsampled;
-    size_t line_len;
-    struct nlk_vocab_t *vectorized[NLK_LM_MAX_LINE_SIZE];
-
-
-    struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
-    size_t layer_n = 1;
-    struct nlk_layer_lookup_t *lkhs = NULL;
-    if(hs) {
-        lkhs = nn->layers[layer_n].lk;
-        layer_n++;
-    }
-    struct nlk_layer_lookup_t *lkneg = NULL;
-    if(negative) {
-        lkneg = nn->layers[layer_n].lk;
-    }
-
-
-    /* vocabularize */
-    line_len = nlk_vocab_vocabularize(vocab, 0, paragraph, 0, NULL, false, 
-                                      vectorized, &n_subsampled); 
-
-    /* context window */
-    n_examples = nlk_context_window(vectorized, line_len, 0, 
-                                    ctx_opts, contexts);
-
-    size_t n_iter = 1;
-    if(model_type == NLK_PVDBOW) {
-        do {
-            err = 0;
-            for(size_t ex = 0; ex < n_examples; ex++) {
-                err += nlk_pv_dbow_gen(lk1, lkhs, hs, lkneg, negative, 
-                                       neg_table, vocab_size, learn_rate, 
-                                       sigmoid_table, contexts[ex], grad_acc, 
-                                       lk1_out, pv);
-
-                learn_rate = nlk_learn_rate_dec_update(learn_rate,
-                                                       start_learn_rate, 
-                                                       0.99);
-            }
-            n_iter++;
-        } while(err > tol);
-    } else if(model_type == NLK_PVDM) {
-        do {
-            prev_err = err;
-            err = 0;
-            for(size_t ex = 0; ex < n_examples; ex++) {
-                err += nlk_pv_dm_gen(lk1, lkhs, hs, lkneg, negative, neg_table, 
-                                     vocab_size, learn_rate, sigmoid_table, 
-                                     contexts[ex], grad_acc, lk1_out, pv);
-
-                learn_rate = nlk_learn_rate_dec_update(learn_rate,
-                                                       start_learn_rate, 
-                                                       0.99);
-            }
-            if(n_iter % 100000 == 0) {
-                nlk_pv_display_one(err, prev_err, n_iter);
-            }
-            n_iter++;
-        } while(err > tol);
-    } else {
-        NLK_ERROR_ABORT("invalid model type", NLK_EINVAL);
-        /* unreachable */
-    }
-
-    return err;
-}
-
-/**
- * Display progress of paragraph vector generation
- *
- * @param generated number of PVs generated so far
- * @param total     total number of PVs to generate
- */
-static void
-nlk_pv_display(const size_t generated, const size_t total, nlk_real last_err)
-{
-    char display_str[64];
-    float progress = (generated / (float) total) * 100;
-
-    snprintf(display_str, 64,
-            "Progress: %.2f%% (%zu/%zu) last_err: %.5f Threads: %d\t", 
-            progress, generated, total, last_err, omp_get_num_threads());
-    nlk_tic(display_str, true);
-}
-
-
-/**
- * Learn a series of paragraph vectors from a file
- *
- */
-NLK_ARRAY *
-nlk_pv(NLK_LM model_type, struct nlk_neuralnet_t *nn, const bool hs, 
-       const unsigned int negative, const char *par_file_path, 
-       const bool lower, struct nlk_vocab_t **vocab, const size_t window, 
-       nlk_real learn_rate, nlk_real tol, int verbose)
-{
-    /* shortcuts */
-    struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
-    size_t layer_size = lk1->weights->cols;
-    size_t vocab_size = nlk_vocab_size(vocab);
-
-    /* context */
-    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
-
-    size_t ctx_size = window * 2;   /* max context size */
-    size_t context_multiplier = 1;  /* != 1 only for PVDBOW */
-
-    bool learn_par = false;
-    if(model_type == NLK_PVDBOW) { /* PVDBOW */
-        context_multiplier = ctx_size;
-        ctx_size = 1;   /* one (word, paragraph) pair at a time */
-        learn_par = true;
-    } else if(model_type == NLK_PVDM) { /* PVDM */
-        ctx_size += 1; /* space for the paragraph (1st elem of window) */
-    }
-
-    struct nlk_context_opts_t ctx_opts;
-    nlk_context_model_opts(model_type, window, &ctx_opts);
-
-
-    /* open file */
-    errno = 0;
-    FILE *in = fopen(par_file_path, "rb");
-    if(in == NULL) {
-        NLK_ERROR_ABORT(strerror(errno), errno);
-        /* unreachable */
-    }
-
-    /* count lines */
-    size_t total_lines = nlk_text_count_lines(in);
-    if(verbose) {
-        printf("Generating Paragraphs: %zu\n", total_lines);
-    }
-
-    /* file size */
-    size_t par_file_size;
-    fseek(in, 0, SEEK_END);
-    par_file_size = ftell(in);
-    fclose(in);
-
-    /* random number generator initialization */
-    uint64_t seed = 6121984 * clock();
-    seed = nlk_random_fmix(seed);
-    nlk_random_init_xs1024(seed);
-
-    /* create and init PVs */
-    NLK_ARRAY *par_vectors = nlk_array_create(total_lines, layer_size);
-    nlk_layer_lookup_init_array(par_vectors);
-
-    /* sigmoid table */
-    nlk_real *sigmoid_table = nlk_table_sigmoid_create();
-
-    /* neg table for negative sampling */
-    size_t *neg_table = NULL;
-    if(negative) {
-        neg_table = nlk_vocab_neg_table_create(vocab, NLK_NEG_TABLE_SIZE, 
-                                               0.75);
-    }
-
-    size_t generated = 0;
-
-#pragma omp parallel
-{
-    int num_threads = omp_get_num_threads();
-
-    /* current paragraph vector (empty shell) */
-    NLK_ARRAY pv;
-    pv.cols = 1;
-    pv.rows = layer_size;
-
-
-    /* output of the first layer */
-    NLK_ARRAY *lk1_out = nlk_array_create(layer_size, 1);
-
-    /* for storing gradients */
-    NLK_ARRAY *grad_acc = nlk_array_create(1, layer_size);
-    
-    /* Input Text and Context Window initializations */
-    
-    /* allocate memory for reading from the input file */
-    char **text_line = (char **) calloc(max_line_size, sizeof(char *));
-    if(text_line == NULL) {
-        NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-        /* unreachable */
-    }
-    for(size_t zz = 0; zz < max_line_size; zz++) {
-        text_line[zz] = calloc(max_word_size, sizeof(char));
-        if(text_line[zz] == NULL) {
-            NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-            /* unreachable */
-        }
-    }
-    wchar_t *low_tmp = NULL; 
-    if(lower) {
-        low_tmp = (wchar_t *) malloc(max_word_size * sizeof(wchar_t));
-    }
-
-
-    /* for converting a sentence to a series of training contexts */
-    struct nlk_context_t **contexts = (struct nlk_context_t **) 
-        malloc(max_line_size * context_multiplier * 
-               sizeof(struct nlk_context_t *));
-    if(contexts == NULL) {
-        NLK_ERROR_ABORT("unable to allocate memory for contexts", NLK_ENOMEM);
-        /* unreachable */
-    }
-
-    for(size_t zz = 0; zz < max_line_size * context_multiplier; zz++) {
-        contexts[zz] = nlk_context_create(ctx_size);
-        if(contexts[zz] == NULL) {
-            NLK_ERROR_ABORT("unable to allocate memory for contexts", 
-                            NLK_ENOMEM);
-        }
-    }
-
-    /* 
-     * The train file is divided into parts, one part for each thread.
-     * Open file and move to thread specific starting point
-     */
-    size_t file_pos = 0;
-    size_t end_pos = 0;
-    size_t line_start = 0;
-    size_t line_cur = 0;
-    FILE *par_file = fopen(par_file_path, "rb");
-    nlk_real err = 0;
-
-#pragma omp for 
-    for(int thread_id = 0; thread_id < num_threads; thread_id++) {
-        /* set train file part position */
-        end_pos = nlk_set_file_pos(par_file, learn_par, par_file_size,
-                                   num_threads, thread_id);
-
-        /* determine line number */
-        if(learn_par) {
-            line_start = nlk_text_get_line(par_file);
-            line_cur = line_start;
-        }
-
-        while(true) {
-           /* read line */
-            nlk_read_line(par_file, text_line, low_tmp, max_word_size,
-                          max_line_size);
-
-            /* select paragraph */
-            pv.data = &par_vectors->data[line_cur * layer_size];
-
-
-            /* generate */
-            err = nlk_pv_gen_one(model_type, nn, hs, negative, learn_rate, tol,
-                           vocab, vocab_size, text_line, neg_table, 
-                           sigmoid_table, contexts, &ctx_opts, &pv, grad_acc, 
-                           lk1_out);
-
-            generated += 1;
-            line_cur++;
-            file_pos = ftell(par_file);
-            nlk_pv_display(generated, total_lines, err);
-            if(file_pos >= end_pos) {
-                break;
-            }
-        }     
-    } /* end of threaded algorithm execution */
-
-    /** @subsection Free Thread Private Memory and Close Files
-     */
-    for(size_t zz = 0; zz < max_line_size * context_multiplier; zz++) {
-        nlk_context_free(contexts[zz]);
-    }
-    for(size_t zz = 0; zz < max_line_size; zz++) {
-        free(text_line[zz]);
-    }
-    free(text_line);
-    if(low_tmp != NULL) {
-        free(low_tmp);
-    }
-    nlk_array_free(lk1_out);
-    nlk_array_free(grad_acc);
-    fclose(par_file);
-} /* *** End of Paralell Region *** */
-
-    /** @section End
-     */
-    nlk_tic_reset();
-    free(sigmoid_table);
-    if(negative) {
-        free(neg_table);
-    }
-
-    return par_vectors;
 }

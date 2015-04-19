@@ -47,8 +47,9 @@
 __BEGIN_DECLS
 
 nlk_real nlk_learn_rate_w2v_update(nlk_real, nlk_real, size_t, size_t, size_t);
+nlk_real nlk_learn_rate_step_dec_update(nlk_real, const unsigned int, 
+                                        const unsigned int);
 nlk_real nlk_learn_rate_bold_update(nlk_real, nlk_real, nlk_real);
-nlk_real nlk_learn_rate_dec_update(nlk_real, nlk_real, nlk_real);
 
 
 __END_DECLS

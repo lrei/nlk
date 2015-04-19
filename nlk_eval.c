@@ -38,6 +38,7 @@
 #include "nlk_array.h"
 #include "nlk_neuralnet.h"
 #include "nlk_w2v.h"
+#include "nlk_pv.h"
 #include "nlk_text.h"
 #include "nlk_vocabulary.h"
 #include "nlk_window.h"
@@ -320,10 +321,13 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
     return NLK_SUCCESS;
 }
 
+/**
+ */
 int
 nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn, 
                         const bool hs, const unsigned int negative,
-                        const unsigned int window, const char *test_file_path, 
+                        const unsigned int window, nlk_real learn_rate,
+                        const unsigned int steps, const char *test_file_path, 
                         struct nlk_vocab_t **vocab, const int verbose,
                         nlk_real *accuracy)
 {
@@ -342,14 +346,12 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
     fclose(fin);
 
     /* generate paragraph vectors */
-    nlk_real tol = 0.01;
-    nlk_real learn_rate = 0.05;
     if(verbose) {
         nlk_tic("generating paragraph vectors", true);
     }
     NLK_ARRAY *par_vectors = nlk_pv(model_type, nn, hs, negative, 
                                     test_file_path, true, vocab, window, 
-                                    learn_rate, tol, verbose);
+                                    learn_rate, steps, verbose);
 
     /* normalize weights to make distance calculations easier */
     if(verbose) {
@@ -357,7 +359,6 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
     }
     nlk_array_normalize_row_vectors(par_vectors);
     size_t limit = par_vectors->rows;
-
 
     /** @section Eval Loop
      */
@@ -385,6 +386,9 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
         }
 
         /* is result correct? */
+#ifdef DEBUGPRINT
+        printf("%zu -sim-> %zu (num = %zu)\n", tt, most_similar, num_lines);
+#endif
         if(tt % 2 == 0 && most_similar == tt + 1) {
             correct++;
         } else if(tt % 2 == 1 && most_similar == tt - 1) { 
@@ -395,9 +399,86 @@ nlk_eval_on_paraphrases(NLK_LM model_type, struct nlk_neuralnet_t *nn,
     
 } /* end of parallel for */
     *accuracy = (nlk_real) correct / (nlk_real) total;
+    printf("correct = %d\n", correct);
 
     nlk_array_free(par_vectors);
  
     return NLK_SUCCESS;
 }
 
+int
+nlk_eval_on_paraphrases_pre_gen(char *pv_vector_file, size_t limit, 
+                                const int verbose, nlk_real *accuracy)
+{
+    /** @section Allocation and Initialization
+     */
+    *accuracy = 0;
+    int correct = 0;
+    int total = 0;
+
+
+    FILE *fin = fopen(pv_vector_file, "rb");
+    if(fin == NULL) {
+        NLK_ERROR(strerror(errno), errno);
+    }
+
+    NLK_ARRAY *par_vectors = nlk_array_load(fin);
+    fclose(fin);
+
+    /* normalize weights to make distance calculations easier */
+    if(verbose) {
+        nlk_tic("normalizing paragraph vectors", true);
+    }
+    nlk_array_normalize_row_vectors(par_vectors);
+
+    if(limit == 0) {
+        limit = par_vectors->rows;
+    }
+
+    /** @section Eval Loop
+     */
+    if(verbose) {
+        nlk_tic("evaluating", true);
+    }
+
+#pragma omp parallel reduction(+ : correct) reduction(+ : total)
+{
+#pragma omp for
+    for(size_t tt = 0; tt < limit / 2; tt++) {
+        nlk_real best_similarity = 0;
+        size_t most_similar = 0;
+        nlk_real sim = 0;
+
+        for(size_t index = 0; index < limit; index++) {
+            if(index == tt) { 
+                continue;   /* ignore self */
+            }
+            sim = nlk_array_row_dot(par_vectors, tt, par_vectors, index);
+            if(sim > best_similarity) {
+                best_similarity = sim;
+                most_similar = index;
+            }
+        }
+
+        /* is result correct? */
+#ifdef DEBUGPRINT
+        printf("%zu -sim-> %zu (sim = %f)\n", tt, most_similar, 
+                best_similarity);
+#endif
+
+        if(tt % 2 == 0 && most_similar == tt + 1) {
+            correct++;
+        } else if(tt % 2 == 1 && most_similar == tt - 1) { 
+            correct++;
+        }
+        total += 1;
+    }
+    
+} /* end of parallel for */
+    *accuracy = (nlk_real) correct / (nlk_real) total;
+    printf("correct = %d\n", correct);
+
+    nlk_array_free(par_vectors);
+ 
+    return NLK_SUCCESS;
+}

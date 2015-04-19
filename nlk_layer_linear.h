@@ -154,6 +154,8 @@ int nlk_layer_lookup_export(char *, nlk_Format, struct nlk_vocab_t **,
                             struct nlk_layer_lookup_t *);
 void nlk_layer_lookup_export_file(FILE *, nlk_Format, struct nlk_vocab_t **, 
                                  struct nlk_layer_lookup_t *);
+void nlk_layer_lookup_save_rows_path(struct nlk_layer_lookup_t *, char *, 
+                                     size_t, size_t); 
 /* load */
 struct nlk_layer_lookup_t *nlk_layer_lookup_load(FILE *);
 struct nlk_layer_lookup_t *nlk_layer_lookup_load_path(char *);
@@ -163,7 +165,8 @@ struct nlk_layer_lookup_t *nlk_layer_lookup_load_path(char *);
  * Linear Layer
  */
 /* Create a Linear Layer */
-struct nlk_layer_linear_t *nlk_layer_linear_create(const size_t, const size_t, bool);
+struct nlk_layer_linear_t *nlk_layer_linear_create(const size_t, const size_t,
+                                                   bool);
 
 /* Initialize the lookup layer */
 void nlk_layer_linear_init(struct nlk_layer_lookup_t *);

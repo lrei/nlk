@@ -35,6 +35,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include <sys/types.h>
+
 
 #define NLK_LM_MAX_WORD_SIZE    512
 #define NLK_LM_MAX_LINE_SIZE    1024
@@ -62,6 +64,17 @@ size_t  nlk_text_count_words(FILE *);
 size_t  nlk_text_count_lines(FILE *);
 size_t  nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
 void    nlk_text_print_line(char **);
+void    nlk_text_print_numbered_line(char **, size_t, int);
+
+/* Mem Mapped functions */
+off_t   nlk_text_mem_open(char *, char **);
+void    nlk_text_mem_close(caddr_t *, size_t);
+size_t  nlk_text_mem_count_lines(char *, off_t);
+int     nlk_text_mem_read_word(char *, off_t *, off_t, char *, wchar_t *, 
+                               const size_t);
+off_t   nlk_text_mem_get_line_pos(char *, size_t, size_t);
+int     nlk_text_mem_read_line(char *, off_t *, off_t, char **, off_t *,
+                               wchar_t *, const size_t, const size_t);
 
 
 __END_DECLS

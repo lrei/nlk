@@ -109,9 +109,9 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
     abort();
 
 /*
- * OMP DEFS FOR DEBUG
+ * OMP DEFS FOR DEBUG (NOMP flag)
  */
-#ifdef DEBUG
+#ifdef NOMP
     #define omp_get_thread_num() 0
     #define omp_get_num_threads() 1
     #define omp_get_num_procs() 1

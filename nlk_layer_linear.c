@@ -531,6 +531,7 @@ nlk_layer_lookup_export_file(FILE *out, nlk_Format format,
  * Save a lookp layer to a file pointer
  *
  * @param layer the lookup layer
+ * @param fp    the file pointer
  */
 void
 nlk_layer_lookup_save(struct nlk_layer_lookup_t *layer, FILE *fp)
@@ -538,7 +539,12 @@ nlk_layer_lookup_save(struct nlk_layer_lookup_t *layer, FILE *fp)
     nlk_array_save(layer->weights, fp);
 }
 
-
+/**
+ * Save a lookp layer to a file
+ *
+ * @param layer         the lookup layer
+ * @param file_path     the file path
+ */
 void 
 nlk_layer_lookup_save_path(struct nlk_layer_lookup_t *layer, char *filepath)
 {
@@ -549,6 +555,29 @@ nlk_layer_lookup_save_path(struct nlk_layer_lookup_t *layer, char *filepath)
     }
 
     nlk_layer_lookup_save(layer, fp);
+    fclose(fp);
+}
+
+/**
+ * Save part of a lookp layer to a file (export vectors)
+ *
+ * @param layer         the lookup layer
+ * @param file_path     the file path
+ * @param start         the first row to save (0 index)
+ * @param end           the first row not to save
+ */
+void
+nlk_layer_lookup_save_rows_path(struct nlk_layer_lookup_t *layer, 
+                                char *filepath, size_t start, size_t end) {
+
+    FILE *fp = fopen(filepath, "wb");
+    if(fp == NULL) {
+        NLK_ERROR_VOID("unable to open file.", NLK_FAILURE);
+        /* unreachable */
+    }
+
+    nlk_array_save_rows(layer->weights, fp, start, end);
+    fclose(fp);
 }
 
 /** 

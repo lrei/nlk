@@ -32,6 +32,7 @@
 #define __NLK_ARRAY_H__
 
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -128,6 +129,8 @@ void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
  * Save/Load 
  */
 void nlk_array_save(struct nlk_array_t *, FILE *fp);
+void nlk_array_save_rows(struct nlk_array_t *, FILE *, size_t, size_t);
+
 struct nlk_array_t *nlk_array_load(FILE *fp);
 
 

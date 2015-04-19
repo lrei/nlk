@@ -212,6 +212,13 @@ nlk_context_create(size_t max_context_size)
         /* unreachable */
     }
 
+    /* make it easier to find attempt to access at non initialized location */
+    context->center = NULL;
+    context->size = (size_t) -1;
+    for(size_t ii = 0; ii < max_context_size; ii++) {
+        context->window[ii] = (size_t) -1;
+    }
+
     return context;
 }
 
@@ -264,12 +271,14 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
             /* model does not use paragraphs */
             opts->center_in_context = false;
             opts->center_paragraph = false;
+            opts->paragraph = false;
             break;
 
         case NLK_SKIPGRAM:
             /* model does not use paragraphs */
             opts->center_in_context = false;
             opts->center_paragraph = false;
+            opts->paragraph = false;
             break;
 
         case NLK_PVDBOW:
@@ -279,6 +288,7 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
              */
             opts->center_in_context = true;
             opts->center_paragraph = true;
+            opts->paragraph = true;
             break;
 
         case NLK_PVDM:
@@ -287,7 +297,11 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
              */
             opts->center_in_context = false;
             opts->center_paragraph = false;
+            opts->paragraph = true;
             break;
+
+        default:
+            NLK_ERROR_VOID("invalid model type.", NLK_EDOM);
     }
 
 }

@@ -35,6 +35,12 @@
 #include <ctype.h>
 #include <wctype.h>
 #include <inttypes.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "MurmurHash3.h"
 
@@ -264,9 +270,6 @@ nlk_text_count_lines(FILE *fp)
 
     /* count lines until the end */
     while((buf = fgetc(fp)) != EOF) {
-        if(lines == 0) {
-            lines++;
-        }
         if(buf == '\n' || buf == '\t') {
             lines++;
         }
@@ -319,6 +322,7 @@ nlk_text_get_line(FILE *fp)
 
     return line;
 }
+
 
 /**
  * Counts words remaining in a file. Does not change position of file.
@@ -426,7 +430,8 @@ nlk_text_goto_word_start(FILE *fp)
 }
 
 /**
- * Used to get the start position in a file for a given worker thread
+ * @brief Used to get the start position in a file for a given worker thread
+ *
  * @param fp        the file where the position will be set
  * @param use_lines if true, goes to the start of a line instead of a byte
  * @param total     total number of bytes or lines in file
@@ -458,7 +463,7 @@ nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
 
 
 /**
- * Used to set the start position in a file for a given worker thread
+ * @brief Used to set the start position in a file for a given worker thread
  *
  * @param fp        the file where the position will be set
  * @param use_lines if true, goes to the start of a line instead of a byte
@@ -496,16 +501,276 @@ nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
 }
 
 
-/* @fn void nlk_text_print_line(char **line)
- * Print an NLK "line".
+/**
+ * @brief Print an NLK "line".
+ *
+ * @param line      the NLK line (array of (strings) array's of chars
  */
 void
 nlk_text_print_line(char **line)
 {
+    char buf[NLK_LM_MAX_LINE_SIZE * NLK_LM_MAX_WORD_SIZE];
+    unsigned int num_chars = 0;
     size_t ii = 0;
+
     while(line[ii][0] != '\0') {
-        printf("%s ", line[ii]);
+        num_chars += sprintf(&buf[num_chars], "%s ", line[ii]);
         ii++;
     }
-    printf("\n");
+    printf("%s\n", buf);
+}
+
+/**
+ * @brief Print an NLK "line" with a number.
+ *
+ * @param line      the NLK line (array of (strings) array's of chars
+ * @param line_num  the line number associated with the line
+ * @param thread_id the id of the thread
+ *
+ * @note
+ * This function is used for debugging.
+ * @endnote
+ */
+void
+nlk_text_print_numbered_line(char **line, size_t line_num, int thread_id)
+{
+    char buf[NLK_LM_MAX_LINE_SIZE * NLK_LM_MAX_WORD_SIZE];
+    unsigned int num_chars = 0;
+    size_t ii = 0;
+
+    while(line[ii][0] != '\0') {
+        num_chars += sprintf(&buf[num_chars], "%s ", line[ii]);
+        ii++;
+    }
+    printf("%zu\t%d\t%s\n", line_num, thread_id, buf);
+
+}
+
+
+/** @section Memory Mapped File Functions
+ */
+
+/**
+ * @brief open memory mapped file (training file)
+ */
+off_t
+nlk_text_mem_open(char *file_path, char **ptr)
+{
+    int fd;
+    int page_size;
+    struct stat st;
+
+    /* normal fd open */
+    errno = 0;
+    fd = open(file_path, O_RDONLY);
+    if(fd == -1) {
+        NLK_ERROR("unable to open training file.", errno);
+        /* unreachable */
+    }
+
+    /* get file size */
+    errno = 0;
+    if(stat(file_path, &st) == -1) {
+        NLK_ERROR("unable to get file size (stat)", errno);
+        /* unreachable */
+    }
+
+    /* get OS mem page size */
+    page_size = getpagesize();
+
+    /* memory map */
+    errno = 0;
+    *ptr = (char *) mmap((caddr_t)0, st.st_size, PROT_READ, MAP_SHARED, fd, 
+                         page_size);
+    if(*ptr == (char *) -1) {
+        NLK_ERROR("unable to get file size (stat)", errno);
+        /* unreachable */
+    }
+
+    /* tell OS to read ahead access /thread should be sequential ?*/
+	/* madvise(ptr, st.st_size, MADV_SEQUENTIAL); */
+
+    return st.st_size;
+}
+
+/**
+ * @brief close memory mapped file
+ */
+void
+nlk_text_mem_close(caddr_t *mem_ptr, size_t size) {
+    errno = 0;
+    if(munmap(mem_ptr, size) == -1) {
+        NLK_ERROR_VOID("unable to close memory mapped file.", errno);
+        /* unreachable */
+    }
+}
+
+/**
+ * brief Count lines in memory mapped file
+ */
+size_t
+nlk_text_mem_count_lines(char *mem_ptr, off_t size) {
+    size_t counter = 0;
+    char last = 0;
+
+    for(size_t ii = 0; ii < size; ii++) {
+        last = mem_ptr[ii];
+        if(last == '\0') {
+            break;
+        }
+        if(last == '\n' || mem_ptr[ii] == '\t') {
+            counter++;
+        }
+    }
+
+    if(last != '\n' && last != '\t') {
+        counter++;
+    }
+
+    return counter;
+}   
+
+
+/**
+ * @brief Get the offset of a line in a memory mapped file
+ *
+ * @param mem_ptr         the mmaped pointer
+ * @param line_mum        the line number of the line to read
+ * @param size            the size of the file
+ *
+ * @return file offset off the start of the line
+ */
+off_t
+nlk_text_mem_get_line_pos(char *mem_ptr, size_t line_num, size_t size)
+{
+    int term;                   /* word terminator */
+    size_t word_idx = 0;        /* word in line index */
+    size_t cur_ln = 0;          /* position in file (line number) */
+    size_t start = 0;           /* start of the line to retrieve (offset) */
+
+
+    for(off_t ii = 0; ii < size && cur_ln <= line_num; ii++) {
+        /* check for end of line */
+		if(mem_ptr[ii] != '\n' || mem_ptr[ii] != '\t') {
+            continue;
+        }
+
+		if(++cur_ln == line_num) {
+            start = ii + 1;
+            break;
+        }
+    }
+
+    return start;
+}
+
+/** 
+ * @brief Read a word from a memory mapped file
+ *
+ * @param buf             file memory pointer
+ * @param loc             current location in memory mapped file
+ * @param end             file size
+ * @param word            char pointer where the word will be stored
+ * @param low_tmp         temporary storage for converting strings to lowercase
+ *                        if NULL, no conversion happens
+ * @param max_word_size   maximum size of a word (including null terminator)
+ *
+ * @return integer of the word separator (terminator), EOF or NLK_ETRUNC
+ *
+ * @note
+ * This function is made for reading already pre-processed files, does not
+ * do actual tokenization or handle weird stuff.
+ *
+ * Assumes words are separated by whitespaces (isspace() == true).
+ * Ignores CRs.
+ * @endnote
+ *
+ * @warning words (tokens) bigger than max_word_size are invalid
+ */
+int
+nlk_text_mem_read_word(char *mem_ptr, off_t *loc, off_t size, char *word, 
+                       wchar_t *low_tmp, const size_t max_word_size)
+{
+    int ch = EOF;
+    size_t len = 0;
+    bool invalid = false;
+
+    while(*loc < size) {
+        ch = mem_ptr[*loc];
+        *loc = *loc + 1;
+
+        /* space chars */
+        if(isspace(ch) || ch == EOF) {
+            /* 
+             * Because of line checks tests we need to ignore CRs.
+             * All other "space" chars are end of word chars 
+             */
+            if(ch == '\r') {
+                continue;
+            }
+
+            /* prevent empty words */
+            if(len == 0 && ch != EOF) {
+                continue;
+            }
+            
+            break; /* goto EOW */
+        }
+
+        /* just another non-space char */
+        word[len] = ch;
+        len++;
+
+        /* check max_word_size */
+        if(len == max_word_size - 2) {
+            invalid = true;
+            len = 1;
+            /* keep going until the end of the token */
+        }
+    }
+    /*
+     * END-OF-WORD (EOW):
+     */
+    word[len] = '\0';
+
+    /* handle invalid tokens/words */
+    if(invalid) {
+        return NLK_ETRUNC;
+    }
+    
+    if(low_tmp != NULL || len > 0) {
+        nlk_text_lower(word, low_tmp);
+    }
+
+    return ch;
+}
+
+/**
+ *
+ * @warning No truncation
+ */
+int
+nlk_text_mem_read_line(char *mem_ptr, off_t *pos, off_t size, char **line, 
+                       off_t *next, wchar_t *low_tmp,
+                       const size_t max_word_size, const size_t max_line_size)
+{
+    int term;                   /* word terminator */
+    size_t word_idx = 0;        /* word in line index */
+
+    while(*pos < size) {
+        term = nlk_text_mem_read_word(mem_ptr, pos, size,  line[word_idx], 
+                                      low_tmp, max_word_size);
+        word_idx++;
+
+        if(term == '\n' || term == '\t' || term == EOF) {
+            *line[word_idx] = '\0';
+            return term;
+        }
+
+        if(term == NLK_ETRUNC) {    /* skip if word size > max_word_size */
+            word_idx--;
+        }
+    }
+
+    return EOF;
 }

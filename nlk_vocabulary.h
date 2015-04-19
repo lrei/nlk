@@ -126,7 +126,7 @@ size_t       nlk_vocab_vocabularize(struct nlk_vocab_t **, const uint64_t ,
                                     char **, const float sample, 
                                     struct nlk_vocab_t *, const bool, 
                                     struct nlk_vocab_t **, size_t *);
-void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t);
+void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t, bool);
 
 /* NEG table */
 size_t      *nlk_vocab_neg_table_create(struct nlk_vocab_t **, const size_t, 
@@ -136,7 +136,7 @@ size_t      *nlk_vocab_neg_table_create(struct nlk_vocab_t **, const size_t,
 struct nlk_vocab_t   *nlk_vocab_find(struct nlk_vocab_t **, char *);
 struct nlk_vocab_t   *nlk_vocab_at_index(struct nlk_vocab_t **, size_t);
 /*size_t       nlk_vocab_last_id(struct nlk_vocab_t **); */
-size_t       nlk_vocab_last_index(struct nlk_vocab_t **);
+size_t                nlk_vocab_last_index(struct nlk_vocab_t **);
 
 
 __END_DECLS

@@ -246,7 +246,8 @@ nlk_array_copy_row(struct nlk_array_t *dest, const size_t dest_row, const
  */
 int
 nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim, 
-                          const struct nlk_array_t *source, const size_t source_row)
+                          const struct nlk_array_t *source, 
+                          const size_t source_row)
 {
 #ifndef NCHECKS
     if(source_row > source->rows) {
@@ -384,7 +385,8 @@ nlk_array_zero(struct nlk_array_t *array)
  * @return true if forall ii, abs(arr[ii] - carr[ii]) < tolerance, else false 
  */
 bool
-nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr, nlk_real tolerance)
+nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr, 
+                         nlk_real tolerance)
 {
     const size_t len = arr->rows * arr->cols;
     return nlk_carray_compare_carray(arr->data, carr, len, tolerance);
@@ -474,6 +476,47 @@ nlk_array_save(struct nlk_array_t *array, FILE *fp)
 
     /* write data */
     fwrite(array->data, sizeof(nlk_real), len, fp);
+}
+
+/**
+ *  Save a range of rows of an array to a file pointer
+ *
+ *  @param array        the array to save
+ *  @param fp           the file pointer
+ *  @param start        index of the first row to save
+ *  @param end          index of the first row not to save
+ */
+void
+nlk_array_save_rows(struct nlk_array_t *array, FILE *fp, size_t start, 
+                    size_t end)
+{
+    nlk_real *data;
+    size_t n_rows;
+    size_t len;
+    size_t w;
+
+    if(end > array->rows) {
+        end = array->rows;
+    }
+#ifdef NCHECKS
+    if(start > end) {
+        NLK_ERROR_VOID("start row > end row", NLK_ERANGE);
+    }
+#endif
+
+    n_rows = end - start;
+    len = n_rows * array->cols;
+
+    /* write header */
+    fprintf(fp, "%zu %zu\n", n_rows, array->cols);
+
+    /* write data */
+    data = &array->data[start];
+    w = fwrite(data, sizeof(nlk_real), len, fp);
+    if(w != len) {
+        NLK_ERROR_VOID("failed to write the expected number of elements", 
+                       NLK_EBADLEN);
+    }
 }
 
 /**
@@ -687,7 +730,8 @@ nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
  * @param row   the matrix row, overwritten with the result
  */
 void
-nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m, size_t row)
+nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m, 
+                   size_t row)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -741,8 +785,8 @@ nlk_row_add_vector(const struct nlk_array_t *m, size_t row, struct nlk_array_t *
  * of matrix.
  */
 void
-nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v, struct nlk_array_t *m, 
-                          const size_t row)
+nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v, 
+                          struct nlk_array_t *m, const size_t row)
 {
     
 #ifndef NCHECKS
@@ -885,7 +929,8 @@ nlk_array_non_zero(const struct nlk_array_t *arr)
  * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes a2.
  */
 void
-nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1, struct nlk_array_t *v2)
+nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1, 
+                      struct nlk_array_t *v2)
 {
     
 #ifndef NCHECKS
@@ -912,7 +957,8 @@ nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1, struct nl
  *
  */
 void
-nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1, const struct nlk_array_t *v2, 
+nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1, 
+                                   const struct nlk_array_t *v2, 
                                    struct nlk_array_t *m)
 {
 #ifndef NCHECKS
@@ -944,8 +990,10 @@ nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1, const struct nl
  *
  */
 void 
-nlk_matrix_vector_multiply_add(const struct nlk_array_t *m, const NLK_OPTS trans, 
-                               const struct nlk_array_t *v1, struct nlk_array_t *v2)
+nlk_matrix_vector_multiply_add(const struct nlk_array_t *m, 
+                               const NLK_OPTS trans, 
+                               const struct nlk_array_t *v1, 
+                               struct nlk_array_t *v2)
 {
 #ifndef NCHECKS
      /* First we need to make sure all dimensions make sense */

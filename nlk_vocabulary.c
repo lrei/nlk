@@ -1080,10 +1080,14 @@ nlk_vocab_at_index(struct nlk_vocab_t **vocab, size_t index)
  * Print a vocabularized line.
  */
 void
-nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length)
+nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length, bool indexes)
 {
     for(size_t ii = 0; ii < length; ii++) {
-        printf("%s ", varray[ii]->word);
+        if(indexes == true) {
+            printf("%s [%zu] ", varray[ii]->word, varray[ii]->index);
+        } else {
+            printf("%s ", varray[ii]->word);
+        }
     }
     printf("\n");
 }
