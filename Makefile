@@ -1,11 +1,15 @@
+CFLAGS = $(OPTFLAGS)
+
 # OS
 OSNAME := $(shell uname -s)
 
-# Compiler, default GCC, clang for OSX
+# Compiler, default GCC
 CC = gcc
-ifeq ($(OSNAME),Darwin)
-CC = clang
-endif
+
+# clang for OSX
+#ifeq ($(OSNAME),Darwin)
+#CC = clang
+#endif
 
 #
 # Miscellaneous OS dependent options
@@ -19,16 +23,6 @@ BLAS_INCLUDE = /opt/OpenBLAS/include/
 BLAS_LIB = /opt/OpenBLAS/lib
 INCLUDE_DIRS += $(BLAS_INCLUDE)
 LIBRARY_DIRS += $(BLAS_LIB)
-
-
-#unfinished
-#EXTRALIB += -latlas
-#ATLAS_INCLUDE = /usr/lib
-#ATLAS_LIB = /usr/lib/atlas-base/atlas/
-#INCLUDE_DIRS += $(BLAS_INCLUDE)
-#LIBRARY_DIRS += $(BLAS_LIB)
-
-
 
 endif
 
@@ -49,57 +43,87 @@ endif
 ifeq ($(CC), clang)
 endif
 
+#
+# General Options
+#
 
-COMMON_FLAGS += -Wall
-BUILD = build
+# Common Flags
+CFLAGS += -Wall 
+#CFLAGS += -Wextra
+CFLAGS += $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir))
+CFLAGS += -pthread -march=native -std=gnu11 -mtune=native
 
+# Flags for relase w/o omp
+REL_FLAGS = -O3 -fno-strict-aliasing -ffast-math -funroll-loops \
+			-Wno-unused-result -DNCHECKS
 
-COMMON_FLAGS += $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir))
-COMMON_FLAGS += -pthread -march=native -std=gnu11 -mtune=native
+# Debug Flags
+# add -DCHECK_NANS=1,2 to check for NaNs
+DEB_FLAGS = -g -static-libgcc -DDEBUG
 
-OPT_FLAGS = -O3 -fno-strict-aliasing -ffast-math -funroll-loops -DNCHECKS
-
-
+# LDFlags
 LDFLAGS += $(foreach librarydir,$(LIBRARY_DIRS),-L$(librarydir)) \
 $(foreach library,$(LIBRARIES),-l$(library))
 LDFLAGS += $(EXTRALIB)
+CFLAGS += $(LDFLAGS)
 
-#
 # UTHASH
+UTHASH_OPTS = -DHASH_BLOOM=32
+CLAGS += $(UTHASH_OPTS)
+
+
 #
-UTHASHOPTS = -DHASH_BLOOM=32
+# Files
+#
+PRG_NAME = nlktool
+BIN_DIR = bin
+BUILD_DIR = build
+SOURCE_DIR = src
 
+SOURCES = $(wildcard $(SOURCE_DIR)/**/*.c $(SOURCE_DIR)/*.c)
+OBJECTS = $(patsubst $(SOURCE_DIR)%.c,$(BUILD_DIR)%.o,$(SOURCES))
 
-OBJS = main.o nlk_err.o nlk_array.o nlk_layer_linear.o nlk_text.o \
-	   nlk_vocabulary.o nlk_tic.o nlk_window.o nlk_transfer.o nlk_criterion.o \
-	   nlk_eval.o nlk_w2v.o MurmurHash3.o nlk_neuralnet.o nlk_random.o \
-	   nlk_learn_rate.o nlk_pv.o
+TEST_SRC=$(wildcard tests/*.c)
+TESTS=$(patsubst %.c,%,$(TEST_SRC))
 
+TARGET=$(BIN_DIR)/$(PRG_NAME)
 
-all: release
+#
+# Targets
+#
+all: release $(TARGET)
 
-release: CFLAGS += $(OPT_FLAGS)
+$(TARGET): build $(OBJECTS)
+		   $(CC) -o $@ $(OBJECTS) $(CFLAGS)
+
+$(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+build:
+	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BIN_DIR)
+
+release: CFLAGS += $(REL_FLAGS)
 release: LDFLAGS += -fopenmp
-release: nlk
+release: $(TARGET)
 
-single: CFLAGS += $(OPT_FLAGS) -DNOMP
-single: nlk
+release-single: CFLAGS += $(REL_FLAGS) -DNOMP
+release-single: $(TARGET)
 
-debug: CFLAGS = -g -static-libgcc -DDEBUG -DNOMP
-debug: nlk
+debug: CFLAGS += $(DEB_FLAGS) -DNOMP
+debug: $(TARGET)
 
-debug-multi: CFLAGS = -g -static-libgcc -DDEBUG
+debug-multi: CFLAGS += -g -static-libgcc -DDEBUG
 debug-multi: LDFLAGS += -fopenmp
-debug-multi: nlk
+debug-multi: $(TARGET)
 
-nlk: $(OBJS)
-	$(CC) -o main $(OBJS) $(CFLAGS) $(COMMON_FLAGS) $(LDFLAGS) $(UTHASHOPTS)
-	mv main *.o $(BUILD)
+.PHONY: tests
+tests: $(TARGET)
+tests: $(TESTS)
+	   sh ./tests/runtests.sh
 
-%.o: %.c
-	$(CC) -c $(CFLAGS) $(COMMON_FLAGS) $(LDFLAGS) $(UTHASHOPTS) $<
+clean: 
+	rm -rf build $(TESTS)
 
-clean:
-	rm -f *.o
-clear: clean
-	rm main
+# allow typing make print-var
+print-%: ; @echo $*=$($*)
