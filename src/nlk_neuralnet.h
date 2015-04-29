@@ -66,6 +66,7 @@ typedef enum nlk_lm_t NLK_LM;
  */
 struct nlk_nn_train_t {
     NLK_LM           model_type;    /**< the model type */
+    bool             paragraph;     /**< paragraph model */
     unsigned int     window;        /**< the window size */
     float            sample;        /**< the sampling rate */
     nlk_real         learn_rate;    /**< the initial learn rate */
@@ -96,11 +97,13 @@ typedef union nlk_layer_t NLK_LAYER;
  * A Neural Net
  */
 struct nlk_neuralnet_t {
-    struct nlk_nn_train_t   train_opts; /**< model training options */
-    size_t                  n_layers;  /**< the total number of layers */
-    size_t                  pos;       /**< keeps track of position for add */
-    unsigned short int     *types;     /**< layer type for each layer */
-    union nlk_layer_t      *layers;    /**< the array of layers */
+    struct nlk_nn_train_t        train_opts;    /**< model training options */
+    struct nlk_layer_lookup_t   *words;         /**< word lookup layer */
+    struct nlk_layer_lookup_t   *paragraphs;    /**< paragraph lookup layer */
+    size_t                       n_layers;      /**< total number of layers */
+    size_t                       pos;           /**< add positition */
+    unsigned short int          *types;         /**< layer types */
+    union nlk_layer_t           *layers;        /**< the other layers */
 };
 typedef struct nlk_neuralnet_t NLK_NEURALNET;
 

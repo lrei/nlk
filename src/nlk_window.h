@@ -53,9 +53,10 @@ __BEGIN_DECLS
  * The context window for a given word
  */
 struct nlk_context_t {
-    size_t size;                    /**< size of the context words array */
-    struct nlk_vocab_t *center;     /**< the item that has this context */
+    size_t  size;                   /**< size of the context words array */
+    struct  nlk_vocab_t *target;    /**< the item that has this context */
     size_t *window;                 /**< the context window */
+    bool   *is_paragraph;           /**< the item in window is a paragraph? */
 };
 typedef struct nlk_context_t NLK_CONTEXT;
 
@@ -63,22 +64,22 @@ typedef struct nlk_context_t NLK_CONTEXT;
  * The model specific context options
  */
 struct nlk_context_opts_t {
-    size_t  before;    
-    size_t  after;    
-    bool    before_equals_after;
-    bool    center_in_context;      /**< real "center word" in context */
-    bool    paragraph;              /**< true for paragraph vector models */
-    bool    center_paragraph;       /**< the paragraph becomes the window **/
-    bool    prepad;                 /**< true for PVDM_CONCAT */
-    size_t  start;                  /**< index of the start symbol */
-    bool    random_windows;         /**< word2vec style random windows **/
+    bool          random_windows;  /**< word2vec style random windows */
+    unsigned int  before;          /**< window before center */
+    unsigned int  after;           /**< window after center */
+    bool          b_equals_a;      /**< force before == after in rand */
+    bool          paragraph;       /**< is a paragraph model */
+    bool          prepad;          /**< fixed size window: prepad */
+    bool          postpad;         /**< fixed size window: postpad */
+    size_t        start;           /**< index of the start symbol */
+    NLK_LM        model;           /**< the model */
 };
 typedef struct nlk_context_opts_t NLK_CONTEXT_OPTS;
 
 
 
-size_t          nlk_context_window(struct nlk_vocab_t **, const size_t, 
-                                   const size_t,
+size_t          nlk_context_window(struct nlk_vocab_t **, 
+                                   const size_t, const size_t,
                                    struct nlk_context_opts_t *,
                                    struct nlk_context_t **);
 void            nlk_context_model_opts(NLK_LM, unsigned int, 
@@ -87,8 +88,10 @@ void            nlk_context_model_opts(NLK_LM, unsigned int,
 
 
 struct nlk_context_t *nlk_context_create(size_t); 
-void nlk_context_free(struct nlk_context_t *);
-void nlk_context_print(struct nlk_context_t *);
+void                  nlk_context_free(struct nlk_context_t *);
+
+void                  nlk_context_print(struct nlk_context_t *, 
+                                        struct nlk_vocab_t **);
 
 __END_DECLS
 #endif /* __NLK_WINDOW__ */

@@ -419,7 +419,6 @@ nlk_eval_on_paraphrases_pre_gen(const NLK_ARRAY *pvs, size_t limit,
     if(verbose) {
         printf("Dimensions: %zu %zu\n", par_vectors->rows, par_vectors->cols);
     }
-    nlk_print_array(par_vectors, 3, 4);
 
 
     /* normalize weights to make distance calculations easier */

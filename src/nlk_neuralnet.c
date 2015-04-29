@@ -58,6 +58,9 @@ nlk_neuralnet_create(size_t n_layers)
     nn->n_layers = n_layers;
     nn->pos = 0;
 
+    nn->words = NULL;
+    nn->paragraphs = NULL;
+
     nn->layers = (union nlk_layer_t *) malloc(sizeof(union nlk_layer_t *) *
                                               n_layers);
     if(nn->layers == NULL) {
@@ -127,6 +130,14 @@ nlk_neuralnet_free(struct nlk_neuralnet_t *nn)
 {
     size_t ii;
 
+    if(nn->words != NULL) {
+        nlk_layer_lookup_free(nn->words);
+
+    }
+    if(nn->paragraphs != NULL) {
+        nlk_layer_lookup_free(nn->paragraphs);
+    }
+
     /* free each layer */
     for(ii = 0; ii < nn->n_layers; ii++) {
         switch(nn->types[ii]) {
@@ -188,6 +199,7 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
 
     /* write training options */
     fprintf(fp, "%d\n", nn->train_opts.model_type); 
+    fprintf(fp, "%d\n", nn->train_opts.paragraph); 
     fprintf(fp, "%u\n", nn->train_opts.window); 
     fprintf(fp, "%f\n", nn->train_opts.sample); 
     fprintf(fp, "%f\n", nn->train_opts.learn_rate); 
@@ -200,7 +212,15 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
         fprintf(fp, "%d\n", nn->types[ii]);
     }
 
-    /* write layers */
+    /* write word lookup */
+    nlk_layer_lookup_save(nn->words, fp);
+
+    /* write paragraph lookup */
+    if(nn->train_opts.paragraph && nn->paragraphs != NULL) {
+        nlk_layer_lookup_save(nn->paragraphs, fp);
+    }
+
+    /* write the other layers */
     for(ii = 0; ii < nn->n_layers; ii++) {
         switch(nn->types[ii]) {
             case NLK_LAYER_LOOKUP_TYPE:
@@ -256,45 +276,62 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     int ret;
     int tmp;
 
-    /* read training options */
+    /**
+     * @section read training options and header
+     */
+    /* model type */
     ret = fscanf(fp, "%d\n", &tmp); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
     opts.model_type = tmp;
+    /* paragraph */
+    ret = fscanf(fp, "%d\n", &tmp); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
+    opts.paragraph = tmp;
+    /* window */
     ret = fscanf(fp, "%u\n", &opts.window); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /* sample */
     ret = fscanf(fp, "%f\n", &opts.sample); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /* learn rate */
     ret = fscanf(fp, "%f\n", &opts.learn_rate); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /* hierarchical softmax */
     ret = fscanf(fp, "%d\n", &tmp); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
     opts.hs = tmp;
+    /* negative sampling */
     ret = fscanf(fp, "%u\n", &opts.negative); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-
     /* read header */
     ret = fscanf(fp, "%zu\n", &n_layers);
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /**
+     * @section create neural network and load weights
+     */
     nn = nlk_neuralnet_create(n_layers);
     nn->train_opts = opts;
     if(verbose) {
         printf("Loading Neural Network\nLayers: %zu\n", n_layers);
     }
 
+    /* header */
     for(ii = 0; ii < nn->n_layers; ii++) {
         ret = fscanf(fp, "%hu\n", &nn->types[ii]);
         if(ret <= 0) {
@@ -302,7 +339,15 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
         }
     }
 
-    /* read layers */
+    /* read word lookup */
+    nn->words = nlk_layer_lookup_load(fp);
+
+    /* read paragraph lookup */
+    if(nn->train_opts.paragraph) {
+        nn->paragraphs = nlk_layer_lookup_load(fp);
+    }
+
+    /* read the other layers */
     for(ii = 0; ii < nn->n_layers; ii++) {
         switch(nn->types[ii]) {
             case NLK_LAYER_LOOKUP_TYPE:

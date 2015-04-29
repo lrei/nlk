@@ -536,6 +536,22 @@ nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr,
 }
 
 /**
+ * Elementwise EXACT comparison between the values of an array and a C array
+ *
+ * @param arr       the array
+ * @param carr      the C array
+ *
+ * @return true if forall ii, arr[ii] == carr[ii], else false 
+ */
+bool
+nlk_array_compare_exact_carray(struct nlk_array_t *arr, nlk_real *carr)
+{
+    const size_t len = arr->rows * arr->cols;
+    return nlk_carray_compare_exact_carray(arr->data, carr, len);
+
+}
+
+/**
  * Elementwise comparison between the values of two C arrays
  *
  * @param carr1     a C array
@@ -551,6 +567,27 @@ nlk_carray_compare_carray(nlk_real *carr1, nlk_real *carr2, size_t len,
 {
     for(size_t ii = 0; ii < len; ii++) {
         if(fabs(carr1[ii] - carr2[ii]) >= tolerance) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+/**
+ * Elementwise EXACT comparison between the values of two C arrays
+ *
+ * @param carr1     a C array
+ * @param carr2     another C array
+ *
+ * @return  true if forall ii, abs(carr1[ii] = carr2[ii]),
+ *          else false
+ */
+bool
+nlk_carray_compare_exact_carray(nlk_real *carr1, nlk_real *carr2, size_t len)
+{
+    for(size_t ii = 0; ii < len; ii++) {
+        if(carr1[ii] != carr2[ii]) {
             return false;
         }
     }
@@ -624,6 +661,28 @@ nlk_array_save_rows(struct nlk_array_t *array, FILE *fp, size_t start,
                        NLK_EBADLEN);
     }
 }
+
+/**
+ *  Save an array to a text file pointer
+ *
+ *  @param array        the array to save
+ *  @param fp           the file pointer
+ */
+void
+nlk_array_save_text(struct nlk_array_t *array, FILE *fp)
+{
+    /* write header */
+    fprintf(fp, "%zu %zu\n", array->rows, array->cols);
+
+    /* write data */
+    for(size_t rr = 0; rr < array->rows; rr++) {
+        for(size_t cc = 0; cc < array->cols; cc++) {
+            fprintf(fp, "%f ", array->data[rr * array->cols + cc]);
+        }
+        fprintf(fp, "\n");
+    }
+}
+
 
 /**
  *  Load an array from a file pointer

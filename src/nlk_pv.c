@@ -44,128 +44,7 @@
 #include "nlk_pv.h"
 
 
-/**
- * Generate a PV using PVDM
- */
-static inline void
-nlk_pv_dm_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-              const bool hs, NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-              const size_t *neg_table, const size_t vocab_size, 
-              const nlk_real learn_rate, const nlk_real *sigmoid_table, 
-              const struct nlk_context_t *context, NLK_ARRAY *grad_acc, 
-              NLK_ARRAY *lk1_out, NLK_ARRAY *pv)
-{
-#ifndef NCHECKS
-    if(context->size == 0) {
-        NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
-    }
-#endif
 
-    nlk_array_zero(grad_acc);
-
-    /* PVDM Forward through the first layer */
-
-
-    /* The context words get forwarded through the first lookup layer
-     * and their vectors are averaged together with the PV.
-     * The window[0] is the paragraph id and should be ignored as the PV
-     * is provided independently of the rest of the lookup layer
-     */
-    nlk_layer_lookup_forward_lookup_avg_p(lk1, &context->window[1], 
-                                          context->size - 1, pv, lk1_out);
-
-    /* Hierarchical Softmax */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, false, lk1_out, learn_rate, sigmoid_table, 
-                   context->center, grad_acc);
-    } 
-
-    /* NEG Sampling */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, false, neg_table, negative, vocab_size, learn_rate, 
-                    context->center->index, lk1_out, sigmoid_table, grad_acc);
-    }
-
-    /* Backprop into the PV: Learn PV weights using the accumulated gradient */
-    nlk_array_add_carray(grad_acc, pv->data);
-}
-
-static inline void
-nlk_pv_dm_concat_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-                     const bool hs, NLK_LAYER_LOOKUP *lk2neg, 
-                     const size_t negative, const size_t *neg_table, 
-                     const size_t vocab_size, const nlk_real learn_rate, 
-                     const nlk_real *sigmoid_table,
-                     const struct nlk_context_t *context, NLK_ARRAY *grad_acc, 
-                     NLK_ARRAY *lk1_out, NLK_ARRAY *pv)
-{
-#ifndef NCHECKS
-    if(context->size == 0) {
-        NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
-    }
-#endif
-
-    nlk_array_zero(grad_acc);
-
-    /* PVDM Forward through the first layer */
-
-
-    /* The context words get forwarded through the first lookup layer
-     * and their vectors are concatenate together with the PV.
-     * The window[0] is the paragraph id and should be ignored as the PV
-     * is provided independently of the rest of the lookup layer
-     */
-    nlk_layer_lookup_forward_lookup_concat_p(lk1, &context->window[1], 
-                                             context->size - 1, pv, lk1_out);
-
-    /* Hierarchical Softmax */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, false, lk1_out, learn_rate, sigmoid_table, 
-                   context->center, grad_acc);
-    } 
-
-    /* NEG Sampling */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, false, neg_table, negative, vocab_size, learn_rate, 
-                    context->center->index, lk1_out, sigmoid_table, grad_acc);
-    }
-
-    /* Backprop into the PV: Learn PV weights using the accumulated gradient */
-    nlk_array_add_carray_partial(grad_acc, pv->data, pv->rows * pv->cols);
-}
-
-
-/**
- * Generate a PV using PVDBOW
- *
- * In PVDBOW each "context" is just the target word which is associated with 
- * the PV.
- */
-static inline void
-nlk_pv_dbow_gen(NLK_LAYER_LOOKUP *lk1, NLK_LAYER_LOOKUP *lk2hs,
-                const bool hs, NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-                const size_t *neg_table, const size_t vocab_size, 
-                const nlk_real learn_rate, const nlk_real *sigmoid_table, 
-                const struct nlk_context_t *context, NLK_ARRAY *grad_acc, 
-                NLK_ARRAY *lk1_out, NLK_ARRAY *pv)
-{
-    nlk_array_zero(grad_acc);
-
-    /* Hierarchical Softmax */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, false, pv, learn_rate, sigmoid_table, 
-                   context->center, grad_acc);
-    }
-        
-    /* NEG Sampling */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, false, neg_table, negative, vocab_size, learn_rate, 
-                    context->center->index, lk1_out, sigmoid_table, grad_acc);
-    }
-
-    /* Backprop into the PV */
-    nlk_array_add_carray(grad_acc, pv->data);
-}
 
 
 /**
@@ -211,21 +90,13 @@ nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn,
     if(model_type == NLK_PVDBOW) {
         for(step = 0; step < steps; step++) {
             for(size_t ex = 0; ex < n_examples; ex++) {
-                nlk_pv_dbow_gen(lk1, lkhs, hs, lkneg, negative, 
-                                neg_table, vocab_size, learn_rate, 
-                                sigmoid_table, contexts[ex], grad_acc, 
-                                lk1_out, pv);
             }
-
             learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
                                                         steps);
         }
     } else if(model_type == NLK_PVDM) {
         for(step = 0; step < steps; step++) {
             for(size_t ex = 0; ex < n_examples; ex++) {
-                nlk_pv_dm_gen(lk1, lkhs, hs, lkneg, negative, neg_table, 
-                              vocab_size, learn_rate, sigmoid_table, 
-                              contexts[ex], grad_acc, lk1_out, pv);
 
             }
             learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
@@ -234,9 +105,6 @@ nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn,
     } else if(model_type == NLK_PVDM_CONCAT) {
         for(step = 0; step < steps; step++) {
             for(size_t ex = 0; ex < n_examples; ex++) {
-                nlk_pv_dm_concat_gen(lk1, lkhs, hs, lkneg, negative, neg_table, 
-                                     vocab_size, learn_rate, sigmoid_table, 
-                                     contexts[ex], grad_acc, lk1_out, pv);
             }
             learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
                                                         steps);
@@ -329,12 +197,6 @@ nlk_pv(struct nlk_neuralnet_t *nn, const char *par_file_path,
         printf("Generating Paragraphs: %zu\n", total_lines);
     }
 
-    /* file size */
-    size_t par_file_size;
-    fseek(in, 0, SEEK_END);
-    par_file_size = ftell(in);
-    fclose(in);
-
     /* random number generator initialization */
     uint64_t seed = 6121984 * clock();
     seed = nlk_random_fmix(seed);
@@ -409,18 +271,22 @@ nlk_pv(struct nlk_neuralnet_t *nn, const char *par_file_path,
      * The train file is divided into parts, one part for each thread.
      * Open file and move to thread specific starting point
      */
-    size_t file_pos = 0;
-    size_t end_pos = 0;
     size_t line_start = 0;
     size_t line_cur = 0;
+    size_t end_line = 0;
     FILE *par_file = fopen(par_file_path, "rb");
     size_t par_id;
 
 #pragma omp for 
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
         /* set train file part position */
-        end_pos = nlk_set_file_pos(par_file, true, par_file_size,
-                                   num_threads, thread_id);
+        line_cur = nlk_text_get_split_start_line(total_lines, num_threads, 
+                                                 thread_id);
+        nlk_text_goto_line(par_file, line_cur);
+        end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
+                                                  thread_id);
+
+
 
         /* determine line number */
         line_start = nlk_text_get_line(par_file);
@@ -457,11 +323,10 @@ nlk_pv(struct nlk_neuralnet_t *nn, const char *par_file_path,
 
             generated++;
             line_cur++;
-            file_pos = ftell(par_file);
             if(verbose) {
                 nlk_pv_display(generated, total_lines);
             }
-            if(file_pos >= end_pos) {
+            if(line_cur > end_line) {
                 break;
             }
         }     

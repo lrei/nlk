@@ -39,7 +39,7 @@
 
 
 #define NLK_LM_MAX_WORD_SIZE    128
-#define NLK_LM_MAX_LINE_SIZE    50000
+#define NLK_LM_MAX_LINE_SIZE    100000
 
 
 #undef __BEGIN_DECLS
@@ -56,6 +56,8 @@ __BEGIN_DECLS
 
 void    nlk_text_lower(char *, wchar_t *);
 void    nlk_text_ascii_lower(char *st);
+
+/* read */
 int     nlk_read_word(FILE *, char *, const size_t);
 int     nlk_read_line(FILE *, char **, const size_t, const size_t);
 int     nlk_read_number_line(FILE *, char **, size_t *, const size_t, 
@@ -64,7 +66,17 @@ size_t  nlk_text_line_size(char **line);
 size_t  nlk_text_get_line(FILE *);
 size_t  nlk_text_count_words(FILE *);
 size_t  nlk_text_count_lines(FILE *);
+
+
+/* go to line, splits */
+void    nlk_text_goto_line(FILE *, size_t);
+size_t  nlk_text_get_split_start_line(size_t, unsigned int, unsigned int);
+size_t  nlk_text_get_split_end_line(size_t,  unsigned int, unsigned int);
 size_t  nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
+
+
+
+/* print */
 void    nlk_text_print_line(char **);
 void    nlk_text_print_numbered_line(char **, size_t, int);
 

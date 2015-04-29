@@ -116,14 +116,14 @@ void nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *,
                                          const size_t, NLK_ARRAY *);
 void nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *, 
                                            const size_t *, const size_t, 
-                                           NLK_ARRAY *, NLK_ARRAY *);
+                                           NLK_ARRAY *);
 /* Lookup forward pass with concatenation of multiple inputs */
 void nlk_layer_lookup_forward_lookup_concat(struct nlk_layer_lookup_t *, 
                                             const size_t *, 
                                             const size_t, NLK_ARRAY *);
 void nlk_layer_lookup_forward_lookup_concat_p(struct nlk_layer_lookup_t *, 
                                               const size_t *, const size_t, 
-                                              NLK_ARRAY *, NLK_ARRAY *);
+                                              NLK_ARRAY *);
 
 /* Lookup forward for just one input */
 void nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *,

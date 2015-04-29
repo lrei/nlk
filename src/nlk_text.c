@@ -488,6 +488,7 @@ nlk_text_goto_word_start(FILE *fp)
     }
 }
 
+
 /**
  * @brief Used to get the start position in a file for a given worker thread
  *
@@ -518,7 +519,6 @@ nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
 
     return start_pos;
 }
-
 
 
 /**
@@ -557,6 +557,28 @@ nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
     fseek(fp, start_pos, SEEK_SET);
 
     return end_pos;
+}
+
+
+size_t
+nlk_text_get_split_start_line(size_t total_lines, unsigned int splits, 
+                              unsigned int split_id)
+{
+    size_t start = 0;
+    start = (total_lines / (double)splits) * (size_t)split_id;
+    return start;
+}
+
+size_t
+nlk_text_get_split_end_line(size_t total_lines, unsigned int splits, 
+                            unsigned int split_id)
+{
+    size_t end = 0;
+    if(split_id == splits) {
+        return total_lines - 1;
+    }
+    end = (total_lines / (double)splits) * (size_t)(split_id + 1) - 1;
+    return end;
 }
 
 

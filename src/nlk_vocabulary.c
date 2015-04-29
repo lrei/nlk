@@ -55,7 +55,7 @@
  * @param start         the clocks used just before starting to read the file
  */
 static void
-nlk_vocab_display_progress(const size_t count_actual, const size_t total, 
+nlk_vocab_display_progress(const size_t line_counter, const size_t total_lines, 
                            const clock_t start)
 {
     double progress;
@@ -64,8 +64,8 @@ nlk_vocab_display_progress(const size_t count_actual, const size_t total,
 
     clock_t now = clock();
 
-    progress = count_actual / (double) total * 100;
-    speed = count_actual / 1000.0 / ((double)(now - start + 1) / 
+    progress = line_counter / (double) total_lines * 100;
+    speed = line_counter / 1000.0 / ((double)(now - start + 1) / 
             (double)CLOCKS_PER_SEC * 1000),
 
     snprintf(display_str, 256, 
@@ -144,8 +144,9 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 {
     /** @section Shared Initializations
      */
-    size_t total = 0;
-    size_t count_actual = 0;
+    size_t total_lines = 0;
+    size_t line_counter = 0;
+    size_t updated = 0;
     clock_t start = clock();
 
     size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
@@ -156,31 +157,36 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
         NLK_ERROR(strerror(errno), errno);
         /* unreachable */
     }
-    fseek(in, 0, SEEK_END);
-    total = ftell(in);
+    total_lines = nlk_text_count_lines(in);
     fclose(in);
     
     /* Limit the number of threads */
     int num_threads = omp_get_num_procs();
-    if(num_threads > NLK_MAX_VOCABS) {
-        num_threads = NLK_MAX_VOCABS;
+    if(num_threads > NLK_VOCAB_MAX_THREADS) {
+        num_threads = NLK_VOCAB_MAX_THREADS;
     }
     /* make sure it's an even number, simplifies things */
     if(num_threads % 2 != 0 && num_threads > 1) {
         num_threads--;
     }
+    /* check if file is too small to make sense to parallel stuff */
+    if(total_lines < NLK_VOCAB_MIN_SIZE_THREADED) {
+        num_threads = 1;
+    }
 
     /* create and initialize vocabularies */
-    struct nlk_vocab_t *vocabs[NLK_MAX_VOCABS];
+    struct nlk_vocab_t *vocabs[NLK_VOCAB_MAX_THREADS];
     for(size_t vv = 0; vv < num_threads; vv++) {
         vocabs[vv] = nlk_vocab_init();
     }
 
     /** @section Parallel Allocations and Initializations
      */
-#pragma omp parallel
+#pragma omp parallel shared(line_counter, updated)
 {
     size_t zz;
+    size_t cur_line;
+    size_t end_line;
     size_t par_id;
 
     /* vocabulary */
@@ -188,11 +194,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 
     /* word */
     char *word = NULL;
-
-    /* file position */
-    size_t file_pos = 0;
-    size_t end_pos = 0;
-    size_t file_pos_last = 0;
+    int ret = 0;
 
     /* open file */
     FILE *file = fopen(filepath, "rb");
@@ -221,11 +223,13 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 #pragma omp for
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
         /* set train file part position */
-        end_pos = nlk_set_file_pos(file, numbered, total,
-                                   num_threads, thread_id);
-        file_pos = ftell(file);
-        file_pos_last = file_pos;
 
+        cur_line = nlk_text_get_split_start_line(total_lines, num_threads, 
+                                                  thread_id);
+        nlk_text_goto_line(file, cur_line);
+        end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
+                                                  thread_id);
+        
         struct nlk_vocab_t *vocab = vocabs[thread_id];
         struct nlk_vocab_t *start_symbol;
         HASH_FIND_STR(vocab, NLK_START_SYMBOL, start_symbol);
@@ -234,26 +238,32 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 
             /** @subsection Progress display 
              */
-            if(file_pos - file_pos_last > 1000000) {
-                count_actual += file_pos - file_pos_last;
-                file_pos_last = file_pos;
-                
+            if(line_counter - updated > 1000) {
+                updated = line_counter;
                 if(verbose) {
-                    nlk_vocab_display_progress(count_actual, total, start);
+                    nlk_vocab_display_progress(line_counter, total_lines,
+                                                start);
                 }
             }
 
             /* read from file */
             if(numbered) {
-                nlk_read_number_line(file, text_line, &par_id, max_word_size,
-                                     max_line_size);
+                ret = nlk_read_number_line(file, text_line, &par_id, 
+                                           max_word_size, max_line_size);
             } else {
-                nlk_read_line(file, text_line, max_word_size, max_line_size);
+                ret = nlk_read_line(file, text_line, max_word_size, 
+                                    max_line_size);
             }
+            line_counter++;
+            cur_line++;
 
             /* all sentences must start with </s> except empty lines */
             if(text_line[0][0] != '\0') {
-                start_symbol->count += 1;
+                if(numbered) {
+                    start_symbol->count += 1;
+                } else if(ret != NLK_ETRUNC && ret != EOF) {
+                    start_symbol->count += 1;
+                }
             }
 
             /* process each word in line */
@@ -281,9 +291,9 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
             }   /* end of words in line */
 
             /* check for end of thread part */
-            file_pos = ftell(file);
-            if(file_pos >= end_pos) {
-                count_actual += file_pos - file_pos_last;
+            if(ret == EOF) {
+                break;
+            } else if(cur_line > end_line) {
                 break;
             }
         } /* file is over (end of while) */
@@ -355,6 +365,7 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * Build a vocabulary from a file
  *
  * @param filepath        the path of the file to read from
+ * @param numbered        lines begin with their id number
  * @param max_word_size   maximum size of a word including null terminator
  * @param verbose         display progress
  *
@@ -364,8 +375,6 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * @note
  * This file should have sentences separated by a newline and words separated 
  * by spaces or tabs.
- *
- * Line vocabulary items always have a zero count.
  * @endnote
  */
 struct nlk_vocab_t *
@@ -824,7 +833,7 @@ vocab_max_code_length(struct nlk_vocab_t **vocab)
 }
 
 
-/** @fn int nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
+/**
  * Save the vocabulary - only strings and counts
  * 
  * @param filepath  the path of the file to which the vocabulary will be saved
@@ -863,8 +872,7 @@ nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
     return NLK_SUCCESS;
 }
 
-/** @fn int nlk_vocab_load(const char *filepath, const size_t max_word_size, 
- *                         struct nlk_vocab_t **vocab)
+/**
  * Load the (simple) vocabulary structure from disk, saved via *nlk_save_vocab*
  *
  * @param filepath          the path of the file to which will be read
@@ -877,7 +885,7 @@ struct nlk_vocab_t *
 nlk_vocab_load(const char *filepath, const size_t max_word_size)
 {
     struct nlk_vocab_t *vocab = nlk_vocab_init();
-    struct nlk_vocab_t *end;
+    struct nlk_vocab_t *start;
 
     uint64_t count = 0;
     char *word = (char *) calloc(max_word_size, sizeof(char));
@@ -887,13 +895,13 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
         /* unreachable */
     }
 
-    HASH_FIND_STR(vocab, NLK_START_SYMBOL, end);
+    HASH_FIND_STR(vocab, NLK_START_SYMBOL, start);
 
     nlk_read_word(in, word, max_word_size);
     if(fscanf(in, "%"SCNu64"\n", &count) != 1) {
         NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
     }
-    end->count += count;
+    start->count += count;
 
 
     while(!feof(in)) {
@@ -911,7 +919,7 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
     return vocab;
 }
 
-/** @fn int nlk_vocab_save_full(const char *filepath, struct nlk_vocab_t **vocab)
+/**
  * Save the vocabulary structure to disk.
  *
  * @param filepath  the path of the file to which the vocabulary will be saved
@@ -1007,9 +1015,9 @@ nlk_vocab_vocabularize(struct nlk_vocab_t **vocab, const uint64_t total_words,
 
 
     /* add start_symbol? */
-    if(start_symbol && vec_idx) {
+    if(start_symbol && vec_idx == 0) {
         HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vocab_word);
-        varray[vec_idx] = vocab_word;
+        varray[0] = vocab_word;
         vec_idx++;
     }
 

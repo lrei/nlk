@@ -79,11 +79,12 @@ PRG_NAME = nlktool
 BIN_DIR = bin
 BUILD_DIR = build
 SOURCE_DIR = src
+TEST_DIR = tests
 
 SOURCES = $(wildcard $(SOURCE_DIR)/**/*.c $(SOURCE_DIR)/*.c)
 OBJECTS = $(patsubst $(SOURCE_DIR)%.c,$(BUILD_DIR)%.o,$(SOURCES))
 
-TEST_SRC=$(wildcard tests/*.c)
+TEST_SRC=$(wildcard $(TEST_DIR)/*.c)
 TESTS=$(patsubst %.c,%,$(TEST_SRC))
 
 TARGET=$(BIN_DIR)/$(PRG_NAME)
@@ -91,7 +92,7 @@ TARGET=$(BIN_DIR)/$(PRG_NAME)
 #
 # Targets
 #
-all: release $(TARGET)
+all: release
 
 $(TARGET): build $(OBJECTS)
 		   $(CC) -o $@ $(OBJECTS) $(CFLAGS)
@@ -106,21 +107,30 @@ build:
 release: CFLAGS += $(REL_FLAGS)
 release: LDFLAGS += -fopenmp
 release: $(TARGET)
+release: build-tests
 
 release-single: CFLAGS += $(REL_FLAGS) -DNOMP
 release-single: $(TARGET)
+release-single: build-tests
 
 debug: CFLAGS += $(DEB_FLAGS) -DNOMP
 debug: $(TARGET)
+debug: build-tests
 
 debug-multi: CFLAGS += -g -static-libgcc -DDEBUG
 debug-multi: LDFLAGS += -fopenmp
 debug-multi: $(TARGET)
+debug-multi: build-tests
+
+$(TEST_DIR)/%: $(TEST_DIR)/%.c
+	$(CC) -o $@ $< $(filter-out $(BUILD_DIR)/main.o,$(OBJECTS)) $(CFLAGS)
+
+build-tests: $(TESTS)
 
 .PHONY: tests
-tests: $(TARGET)
-tests: $(TESTS)
-	   sh ./tests/runtests.sh
+tests: 
+	cd $(TEST_DIR); \
+	sh runtests.sh
 
 clean: 
 	rm -rf build $(TESTS)

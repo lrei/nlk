@@ -111,8 +111,11 @@ int     nlk_array_copy_row_vector(struct nlk_array_t *, const unsigned int,
 void nlk_array_copy(struct nlk_array_t *, const struct nlk_array_t *);
 void nlk_carray_copy_carray(nlk_real *, const nlk_real *, size_t);
 
+/* compare */
 bool nlk_array_compare_carray(struct nlk_array_t *, nlk_real *, nlk_real);
 bool nlk_carray_compare_carray(nlk_real *, nlk_real *, size_t, nlk_real);
+bool nlk_carray_compare_exact_carray(nlk_real *, nlk_real *, size_t);
+bool nlk_array_compare_exact_carray(struct nlk_array_t *, nlk_real *);
 
 /*
  * Init functions
@@ -136,6 +139,7 @@ void nlk_carray_init_uniform(nlk_real *, const nlk_real, const nlk_real,
  */
 void nlk_array_save(struct nlk_array_t *, FILE *);
 void nlk_array_save_rows(struct nlk_array_t *, FILE *, size_t, size_t);
+void nlk_array_save_text(struct nlk_array_t *, FILE *);
 
 struct nlk_array_t *nlk_array_load(FILE *);
 struct nlk_array_t *nlk_array_load_text(FILE *);
@@ -160,7 +164,8 @@ void nlk_array_normalize_row_vectors(struct nlk_array_t *);
 void nlk_array_normalize_vector(struct nlk_array_t *);
 
 /* vector dot product */
-nlk_real nlk_array_dot(const struct nlk_array_t *, struct nlk_array_t *, uint8_t);
+nlk_real nlk_array_dot(const struct nlk_array_t *, struct nlk_array_t *, 
+                       uint8_t);
 nlk_real nlk_array_dot_carray(const struct nlk_array_t *, nlk_real *);
 nlk_real nlk_array_row_dot(const struct nlk_array_t *, size_t, 
                            struct nlk_array_t *, size_t);

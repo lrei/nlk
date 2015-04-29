@@ -38,6 +38,82 @@
 #include "nlk_random.h"
 #include "nlk_window.h"
 
+
+/**
+ * Random Windows
+ */
+static void
+nlk_window_random(const unsigned int _before, const unsigned int _after, 
+                  const bool equal, unsigned int *before, unsigned int *after)
+{
+    unsigned int random_window;
+    if(equal) {/* if after == before, keep it that way (word2vec style) */
+        random_window = (nlk_random_xs1024() % (uint64_t) _before) + 1;
+        *before = random_window;
+        *after = random_window;
+    } else {
+        if(_before > 0) {
+            random_window = (nlk_random_xs1024()  % (uint64_t) _before) + 1;
+            *before = random_window;
+        } else {
+            *before = 0;
+        }
+        if(_after > 0) {
+            random_window = (nlk_random_xs1024()  % (uint64_t) _after) + 1;
+            *after = random_window;
+        } else {
+            *after = 0;
+        }
+    } 
+}
+
+
+/**
+ * Context for a given position in the text
+ */
+static void
+nlk_context_for_pos(struct nlk_vocab_t **varray, const size_t paragraph_id,
+                    const bool paragraph, const unsigned int center_pos,
+                    unsigned int window_pos, const unsigned int window_end,
+                    const bool prepad_paragraph, struct nlk_context_t *context)
+{
+    unsigned int window_idx = 0;
+
+    /* the target i.e. word to be predicted is the center of the window */
+    context->target = varray[center_pos];
+
+    /* the context size is the window except the target */
+    context->size = (window_end - window_pos) - 1;
+
+    /* if before < window and this is a paragraph model */
+    if(prepad_paragraph && paragraph) {
+        context->window[0] = paragraph_id;
+        context->is_paragraph[0] = true;
+        context->size = context->size + 1;
+        window_idx++;
+    }
+
+    /* remaining context items are the window items except for the target */
+    for(; window_pos < window_end; window_pos++) {
+        if(window_pos == center_pos) {
+            continue;
+        }
+        context->window[window_idx] = varray[window_pos]->index;
+        context->is_paragraph[window_idx] = false;
+        window_idx++;
+    }
+
+   /* if it's a paragraph model, 0 => paragraph_id */
+    if(paragraph) {
+        context->window[window_idx] = paragraph_id;
+        context->is_paragraph[window_idx] = true;
+        context->size = context->size + 1;
+        window_idx++;
+    }
+
+}
+
+
 /** 
  * Creates a context window from a vocabularized line/sentence/pararaph
  *
@@ -61,151 +137,60 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
                    struct nlk_context_opts_t *opts,
                    struct nlk_context_t **contexts)
 {
-    size_t line_pos         = 0;        /* position in line/par (input) */
+    size_t center_pos       = 0;        /* position in line/par (input) */
     int window_pos          = 0;        /* position in window for line/par */
     int window_end          = 0;        /* end of window */
-    size_t window_idx       = 0;        /* position in the current window */
-    size_t context_idx      = 0;        /* position in the contexts array */
-    size_t random_window    = 0;        /* random window size */
-    size_t before           = 0;        /* reduced window before current w */
-    size_t after            = 0;        /* reduced window after current w */
+    unsigned int ctx_idx    = 0;        /* position in the contexts array */
+    unsigned int before     = 0;        /* reduced window before current w */
+    unsigned int after      = 0;        /* reduced window after current w */
+    bool prepad_paragraph   = false;    /* prepad context with par id */
 
-    /* current center of the window */
-    struct nlk_vocab_t *vocab_word   = NULL;
 
-    /* 
-     * The position in the contexts (context_idx) will only be different from
-     * the position in the line in one situation: PVDBOW (center_par == true).
-     *
-     * This is a sort of hack. In the Skipgram implementation, the input to 
-     * lookup1 is the index of a context word while the center word is the
-     * input to lookup2 (points if HS, indices otherwise).
-     * I.e. The theoretical input (the target word) is actually the output
-     * and the theoretical output (the context words) are actually the input
-     * except one at a time.
-     *
-     * In PVDBOW (Skipgram for PVs), the input to lookup1 is the 
-     * paragraph index while the input to lookup2 are the window words 
-     * (points if HS, indices otherwise).
-     */
-    /* shortcuts */
-    size_t _before = opts->before;
-    size_t _after  = opts->after;
-
-    /* only used if random_windows == false */
-    before = _before;
-    after = _after;
-    
-
-    for(line_pos = 0; line_pos < line_length; line_pos++) {
-        /** @section Determine Window
-         */
+    /* go through the paragraph changing the center word */
+    for(center_pos = 0; center_pos < line_length; center_pos++) {
         /* random window */
-        if(opts->random_windows && opts->before_equals_after) {
-            /* if after == before, keep it that way (word2vec style) */
-            random_window = (nlk_random_xs1024() % _before) + 1;
-            before = random_window;
-            after = random_window;
-        } else if(opts->random_windows) {
-            if(_before > 0) {
-                random_window = (nlk_random_xs1024()  % _before) + 1;
-                before = random_window;
-            }
-            if(_after > 0) {
-                random_window = (nlk_random_xs1024()  % _after) + 1;
-                after = random_window;
-            }
-        } /* no else because if random_windows == false, use the defaults */
-
-        /* determine where in *line* the window begins */
-        if(line_pos < before) {
-            window_pos = 0;
+        if(opts->random_windows) {
+            nlk_window_random(opts->before, opts->after, opts->b_equals_a, 
+                              &before, &after);
         } else {
-            window_pos = line_pos - before;
-        }
-        /* determine where in *line* the window ends */
-        if(line_pos + after >= line_length) {
-            window_end = line_length;
-        } else {
-            window_end = line_pos + after + 1;
+            before = opts->before;
+            after = opts->after;
         }
         
-        if(opts->paragraph && opts->center_paragraph) {
-            /** @section PVDBOW
-             */
-            for(; window_pos < window_end; window_pos++) {
-                contexts[context_idx]->size = 1;
-                contexts[context_idx]->center = varray[window_pos];
-                contexts[context_idx]->window[0] = paragraph_id;
-                context_idx++;
+        /* determine where in *line* the window begins */
+        if(center_pos < before) {
+            window_pos = 0;
+            if(opts->model == NLK_PVDBOW) {
+                prepad_paragraph = true;
             }
-        } else if(opts->paragraph) {
-            /** @section PVDM specific
-            */
-            /* first context item is the paragraph */
-            contexts[context_idx]->window[0] = paragraph_id;
-            window_idx = 1;
-
-            if(opts->prepad) {
-                /** @subsection PVDM_CONCAT => fixed context size
-                 * In this case we might have to prepad the context with
-                 * the START token.
-                 * (postpad with an END token?)
-                 */
-                size_t prepad_n = 0;
-                /* fixed window = after + before + PV */
-                contexts[context_idx]->size = opts->after + opts->before + 1;
-                /* determine how much padding we need to add */
-                prepad_n = contexts[context_idx]->size 
-                           - (window_end - window_pos);
-                for(size_t pp = 0; pp < prepad_n; pp++) {
-                    contexts[context_idx]->window[window_idx] = opts->start;
-                    window_idx++;
-                }
-            } else {
-                contexts[context_idx]->size = window_end - window_pos;
-                /* 
-                 * paragraph is in the context items, but self is not:
-                 * contexts[context_idx]->size += 1 - 1
-                 */
-            }
-
-
-            for(; window_pos < window_end; window_pos++) {
-                if(window_pos == line_pos) {
-                    contexts[context_idx]->center = varray[window_pos];
-                    continue;
-                }
-                vocab_word = varray[window_pos];
-                contexts[context_idx]->window[window_idx] = vocab_word->index;
-                window_idx++;
-            }
-            context_idx++;
-        } else { 
-            /** @section CBOW, Skipgram
-             */
-             /* self not in its own context window so -1 */
-            contexts[context_idx]->size = window_end - window_pos - 1;
-
-            if(contexts[context_idx]->size == 0) { 
-                continue; 
-            }
-            window_idx = 0;
-
-            for(; window_pos < window_end; window_pos++) {
-                if(window_pos == line_pos) {
-                    contexts[context_idx]->center = varray[window_pos];
-                    continue;
-                }
-                contexts[context_idx]->window[window_idx] = 
-                    varray[window_pos]->index;
-                window_idx++;
-            }
-            context_idx++;
+        } else {
+            window_pos = center_pos - before;
+            prepad_paragraph = false;
         }
+        /* determine where in *line* the window ends */
+        if(center_pos + after >= line_length) {
+            window_end = line_length;
+        } else {
+            /* we always end at < window_end hence the +1 */
+            window_end = center_pos + after + 1;
+        }
+
+        /* create the context for this window */
+        nlk_context_for_pos(varray, paragraph_id, opts->paragraph, center_pos, 
+                            window_pos, window_end, prepad_paragraph,
+                            contexts[ctx_idx]);
+
+#ifndef NCHECKS
+        if(contexts[ctx_idx]->size > opts->before + opts->after + 1) {
+            NLK_ERROR("Context size too large for allocated memory.", 
+                      NLK_EBADLEN);
+        }
+#endif
+
+        ctx_idx++;
     }
 
-    return context_idx;
+    return ctx_idx;
 }
 
 /**
@@ -231,12 +216,20 @@ nlk_context_create(size_t max_context_size)
                        NLK_ENOMEM);
         /* unreachable */
     }
+    context->is_paragraph = (bool *) malloc(max_context_size * sizeof(bool));
+    if(context->is_paragraph == NULL) {
+        NLK_ERROR_NULL("failed to allocate memory for context", 
+                       NLK_ENOMEM);
+        /* unreachable */
+    }
+
 
     /* make it easier to find attempt to access at non initialized location */
-    context->center = NULL;
+    context->target = NULL;
     context->size = (size_t) -1;
     for(size_t ii = 0; ii < max_context_size; ii++) {
         context->window[ii] = (size_t) -1;
+        context->is_paragraph[ii] = false;
     }
 
     return context;
@@ -251,18 +244,28 @@ void
 nlk_context_free(struct nlk_context_t *context)
 {
     free(context->window);
+    free(context->is_paragraph);
     free(context);
 }
 
 /**
  * @brief Print a context
  */
-void nlk_context_print(struct nlk_context_t *context)
+void nlk_context_print(struct nlk_context_t *context, 
+                       struct nlk_vocab_t **vocab)
 {
-    printf("%s (s=%zu): ", context->center->word, context->size);
+    printf("[len=%zu] target=%s (%zu), context: ", context->size, 
+            context->target->word, context->target->index);
     fflush(stdout);
     for(size_t ii = 0; ii < context->size; ii++) {
-        printf("%zu ", context->window[ii]);
+        if(context->is_paragraph[ii]) {
+            printf("*_%zu |%zu|", context->window[ii], context->window[ii]);
+
+        } else {
+            printf("%s (%zu) ", 
+                    nlk_vocab_at_index(vocab, context->window[ii])->word, 
+                    context->window[ii]);
+        }
         fflush(stdout);
     }
     printf("\n");
@@ -275,62 +278,44 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
                        struct nlk_vocab_t **vocab,
                        struct nlk_context_opts_t *opts)
 {
-    /** @section Common Context Options
-     * for all current models
-     */
+    opts->model = model;
+
+    /* defaults */
     opts->before = window;
     opts->after = window;
-    opts->before_equals_after = true;
+    opts->b_equals_a = true;
+    opts->prepad = false;
+    opts->postpad = false;
 
     /* random_window in range before=[1, before], after=[1, after] */
     opts->random_windows = true;
 
-    /* prepad contexts, default = false */
-    opts->prepad = false;
-    opts->start = nlk_vocab_get_start_symbol(vocab)->index;
-    
-    /** @section Model Specific Context Options 
-     */
     switch(model) {
-        case NLK_CBOW:
-            /* model does not use paragraphs */
-            opts->center_in_context = false;
-            opts->center_paragraph = false;
-            opts->paragraph = false;
-            break;
-
-        case NLK_SKIPGRAM:
-            /* model does not use paragraphs */
-            opts->center_in_context = false;
-            opts->center_paragraph = false;
-            opts->paragraph = false;
-            break;
-
-        case NLK_PVDBOW:
-            /* in PVDBOW, the input to lookup1 is the paragraph index
-             * the context for PBDBOW includes the current context center word
-             * prediction target (center word) will be the paragraph
-             */
-            opts->center_in_context = true;
-            opts->center_paragraph = true;
-            opts->paragraph = true;
-            break;
-
         case NLK_PVDM_CONCAT:
-            opts->prepad = true;
+            /* fixed size windows */
             opts->random_windows = false;
-            /* FALL THROUGH */
+            /* prepad if smaller */
+            opts->prepad = true;
+            /* FALL THROUGH: all other options are common to PVDM */
         case NLK_PVDM:
-            /* the input to lookup1 is the paragraph index
-             * the target remains the center word
-             */
-            opts->center_in_context = false;
-            opts->center_paragraph = false;
+            /* predict the next word => after = 0 */
+            opts->b_equals_a = false;
+            opts->after = 0;
             opts->paragraph = true;
             break;
-
+        case NLK_PVDBOW:
+            opts->paragraph = true;
+            break;
+        case NLK_CBOW:
+        case NLK_SKIPGRAM:
+            opts->paragraph = false;
+            /* options for CBOW/SKIPGRAM are already set */
+            break;
+        case NLK_MODEL_NULL:
         default:
-            NLK_ERROR_VOID("invalid model type.", NLK_EDOM);
+            NLK_ERROR_VOID("Invalid model for context generation", NLK_EINVAL);
+            /*unreachable */
     }
+    opts->start = nlk_vocab_get_start_symbol(vocab)->index;
 
 }

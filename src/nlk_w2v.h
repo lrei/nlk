@@ -60,13 +60,36 @@ void     nlk_w2v_neg(NLK_LAYER_LOOKUP *, const bool, const size_t *,
                      const size_t, const size_t, const nlk_real, const size_t, 
                      const NLK_ARRAY *, const nlk_real *, NLK_ARRAY *);
 
+void    nlk_pvdm(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
+                 const bool, NLK_LAYER_LOOKUP *, const bool,
+                 NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
+                 const bool, const size_t, const nlk_real, 
+                 const nlk_real *, const struct nlk_context_t *, 
+                 NLK_ARRAY *, NLK_ARRAY *);
+
+void    nlk_pvdm_cc(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
+                    const bool, NLK_LAYER_LOOKUP *, const bool, 
+                    NLK_LAYER_LOOKUP *,  const size_t, const size_t *, 
+                    const bool, const size_t, const nlk_real, 
+                    const nlk_real *, const struct nlk_context_t *,
+                    NLK_ARRAY *, NLK_ARRAY *);
+
+void    nlk_pvdbow(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
+                   const bool, NLK_LAYER_LOOKUP *, const bool, 
+                   NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
+                   const bool, const size_t, const nlk_real, 
+                   const nlk_real *, const struct nlk_context_t *, 
+                   NLK_ARRAY *, NLK_ARRAY *);
+
+
 void     nlk_w2v_train(struct nlk_neuralnet_t *nn, const char *, const bool,
                        struct nlk_vocab_t **, const size_t, unsigned int, int);
 
 /* export */
-void     nlk_w2v_export_vectors(NLK_ARRAY *, NLK_FILE_FORMAT,
-                                struct nlk_vocab_t **, const size_t, 
-                                const size_t, char *, char *);
+void    nlk_w2v_export_word_vectors(NLK_ARRAY *, NLK_FILE_FORMAT, 
+                                    struct nlk_vocab_t **, char *);
+void    nlk_w2v_export_paragraph_vectors(NLK_ARRAY *, NLK_FILE_FORMAT, 
+                                         char *, char *);
 
 
 __END_DECLS
