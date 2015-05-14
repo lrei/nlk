@@ -233,7 +233,7 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer,
     size_t ii;
 
 #ifndef NCHECKS
-    if (n_indices == 0) {
+    if(n_indices == 0) {
         NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
                        NLK_EINVAL);
         /* unreachable */
@@ -513,19 +513,40 @@ nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer,
  *
  * @param layer         the lookup layer
  * @param indices       the indices corresponing to this gradient
+ * @param start_at      where the indices start at in the gradient
  * @param grad_out      gradient at the layer above (gradient at output)
  */
 void
 nlk_layer_lookup_backprop_lookup_concat(struct nlk_layer_lookup_t *layer, 
                                         const size_t *indices, 
-                                        const size_t n_indices, 
+                                        const size_t n_indices,
+                                        const size_t start_at,
                                         const NLK_ARRAY *grad_out)
 {
     size_t ii;
-    size_t cols = layer->weights->cols;
+    const size_t cols = layer->weights->cols;
+
+#ifndef NCHECKS
+    if(n_indices == 0) {
+        NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
+                       NLK_EINVAL);
+        /* unreachable */
+    }
+    if(n_indices * cols + start_at * cols > grad_out->rows * grad_out->cols) {
+        NLK_ERROR_VOID("gradient smaller than input", NLK_ERANGE);
+    }
+#endif
+
+
     /* update weights */
     for(ii = 0; ii < n_indices; ii++) {
-        cblas_saxpy(cols, 1, &grad_out->data[ii * cols], 1, 
+#ifndef NCHECKS
+        if(indices[ii] >= layer->weights->rows) {
+            NLK_ERROR_VOID("index out of range", NLK_ERANGE);
+            /* unreachable */
+    }
+#endif
+        cblas_saxpy(cols, 1, &grad_out->data[ii * cols + start_at * cols], 1, 
                     &layer->weights->data[indices[ii] * cols], 1); 
     }
     /* no need to calc grad at input - 1st layer*/
@@ -543,6 +564,23 @@ nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *layer,
     nlk_array_add_carray(grad_out,
                 &layer->weights->data[index * layer->weights->cols]);
 
+    /* no need to calc grad at input - 1st layer*/
+}
+
+/**
+ *
+ */
+void
+nlk_layer_lookup_backprop_lookup_concat_one(struct nlk_layer_lookup_t *layer, 
+                                            const size_t index, 
+                                            const size_t grad_index,
+                                            const NLK_ARRAY *grad_out)
+{
+    const size_t cols = layer->weights->cols;
+
+    /* update weights */
+    cblas_saxpy(cols, 1, &grad_out->data[grad_index * cols], 1, 
+                &layer->weights->data[index * cols], 1); 
     /* no need to calc grad at input - 1st layer*/
 }
 

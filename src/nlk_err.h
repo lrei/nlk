@@ -1,7 +1,8 @@
 /* 
  * ## nlk_err.h ##
  *
- * Error handling - based on the GSL error handling.
+ * Error handling - based on the GSL error handling and Debug/Log based on
+ * Zed's Debug Macros
  *
  * Copyright (c) 2014 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
@@ -40,6 +41,11 @@
 #endif
 __BEGIN_DECLS
 
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+
+
 /*
  * ### Error Types ###
  * These are compatible with the GSL errors. Since a smaller
@@ -61,8 +67,7 @@ enum {
 typedef void nlk_error_handler_t(const char *reason, const char *file,
 				                 int line, int nlk_errno);
 
-/*
- * ### Error Message & Handler Functions ###
+/** @section Error Message & Handler Functions
  */
 
 /* The function that displays (print) error messages */
@@ -79,39 +84,78 @@ nlk_error_handler_t *nlk_set_error_handler(nlk_error_handler_t *new_handler);
 nlk_error_handler_t *nlk_set_error_handler_off(void);
 
 
-/*
- * ### Error Handling Macros ###
+/** @section Error Handling Macros
  */
 
 /* NLK_ERROR: call the error handler and return the error code (nlk_errno) */
 #define NLK_ERROR(reason, nlk_errno) \
     do { \
-        nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
+        nlk_error(reason, __FILE__, __LINE__, nlk_errno); \
         return nlk_errno ; \
-    } while (0)
+    } while(0)
 
 /* NLK_ERROR_NULL: call the error handler and return NULL */
 #define NLK_ERROR_NULL(reason, nlk_errno) \
     do { \
-        nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
+        nlk_error(reason, __FILE__, __LINE__, nlk_errno); \
         return NULL ; \
-    } while (0)
+    } while(0)
 
 /* NLK_ERROR_VOID: call the error handler no return (for void funtions)  */
 #define NLK_ERROR_VOID(reason, nlk_errno) \
     do { \
-        nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
+        nlk_error(reason, __FILE__, __LINE__, nlk_errno); \
         return ; \
-    } while (0)
+    } while(0)
 
 /* NLK_ERROR_VOID: call the error handler no return (for void funtions)  */
 #define NLK_ERROR_ABORT(reason, nlk_errno) \
-    nlk_error(reason, __FILE__, __LINE__, nlk_errno) ; \
+    nlk_error(reason, __FILE__, __LINE__, nlk_errno); \
     abort();
 
-/*
- * OMP DEFS FOR DEBUG (NOMP flag)
+/** @section DEBUG
  */
+#ifndef DEBUG
+#define nlk_debug(M, ...)
+#else
+#define nlk_debug(M, ...) fprintf(stderr, "DEBUG %s:%d: " M "\n",\
+                                  __FILE__, __LINE__, ##__VA_ARGS__)
+#endif
+
+/* returns strerror(errno) or "None" */
+#define nlk_err_errno() (errno == 0 ? "None" : strerror(errno))
+
+/* log to stderr - different levels */
+#define nlk_log_err(M, ...) fprintf(stderr, "[ERROR] (%s:%d: errno: %s) " M\
+                                    "\n", __FILE__, __LINE__, \
+                                    nlk_err_errno(), ##__VA_ARGS__)
+#define nlk_log_warn(M, ...) fprintf(stderr, "[WARN] (%s:%d: errno: %s) " M \
+                                     "\n", __FILE__, __LINE__, \
+                                     nlk_err_errno(), ##__VA_ARGS__)
+#define nlk_log_info(M, ...) fprintf(stderr, "[INFO] (%s:%d) " M "\n",\
+                                     __FILE__, __LINE__, ##__VA_ARGS__)
+
+/* if condition fails: display message and goto error
+ *  example: check(a==1, "a is not 1 but %d", a) 
+ *  @warn requires a error label
+ *  @note meant to use in situations were NLK_ERROR is unnecessary
+ */
+#define nlk_check(A, M, ...) \
+    if(!(A)) { \
+        log_err(M, ##__VA_ARGS__); \
+        errno=0; \
+        goto error; \
+    }
+
+/* same as above but only prints in DEBUG mode (NDEBUG not defined) */
+#define nlk_check_debug(A, M, ...) \
+    if(!(A)) { \
+        nlk_debug(M, ##__VA_ARGS__); \
+        errno=0; \
+        goto error; \
+    }
+
+/* OMP DEFS FOR DEBUG without OMP (NOMP flag) */
 #ifdef NOMP
     #define omp_get_thread_num() 0
     #define omp_get_num_threads() 1

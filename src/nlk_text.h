@@ -67,18 +67,16 @@ size_t  nlk_text_get_line(FILE *);
 size_t  nlk_text_count_words(FILE *);
 size_t  nlk_text_count_lines(FILE *);
 
-
 /* go to line, splits */
 void    nlk_text_goto_line(FILE *, size_t);
 size_t  nlk_text_get_split_start_line(size_t, unsigned int, unsigned int);
 size_t  nlk_text_get_split_end_line(size_t,  unsigned int, unsigned int);
 size_t  nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
 
-
-
 /* print */
 void    nlk_text_print_line(char **);
 void    nlk_text_print_numbered_line(char **, size_t, int);
+
 
 /* Mem Mapped functions */
 off_t   nlk_text_mem_open(char *, char **);

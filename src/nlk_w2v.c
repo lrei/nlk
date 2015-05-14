@@ -115,7 +115,7 @@ nlk_w2v_create(NLK_LM model_type, bool concat, unsigned int window,
     int n_layers = 0;
     size_t layer_size2;
     if(concat) {
-        layer_size2 = window * 2 * layer_size + layer_size;
+        layer_size2 = window * layer_size + layer_size; /* +layer_size for pv */
     } else {
         layer_size2 = layer_size;
     }
@@ -291,7 +291,6 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
     nlk_real grad_out;
     nlk_real lk2_out;
 
-
     /** @section Positive Example
      */
     /* forward with lookup for target word */
@@ -355,6 +354,7 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
              */
             grad_out = (1.0 - out) * learn_rate;
         }
+
 
         /* layer2neg backprop, accumulate gradient for all examples */
         nlk_layer_lookup_backprop_acc(lk2neg, update, lk1_out, target, 
@@ -490,7 +490,7 @@ nlk_skipgram(NLK_LAYER_LOOKUP *word_table, NLK_LAYER_LOOKUP *lk2hs,
  */
 void
 nlk_pvdm(NLK_LAYER_LOOKUP *word_table, const bool update_words, 
-         NLK_LAYER_LOOKUP *paragraph_table, const bool update_pagraphs,
+         NLK_LAYER_LOOKUP *paragraph_table, const bool update_paragraphs,
          NLK_LAYER_LOOKUP *lk2hs, const bool hs, NLK_LAYER_LOOKUP *lk2neg, 
          const size_t negative, const size_t *neg_table, 
          const bool update_layer2,
@@ -507,6 +507,12 @@ nlk_pvdm(NLK_LAYER_LOOKUP *word_table, const bool update_words,
     nlk_array_zero(grad_acc);
 
     /* PVDM Forward through the first layer */
+#ifndef NCHEKS
+    /* check that this is a paragraph */
+    if(!context->is_paragraph[context->size - 1]) {
+        NLK_ERROR_VOID("last context element is not a paragraph", NLK_EINVAL);
+    }
+#endif
     nlk_layer_lookup_forward_lookup_one(paragraph_table, 
                                         context->window[context->size - 1],
                                         lk1_out);
@@ -534,12 +540,12 @@ nlk_pvdm(NLK_LAYER_LOOKUP *word_table, const bool update_words,
 
     /* Backprop into the word vectors: Learn using the accumulated gradient */
     if(update_words) {
-        nlk_layer_lookup_backprop_lookup(word_table, context->window, 
+        nlk_layer_lookup_backprop_lookup(word_table, &context->window[1], 
                                          context->size - 1, grad_acc);
     }
 
     /* Backprop into the PV: Learn PV weights using the accumulated gradient */
-    if(update_pagraphs) {
+    if(update_paragraphs) {
         nlk_layer_lookup_backprop_lookup_one(paragraph_table, 
                                              context->window[context->size - 1], 
                                              grad_acc);
@@ -548,6 +554,8 @@ nlk_pvdm(NLK_LAYER_LOOKUP *word_table, const bool update_words,
 
 /**
  * PVDM Concat
+ * The only thing different from the PVDM function is the use of 
+ * nlk_layer_lookup_forward_lookup_concat_p instead of avg_p
  */
 void
 nlk_pvdm_cc(NLK_LAYER_LOOKUP *word_table, const bool update_words,
@@ -568,18 +576,25 @@ nlk_pvdm_cc(NLK_LAYER_LOOKUP *word_table, const bool update_words,
     nlk_array_zero(grad_acc);
 
     /* PVDM Forward through the first layer */
+    const size_t ppos = context->size - 1; /* = number of words */
 
-    nlk_layer_lookup_forward_lookup_one(paragraph_table, context->window[0],
+#ifndef NCHEKS
+    /* check that this is a paragraph */
+    if(!context->is_paragraph[ppos]) {
+        NLK_ERROR_VOID("last context element is not a paragraph", NLK_EINVAL);
+    }
+#endif
+
+    /* first element of lk1_out (position 0) is the PV */
+    nlk_layer_lookup_forward_lookup_one(paragraph_table, context->window[ppos],
                                         lk1_out);
-
 
     /* The context words get forwarded through the first lookup layer
      * and their vectors are concatenate together with the PV.
-     * The window[0] is the paragraph id and should be ignored as the PV
-     * is provided independently of the rest of the lookup layer
+     * concat_p starts concatenation into lk1_out at posion 1 (after the PV)
      */
-    nlk_layer_lookup_forward_lookup_concat_p(word_table, &context->window[1], 
-                                             context->size - 1, lk1_out);
+    nlk_layer_lookup_forward_lookup_concat_p(word_table, context->window, 
+                                             ppos, lk1_out);
 
     /* Hierarchical Softmax */
     if(hs) {
@@ -594,10 +609,22 @@ nlk_pvdm_cc(NLK_LAYER_LOOKUP *word_table, const bool update_words,
                     grad_acc);
     }
 
-    // @TODO BACKPROPAGATION
-    NLK_ERROR_ABORT("NOT IMPLEMENTED", NLK_FAILURE);
+    /* Backprop into the PV: Learn PV weights using the accumulated gradient. 
+     * The PV in the gradient is at position 0
+     */
+    if(update_paragraphs) {
+        nlk_layer_lookup_backprop_lookup_concat_one(paragraph_table,
+                                                    context->window[ppos], 
+                                                    0, grad_acc);
+    }
 
-    /* Backprop into the PV: Learn PV weights using the accumulated gradient */
+    /* Backprop into the word vectors: Learn using the accumulated gradient 
+     * words in the gradient start at position 1 (after PV)
+     */
+    if(update_words) {
+        nlk_layer_lookup_backprop_lookup_concat(word_table, context->window, 
+                                                ppos, 1, grad_acc);
+    }
 }
 
 
@@ -647,7 +674,7 @@ nlk_pvdbow(NLK_LAYER_LOOKUP *word_table, const bool update_words,
 
 #ifdef CHECK_NANS
         if(nlk_array_has_nan(grad_acc)) {
-            NLK_ERROR_VOID("grad_acc has NaNs", NLK_FAILURE);
+            NLK_ERROR_VOID("grad_acc has NaNs", NLK_ENAN);
         }
 #endif
 
@@ -875,17 +902,11 @@ nlk_w2v_train(struct nlk_neuralnet_t *nn, const char *train_file_path,
             if(numbered) {
                 ret = nlk_read_number_line(train, text_line, &par_id,
                                            max_word_size, max_line_size);
-#ifdef DEBUGRINT
-                printf("real par_id: %zu\n", par_id);
-#endif
             } else {
                 ret = nlk_read_line(train, text_line, max_word_size, 
                                     max_line_size);
                 par_id = line_cur;
             }
-#ifdef DEBUGPRINT
-            nlk_text_print_numbered_line(text_line, line_cur, thread_id);
-#endif
             
             /* vocabularize */
             line_len = nlk_vocab_vocabularize(vocab, train_words, text_line, 
@@ -893,15 +914,6 @@ nlk_w2v_train(struct nlk_neuralnet_t *nn, const char *train_file_path,
                                               NULL, false, vectorized, 
                                               &n_subsampled); 
             
-#ifdef DEBUGRINT
-            for(size_t vv = 0; vv < line_len; vv++) {
-                if(vectorized[vv]->index >= vocab_size) { /* 0 based index */
-                    nlk_vocab_print_line(vectorized, line_len, true);
-                    NLK_ERROR_ABORT("vectorized is wrong", NLK_EDOM);
-                }
-            }
-#endif
-
             /* line_len = 1 would be an empty line, nothing to learn */
             if(line_len < 2 && ret != EOF) {
                 continue;
@@ -913,7 +925,7 @@ nlk_w2v_train(struct nlk_neuralnet_t *nn, const char *train_file_path,
             n_examples = nlk_context_window(vectorized, line_len, par_id, 
                                             &ctx_opts, contexts);
 
-#ifdef DEBUGRINT
+#ifdef DEBUGPRINT
             for(size_t vv = 0; vv < n_examples; vv++) {
                 nlk_context_print(contexts[vv], vocab);
             }

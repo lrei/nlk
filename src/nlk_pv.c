@@ -298,19 +298,12 @@ nlk_pv(struct nlk_neuralnet_t *nn, const char *par_file_path,
             if(numbered) {
                 nlk_read_number_line(par_file, text_line, &par_id, 
                                      max_word_size, max_line_size);
-#ifdef DEBUGPRINT
-                printf("%zu - %zu\n", line_cur, par_id);
-#endif
             } else {
                 nlk_read_line(par_file, text_line, max_word_size, 
                               max_line_size);
                 par_id = line_cur;
             }
 
-#ifdef DEBUGPRINT
-            nlk_text_print_numbered_line(text_line, line_cur, thread_id);
-#endif
-            
             /* select paragraph */
             pv.data = &par_vectors->data[par_id * layer_size];
 

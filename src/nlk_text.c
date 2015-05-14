@@ -608,12 +608,15 @@ nlk_text_print_line(char **line)
  * @param line_num  the line number associated with the line
  * @param thread_id the id of the thread
  *
+ * @TODO: fix this function and make it defined only when debug
+ * @warning: not working at the moment, can't be bothered to fix
+ *
  * @note
  * This function is used for debugging.
  * @endnote
  */
 void
-nlk_text_print_numbered_line(char **line, size_t line_num, int thread_id)
+nlk_text_debug_numbered_line(char **line, size_t line_num, int thread_id)
 {
     char buf[NLK_LM_MAX_LINE_SIZE * NLK_LM_MAX_WORD_SIZE];
     unsigned int num_chars = 0;
@@ -623,7 +626,7 @@ nlk_text_print_numbered_line(char **line, size_t line_num, int thread_id)
         num_chars += sprintf(&buf[num_chars], "%s ", line[ii]);
         ii++;
     }
-    printf("%zu\t%d\t%s\n", line_num, thread_id, buf);
+    nlk_debug("line: %zu\tthread: %d\t%s\n", line_num, thread_id, buf);
 
 }
 

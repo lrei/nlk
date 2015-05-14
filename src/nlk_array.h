@@ -91,6 +91,33 @@ bool nlk_array_has_nan(const struct nlk_array_t *);
 bool nlk_array_has_nan_row(const struct nlk_array_t *, const size_t);
 bool nlk_carray_has_nan(const nlk_real *, const size_t);
 
+#ifdef CHECK_NANS
+#define nlk_array_check_nan(A, M) \
+    do { \
+        if(nlk_array_has_nan(A)) { \
+            NLK_ERROR_ABORT(M, NLK_ENAN); \
+        } \
+    } while(0)
+
+#define nlk_carray_check_nan(C, L, M) \
+    do { \
+        if(nlk_carray_has_nan(C, L)) { \
+            NLK_ERROR_ABORT(M, NLK_ENAN); \
+        } \
+    } while(0)
+
+#define nlk_check_nan(V, M) \
+do { \
+        if(isnan(V)) { \
+            NLK_ERROR_ABORT(M, NLK_ENAN); \
+        } \
+    } while(0)
+
+#else
+#define nlk_array_check_nan(A)
+#define nlk_carray_check_nan(A)
+#endif
+
 /*
  * Constructors, copy
  */
@@ -190,7 +217,9 @@ void nlk_add_scaled_vector_row(const nlk_real, const struct nlk_array_t *,
 /* elementwise multiplication */
 void nlk_array_mul(const struct nlk_array_t *, struct nlk_array_t *);
 
-/* sum of absolute array values */
+/* sum of array values */
+nlk_real nlk_array_sum(const struct nlk_array_t *arr);
+nlk_real nlk_carray_sum(const nlk_real *, size_t);
 nlk_real nlk_array_abs_sum(const struct nlk_array_t *arr);
 nlk_real nlk_carray_abs_sum(const nlk_real *, size_t);
 
@@ -221,6 +250,7 @@ int nlk_sigmoid_array(const nlk_real *, struct nlk_array_t *);
 void nlk_array_sigmoid_approx(struct nlk_array_t *);
 
 void nlk_array_log(const struct nlk_array_t *, struct nlk_array_t *);
+
 
 __END_DECLS
 #endif /* __NLK_ARRAY_H__ */

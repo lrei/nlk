@@ -144,12 +144,16 @@ void nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *,
                                       const size_t *, const size_t, 
                                       const NLK_ARRAY *);
 void nlk_layer_lookup_backprop_lookup_concat(struct nlk_layer_lookup_t *, 
-                                             const size_t *, const size_t, 
-                                             const NLK_ARRAY *);
+                                             const size_t *, const size_t,
+                                             const size_t, const NLK_ARRAY *);
 
 /* Lookup Layer backprop with a single input */
 void nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *, 
                                           const size_t, const NLK_ARRAY *);
+void nlk_layer_lookup_backprop_lookup_concat_one(struct nlk_layer_lookup_t *, 
+                                                 const size_t, const size_t,
+                                                 const NLK_ARRAY *);
+
 /* Lookup Backprop with accumulator */
 void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, const bool,
                                    const NLK_ARRAY *, const size_t, 

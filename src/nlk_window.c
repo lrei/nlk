@@ -75,22 +75,34 @@ static void
 nlk_context_for_pos(struct nlk_vocab_t **varray, const size_t paragraph_id,
                     const bool paragraph, const unsigned int center_pos,
                     unsigned int window_pos, const unsigned int window_end,
-                    const bool prepad_paragraph, struct nlk_context_t *context)
+                    const bool prepad_paragraph, unsigned int prepad_n, 
+                    unsigned int postpad_n, const size_t pad_symbol, 
+                    struct nlk_context_t *context)
 {
     unsigned int window_idx = 0;
 
     /* the target i.e. word to be predicted is the center of the window */
     context->target = varray[center_pos];
 
-    /* the context size is the window except the target */
+    /* the context size is the window except the target unless padding */
     context->size = (window_end - window_pos) - 1;
 
-    /* if before < window and this is a paragraph model */
-    if(prepad_paragraph && paragraph) {
+    /* if before < window and prepad_paragraph (PVDBOW) */
+    if(prepad_paragraph) {
+        /* set first element to be the paragraph id */
         context->window[0] = paragraph_id;
         context->is_paragraph[0] = true;
         context->size = context->size + 1;
         window_idx++;
+    }
+    /* if before < window and prepad_n */
+    else while(prepad_n) {
+        /* set first prepad_n elements to be the start symbol */
+        context->window[window_idx] = pad_symbol;
+        context->is_paragraph[window_idx] = false;
+        context->size = context->size + 1;
+        window_idx++;
+        prepad_n--;
     }
 
     /* remaining context items are the window items except for the target */
@@ -103,7 +115,16 @@ nlk_context_for_pos(struct nlk_vocab_t **varray, const size_t paragraph_id,
         window_idx++;
     }
 
-   /* if it's a paragraph model, 0 => paragraph_id */
+    /* if postpad */
+    while(postpad_n) {
+        context->window[window_idx] = pad_symbol;
+        context->is_paragraph[window_idx] = false;
+        context->size = context->size + 1;
+        window_idx++;
+        postpad_n--;
+    }
+
+   /* if it's a paragraph model, last element is the paragraph_id */
     if(paragraph) {
         context->window[window_idx] = paragraph_id;
         context->is_paragraph[window_idx] = true;
@@ -144,6 +165,8 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
     unsigned int before     = 0;        /* reduced window before current w */
     unsigned int after      = 0;        /* reduced window after current w */
     bool prepad_paragraph   = false;    /* prepad context with par id */
+    unsigned int prepad     = 0;
+    unsigned int postpad    = 0;
 
 
     /* go through the paragraph changing the center word */
@@ -156,29 +179,42 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
             before = opts->before;
             after = opts->after;
         }
-        
+
         /* determine where in *line* the window begins */
         if(center_pos < before) {
+            /* left side of the *line* is smaller than the window size */
             window_pos = 0;
-            if(opts->model == NLK_PVDBOW) {
+            if(opts->prepad_paragraph) {
+                /* PVDBOW: prepend the paragraph */
                 prepad_paragraph = true;
+            } else if(opts->prepad) {
+                prepad = before - center_pos;
             }
         } else {
+            /* left side of *line* is longer or equal to the window size */
             window_pos = center_pos - before;
             prepad_paragraph = false;
+            prepad = 0;
         }
+
         /* determine where in *line* the window ends */
         if(center_pos + after >= line_length) {
+            /* the right side of the *line* is smaller than the window size */
             window_end = line_length;
+            if(opts->postpad) {
+                postpad = center_pos + after - line_length;
+            }
         } else {
-            /* we always end at < window_end hence the +1 */
+            /* right side of *line* is longer or equal to the window size */
+            /* does not include the center hence the +1 */
             window_end = center_pos + after + 1;
+            postpad = 0;
         }
 
         /* create the context for this window */
         nlk_context_for_pos(varray, paragraph_id, opts->paragraph, center_pos, 
-                            window_pos, window_end, prepad_paragraph,
-                            contexts[ctx_idx]);
+                            window_pos, window_end, prepad_paragraph, prepad,
+                            postpad, opts->start, contexts[ctx_idx]);
 
 #ifndef NCHECKS
         if(contexts[ctx_idx]->size > opts->before + opts->after + 1) {
@@ -259,7 +295,7 @@ void nlk_context_print(struct nlk_context_t *context,
     fflush(stdout);
     for(size_t ii = 0; ii < context->size; ii++) {
         if(context->is_paragraph[ii]) {
-            printf("*_%zu |%zu|", context->window[ii], context->window[ii]);
+            printf("*_%zu |%zu| ", context->window[ii], context->window[ii]);
 
         } else {
             printf("%s (%zu) ", 
@@ -286,6 +322,7 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
     opts->b_equals_a = true;
     opts->prepad = false;
     opts->postpad = false;
+    opts->prepad_paragraph = false;
 
     /* random_window in range before=[1, before], after=[1, after] */
     opts->random_windows = true;
@@ -294,8 +331,9 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
         case NLK_PVDM_CONCAT:
             /* fixed size windows */
             opts->random_windows = false;
-            /* prepad if smaller */
+            /* prepad/postpad if smaller */
             opts->prepad = true;
+            opts->postpad = true;
             /* FALL THROUGH: all other options are common to PVDM */
         case NLK_PVDM:
             /* predict the next word => after = 0 */
@@ -305,6 +343,7 @@ nlk_context_model_opts(NLK_LM model, unsigned int window,
             break;
         case NLK_PVDBOW:
             opts->paragraph = true;
+            opts->prepad_paragraph = true;
             break;
         case NLK_CBOW:
         case NLK_SKIPGRAM:

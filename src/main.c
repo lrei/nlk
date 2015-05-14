@@ -394,6 +394,8 @@ int main(int argc, char **argv)
 #ifdef DEBUG
     if(verbose) {
         printf("Running in DEBUG mode!\n");
+        printf("MAX WORD SIZE = %d chars\n", NLK_LM_MAX_WORD_SIZE);
+        printf("MAX LINE SIZE = %d words\n", NLK_LM_MAX_LINE_SIZE);
     }
 #endif
 

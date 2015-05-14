@@ -90,7 +90,6 @@ nlk_print_array(const struct nlk_array_t *array, const size_t row_limit,
 }
 
 
-#ifdef CHECK_NANS
 /**
  * Check if array has any NaN value
  *
@@ -144,7 +143,6 @@ nlk_carray_has_nan(const nlk_real *carray, const size_t len) {
     }
     return false;
 }
-#endif
 
 
 /**
@@ -445,6 +443,14 @@ nlk_array_copy(struct nlk_array_t *dest, const struct nlk_array_t *source)
 void
 nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
 {
+#ifdef CHECK_NANS
+    /* check source */
+    if(nlk_carray_has_nan(source, length)) {
+        NLK_ERROR_VOID("NaNs in copy source", NLK_ENAN);
+        /* unreachable */
+    }
+#endif
+
     cblas_scopy(length, source, 1, dest, 1);
 }
 
@@ -922,7 +928,7 @@ nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1,
     res = cblas_sdot(m1->cols, &m1->data[row1 * m1->cols], 1, 
                      &m2->data[row2 * m2->cols], 1);
 
-#ifndef NCHECKS
+#ifdef CHECK_NANS
     if(isnan(res)) {
         NLK_ERROR("NaN in result", NLK_ENAN);
     }
@@ -943,9 +949,20 @@ nlk_real
 nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
 {
     nlk_real res;
+
+#ifdef CHECK_NANS
+    if(nlk_array_has_nan(v1)) {
+        NLK_ERROR("NaN in array", NLK_ENAN);
+    }
+
+    if(nlk_carray_has_nan(carr, v1->rows)) {
+        NLK_ERROR("NaN in carray", NLK_ENAN);
+    }
+#endif
+
     res = cblas_sdot(v1->rows, v1->data, 1, carr, 1);
 
-#ifndef NCHECKS
+#ifdef CHECK_NANS
     if(isnan(res)) {
         NLK_ERROR("NaN in result", NLK_ENAN);
     }
@@ -1057,23 +1074,25 @@ nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v,
     }
 #endif
 #ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
     if(nlk_array_has_nan(v)) {
         NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
         /* unreachable */
     }
-#endif
+
+    if(nlk_array_has_nan_row(m, row)) {
+        NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
+        /* unreachable */
+    }
+
 #endif
 
     cblas_saxpy(m->cols, s, v->data, 1, &m->data[m->cols * row], 1);
 
 #ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(m)) {
+    if(nlk_array_has_nan_row(m, row)) {
         NLK_ERROR_VOID("NaN in result", NLK_ENAN);
         /* unreachable */
     }
-#endif
 #endif
 }
 
@@ -1238,6 +1257,42 @@ nlk_array_abs_sum(const struct nlk_array_t *arr)
 {
     return cblas_sasum(arr->rows * arr->cols, arr->data, 1);
 }
+
+/**
+ * Sum of carray values
+ *
+ * @param arr the array
+ *
+ * @return the sum of c array values
+ */
+nlk_real
+nlk_carray_sum(const nlk_real *carr, size_t len)
+{
+    nlk_real res = 0;
+    
+    do {
+        len--;
+        res += carr[len];
+    } while(len > 0);
+
+    return res;
+}
+
+/**
+ * Sum of array values
+ *
+ * @param arr the array
+ *
+ * @return the sum of c array values
+ */
+nlk_real
+nlk_array_sum(const struct nlk_array_t *arr)
+{
+    size_t len = arr->rows * arr->cols;
+   
+    return nlk_carray_sum(arr->data, len);
+}
+
 
 /**
  * Sum of absolute C array values (?asum)
