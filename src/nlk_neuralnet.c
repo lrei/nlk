@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "nlk_err.h"
 #include "nlk_layer_lookup.h"
@@ -109,22 +110,28 @@ nlk_neuralnet_create(size_t n_layers)
     nn->paragraphs = NULL;
     nn->vocab = NULL;
 
-    nn->layers = (union nlk_layer_t *) malloc(sizeof(union nlk_layer_t *) *
-                                              n_layers);
-    if(nn->layers == NULL) {
-        NLK_ERROR_NULL("unable to allocate memory for neural net", 
-                        NLK_ENOMEM);
-        /* unreachable */
-    }
-    nn->types = calloc(n_layers, sizeof(unsigned short int));
-    if(nn->types == NULL) {
-        NLK_ERROR_NULL("unable to allocate memory for neural net", 
-                        NLK_ENOMEM);
-        /* unreachable */
+    if(n_layers > 0) {
+        nn->layers = (union nlk_layer_t *) malloc(sizeof(union nlk_layer_t *) *
+                                                  n_layers);
+        if(nn->layers == NULL) {
+            NLK_ERROR_NULL("unable to allocate memory for neural net", 
+                            NLK_ENOMEM);
+            /* unreachable */
+        }
+        nn->types = calloc(n_layers, sizeof(unsigned short int));
+        if(nn->types == NULL) {
+            NLK_ERROR_NULL("unable to allocate memory for neural net", 
+                            NLK_ENOMEM);
+            /* unreachable */
+        }
+    } else {
+        nn->layers = NULL;
+        nn->types = NULL;
     }
 
     return nn;
 }
+
 
 /**
  * Increase the maximum number of layers in a NN
@@ -308,6 +315,10 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
     fprintf(fp, "%u\n", nn->train_opts.negative); 
     /* 8 - iterations (epochs) */
     fprintf(fp, "%u\n", nn->train_opts.iter); 
+    /* 9 - vector_size */
+    fprintf(fp, "%u\n", nn->train_opts.vector_size); 
+    /* 10 - word_count */
+    fprintf(fp, "%"PRIu64"\n", nn->train_opts.word_count); 
 
     /* write header: number of layers */
     fprintf(fp, "%zu\n", nn->n_layers);
@@ -317,7 +328,7 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
     }
 
     /* write vocabulary */
-    nlk_vocab_save(&nn->vocab, nn->max_word_size, nn->max_line_size, fp);
+    nlk_vocab_save(&nn->vocab, fp);
 
     /* write word lookup */
     nlk_layer_lookup_save(nn->words, fp);
@@ -325,6 +336,16 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
     /* write paragraph lookup */
     if(nn->train_opts.paragraph && nn->paragraphs != NULL) {
         nlk_layer_lookup_save(nn->paragraphs, fp);
+    }
+
+    /* write the hierarchical softmax layer */
+    if(nn->train_opts.hs) {
+        nlk_layer_lookup_save(nn->hs, fp);
+    }
+
+    /* write the negative sampling layer */
+    if(nn->train_opts.hs) {
+        nlk_layer_lookup_save(nn->neg, fp);
     }
 
     /* write the other layers */
@@ -432,6 +453,16 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /* 9 - vector size */
+    ret = fscanf(fp, "%u\n", &opts.iter); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
+    /* 10 - word count */
+    ret = fscanf(fp, "%"SCNu64"\n", &opts.word_count); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
 
 
     /**
@@ -459,7 +490,7 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     }
 
     /* read vocabulary */
-    nn->vocab = nlk_vocab_load(fp, &nn->max_word_size, &nn->max_line_size);
+    nn->vocab = nlk_vocab_load(fp);
 
     /* read word lookup */
     nn->words = nlk_layer_lookup_load(fp);
@@ -474,12 +505,38 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
         if(verbose) {
             printf("Loaded Paragraph Table\n");
         }
+    } else {
+        nn->paragraphs = NULL;
     }
+
+
+    /* read hierarchical softmax */
+    if(nn->train_opts.hs) {
+       nn->hs = nlk_layer_lookup_load(fp);
+        if(verbose) {
+            printf("Loaded Hierarchical Softmax Layer\n");
+        }
+    } else {
+        nn->hs = NULL;
+    }
+
+
+    /* read negative sampling layer */
+    if(nn->train_opts.negative) {
+       nn->neg = nlk_layer_lookup_load(fp);
+        if(verbose) {
+            printf("Loaded NEG Layer\n");
+        }
+    } else {
+        nn->hs = NULL;
+    }
+
 
     /* read the other layers */
     nn->pos = 0;
     for(ii = 0; ii < nn->n_layers; ii++) {
         switch(nn->types[ii]) {
+            /* Lookup Layer */
             case NLK_LAYER_LOOKUP_TYPE:
                 nn->layers[ii].lk = nlk_layer_lookup_load(fp);
                 if(nn->layers[ii].lk == NULL) {
@@ -491,6 +548,8 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
                             nn->layers[ii].lk->weights->cols);
                 }
                 break;
+
+            /* Linear Layer */
             case NLK_LAYER_LINEAR_TYPE:
                 nn->layers[ii].ll = nlk_layer_linear_load(fp);
                 if(nn->layers[ii].ll == NULL) {

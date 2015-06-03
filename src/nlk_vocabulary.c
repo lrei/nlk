@@ -676,7 +676,6 @@ void nlk_vocab_sort(struct nlk_vocab_t **vocab)
 void
 nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
 {
-    struct nlk_vocab_t        *vi;                   /* vocabulary iterator */
     size_t            vsize;                /* the vocabulary size */ 
     size_t            nn;                   /* for indexing over nodes */
     size_t            min1;                 /*  the minimum index */
@@ -686,12 +685,14 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
     size_t            code_length;          /* for holding code lengths */
     uint8_t           code[NLK_MAX_CODE];   /* temporay storage for a code */
     size_t            point[NLK_MAX_CODE];  /* temporay storage for a point */
-    size_t            ii;
+
+    size_t                     ii;
+    struct nlk_vocab_t        *vi;          /* vocabulary iterator */
 
     /* sort the vocabulary */
     nlk_vocab_sort(vocab);
 
-    /* 
+    /**
      * The vocabulary is sorted so we can use the fast version O(n) of the 
      * huffman tree building algorithm.
      * First we allocate space for the nodes and create the queues 
@@ -705,7 +706,7 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
                        NLK_ENOMEM);
     }
 
-    /* 
+    /**
      * (1) create a (leaf) node for each vocab item 
      * (2) Enqueue all leaf nodes into the first queue by probability (count) 
      *     in increasing order so that the least likely item (lowest count) is 
@@ -854,13 +855,13 @@ nlk_vocab_export(const char *filepath, struct nlk_vocab_t **vocab)
     }
 
     HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vstart);
-    fprintf(out, "%s %"SCNu64"\n", vstart->word, vstart->count);
+    fprintf(out, "%s %"PRIu64"\n", vstart->word, vstart->count);
 
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
         if(vi == vstart) {
             continue;
         }
-        fprintf(out, "%s %"SCNu64"\n", vi->word, vi->count);
+        fprintf(out, "%s %"PRIu64"\n", vi->word, vi->count);
     }
     fclose(out);
     out = NULL;
@@ -955,8 +956,6 @@ nlk_vocab_save_item(struct nlk_vocab_t *vi, FILE *file)
  * Save the vocabulary structure to disk.
  *
  * @param vocab             the vocabulary structure
- * @param max_word_size     maximum number of characters in a word
- * @param max_line_size     maximum number of words in a line (paragraph)
  * @param file              the file to which the vocabulary will be saved
  *
  * @note
@@ -967,15 +966,13 @@ nlk_vocab_save_item(struct nlk_vocab_t *vi, FILE *file)
  * @endnote
  */
 void
-nlk_vocab_save(struct nlk_vocab_t **vocab, const size_t max_word_size, 
-               const size_t max_line_size, FILE *file)
+nlk_vocab_save(struct nlk_vocab_t **vocab, FILE *file)
 {
     struct nlk_vocab_t *vi;
     struct nlk_vocab_t *vstart;
 
     /* save header */
-    fprintf(file, "%zu %zu %zu\n", 
-            nlk_vocab_size(vocab), max_word_size, max_line_size);
+    fprintf(file, "%zu\n", nlk_vocab_size(vocab));
 
     /* save start symbol */
     HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vstart);
@@ -990,11 +987,12 @@ nlk_vocab_save(struct nlk_vocab_t **vocab, const size_t max_word_size,
     }
 }
 
+
 /**
  * Loads a vocabulary structure from a file
  */
 struct nlk_vocab_t *
-nlk_vocab_load(FILE *file, size_t *max_word_size, size_t *max_line_size)
+nlk_vocab_load(FILE *file)
 {
     struct nlk_vocab_t *vocab = NULL;
     struct nlk_vocab_t *vocab_word = NULL;
@@ -1008,12 +1006,11 @@ nlk_vocab_load(FILE *file, size_t *max_word_size, size_t *max_line_size)
     size_t code_length = 0;
 
     /* load header */
-    ret = fscanf(file, "%zu %zu %zu\n", 
-                 &vocab_size, max_word_size, max_line_size);
+    ret = fscanf(file, "%zu\n", &vocab_size);
     nlk_assert(ret > 0, "invalid header");
 
     /* allocate space for words */
-    word = (char *) malloc(*max_word_size * sizeof(char));
+    word = (char *) malloc(NLK_LM_MAX_WORD_SIZE * sizeof(char));
     if(word == NULL) {
         NLK_ERROR_NULL("not enough memory for a word", NLK_ENOMEM);
         /* unreachable */
@@ -1062,6 +1059,7 @@ error:
     NLK_ERROR_NULL("invalid vocabulary", NLK_FAILURE);
     /* unreachable */
 }
+
 
 /**
  * Find a word (string) in the vocabulary
@@ -1170,7 +1168,8 @@ nlk_vocab_neg_table_save(struct nlk_vocab_t **vocab, size_t *neg_table, size_t s
  * @param power defaults (power=0) to 0.75
  */
 size_t *
-nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, double power)
+nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, 
+                           double power)
 {
     struct nlk_vocab_t *vi;
     size_t z = 0;

@@ -73,6 +73,11 @@ nlk_layer_lookup_create(const size_t table_size, const size_t layer_size)
     /* default weight initialization, zero */
     nlk_array_zero(layer->weights);
 
+    /* initialization for other variables */
+    layer->update = true;
+    layer->learn_rate = 0;
+    layer->learn_rate_decay = 0;
+
     return layer;
 }
 
@@ -102,6 +107,11 @@ nlk_layer_lookup_create_from_array(NLK_ARRAY *weights)
 
     layer->weights = weights;
 
+    /* initialization for other variables */
+    layer->update = true;
+    layer->learn_rate = 0;
+    layer->learn_rate_decay = 0;
+
     return layer;
 }
 
@@ -113,8 +123,6 @@ nlk_layer_lookup_create_from_array(NLK_ARRAY *weights)
  *
  * @param layer         the lookup layer to resize
  * @param table_size    the new table size.
- *
- * @return NLK_SUCCESS or NLK_FAILURE
  */
 int
 nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer, 
@@ -137,9 +145,7 @@ nlk_layer_lookup_resize(struct nlk_layer_lookup_t *layer,
  * [-0.5 / layer_size, 0.5 / layer_size )
  * This follows the word2vec initialization for the lookup layer
  *
- * @param layer     the Lookup Layer to initialize
- *
- * @return no return, the lookup layer's weight matrix will be overwritten
+ * @param layer     the Lookup Layer to initialize (layer->weights overwritten)
  */
 void
 nlk_layer_lookup_init(struct nlk_layer_lookup_t *layer)
@@ -155,9 +161,7 @@ nlk_layer_lookup_init(struct nlk_layer_lookup_t *layer)
  * [-0.5 / layer_size, 0.5 / layer_size )
  * This follows the word2vec initialization for the lookup layer
  *
- * @param weights     the weights to initialize
- *
- * @return no return, the weight matrix will be overwritten
+ * @param weights     the weights to initialize (overwritten)
  */
 void
 nlk_layer_lookup_init_array(NLK_ARRAY *weights)
@@ -180,9 +184,7 @@ nlk_layer_lookup_init_array(NLK_ARRAY *weights)
  *  Understanding the difficulty of training deep feedforward neuralnetworks, 
  *  AISTATS 2010
  * 
- * @param layer     the Lookup Layer to initialize
- *
- * @return no return, the lookup layer's weight matrix will be overwritten
+ * @param layer     the Lookup Layer to initialize (layer->weights overwritten)
  */
 void
 nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer)
@@ -197,7 +199,7 @@ nlk_layer_lookup_init_sigmoid(struct nlk_layer_lookup_t *layer)
 /** 
  * Same as above (nlk_layer_lookup_init) but only for weights after a given row
  *
- * @param layer the lookup layer
+ * @param layer the lookup layer (layer->weights overwritten)
  * @param from  the starting row
  */
 void
@@ -216,7 +218,7 @@ nlk_layer_lookup_init_sigmoid_from(struct nlk_layer_lookup_t *layer,
 /**
  * Same as above (nlk_layer_lookup_init) but only for certain weights
  *
- * @param layer the lookup layer
+ * @param layer the lookup layer (layer->weights overwritten)
  * @param ids   an array with the ids to initialize
  * @param n_ids size of the ids array
  */
@@ -246,17 +248,13 @@ nlk_layer_lookup_init_sigmoid_ids(struct nlk_layer_lookup_t *layer,
  * @param layer         the lookup layer
  * @param indices       the indices to lookup 
  * @param n_indices     the number of indices in the indices array (array size)
- * @param output        the output of the lookup forward pass
- *
- * return no return, output is overwritten with result: n_indices * layer->cols
+ * @param output        the output of the lookup forward pass (overwritten)
  */
 void
 nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer, 
                                 const size_t *indices, 
                                 const size_t n_indices, NLK_ARRAY *output)
 {
-    size_t ii;
-
 #ifndef NCHECKS
     if(n_indices == 0) {
         NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
@@ -266,17 +264,8 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer,
 #endif
 
     /* copy content from indices to the ouput */
-    for(ii = 0; ii < n_indices; ii++) {
-        /** @warning this bit of code is duplicated for NCHECKS */
-#ifndef NCHECKS
-        size_t ret;
-        ret = nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
-        if(ret != NLK_SUCCESS) {
-            NLK_ERROR_VOID("Invalid lookup", ret);
-        }
-#else
+    for(size_t ii = 0; ii < n_indices; ii++) {
         nlk_array_copy_row(output, ii , layer->weights, indices[ii]); 
-#endif
     }
 }
 
@@ -287,18 +276,13 @@ nlk_layer_lookup_forward_lookup(struct nlk_layer_lookup_t *layer,
  * @param layer         the lookup layer
  * @param indices       the indices to lookup 
  * @param n_indices     the number of indices in the indices array (array size)
- * @param output        the output of the lookup forward pass
- *
- * return no return, output is overwritten with result: 1 * layer->cols
+ * @param output        the output of the lookup forward pass (overwritten)
  */
 void
 nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *layer, 
                                     const size_t *indices,
                                     const size_t n_indices, NLK_ARRAY *output)
 {
-    size_t ii;
-    nlk_real s;
-
 #ifndef NCHECKS
     if (n_indices == 0) {
         NLK_ERROR_VOID("empty input - indices parameter must be non-zero",
@@ -308,11 +292,11 @@ nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *layer,
 #endif
 
 
-    s =  1.0 / (nlk_real) n_indices;
+    nlk_array_zero(output);
 
     /* add averaged word vectors */
-    nlk_array_zero(output);
-    for(ii = 0; ii < n_indices; ii++) {
+    nlk_real s =  1.0 / (nlk_real) n_indices;
+    for(size_t ii = 0; ii < n_indices; ii++) {
        nlk_add_scaled_row_vector(s, layer->weights, indices[ii], 0,  output);
     }
 }
@@ -326,9 +310,7 @@ nlk_layer_lookup_forward_lookup_avg(struct nlk_layer_lookup_t *layer,
  * @param indices       the indices to lookup 
  * @param n_indices     the number of indices in the indices array (array size)
  * @param output        the paragraph vector overwritten with the output of the 
- *                      forward pass
- *
- * return no return, output is overwritten with result: 1 * layer->cols
+ *                      forward pass (overwritten)
  */
 void
 nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *layer, 
@@ -336,17 +318,13 @@ nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *layer,
                                       const size_t n_indices, 
                                       NLK_ARRAY *output)
 {
-    size_t ii;
-    nlk_real s;
-
     if(n_indices == 0) {
         return; /* nothing to do */
     }
 
-    s =  1.0 / (nlk_real) (n_indices + 1);
-
     /* add averaged word vectors */
-    for(ii = 0; ii < n_indices; ii++) {
+    nlk_real s =  1.0 / (nlk_real) (n_indices + 1);
+    for(size_t ii = 0; ii < n_indices; ii++) {
        nlk_add_scaled_row_vector(s, layer->weights, indices[ii], 0,  output);
     }
 }
@@ -358,9 +336,7 @@ nlk_layer_lookup_forward_lookup_avg_p(struct nlk_layer_lookup_t *layer,
  * @param layer         the lookup layer
  * @param indices       the indices to lookup 
  * @param n_indices     the number of indices in the indices array (array size)
- * @param output        the output of the lookup forward pass
- *
- * return no return, output is overwritten with result: 1 * layer->cols
+ * @param output        the output of the lookup forward pass (overwritten)
  */
 void
 nlk_layer_lookup_forward_lookup_concat(struct nlk_layer_lookup_t *layer, 
@@ -368,8 +344,7 @@ nlk_layer_lookup_forward_lookup_concat(struct nlk_layer_lookup_t *layer,
                                        const size_t n_indices, 
                                        NLK_ARRAY *output)
 {
-    size_t ii;
-    size_t cols = layer->weights->cols;
+    const size_t cols = layer->weights->cols;
 
 #ifndef NCHECKS
     if(n_indices == 0) {
@@ -388,7 +363,7 @@ nlk_layer_lookup_forward_lookup_concat(struct nlk_layer_lookup_t *layer,
 #endif
 
     /* copy content from indices to the ouput */
-    for(ii = 0; ii < n_indices; ii++) {
+    for(size_t ii = 0; ii < n_indices; ii++) {
         /* cblas_scopy(layer->weights->cols, &layer->weights->data[indices[ii]
          *             layer->weights->cols], 1, &output->data[ii * cols], 1);
          */
@@ -398,7 +373,13 @@ nlk_layer_lookup_forward_lookup_concat(struct nlk_layer_lookup_t *layer,
 }
 
 /**
+ * Lookup Layer forward pass where the output already has a vector
  * PV should already be in output
+ *
+ * @param layer         the lookup layer
+ * @param indices       the indices to lookup 
+ * @param n_indices     the number of indices in the indices array (array size)
+ * @param output        the output of the lookup forward pass (overwritten)
  */
 void
 nlk_layer_lookup_forward_lookup_concat_p(struct nlk_layer_lookup_t *layer, 
@@ -425,7 +406,8 @@ nlk_layer_lookup_forward_lookup_concat_p(struct nlk_layer_lookup_t *layer,
     }
 #endif
 
-    /* copy content from indices to the ouput */
+
+    /* copy content from indices to the ouput, starting after [cols] (pv) */
     for(ii = 0; ii < n_indices; ii++) {
         /* cblas_scopy(layer->weights->cols, &layer->weights->data[indices[ii]
          *             layer->weights->cols], 1, &output->data[ii * cols], 1);
@@ -450,7 +432,6 @@ void
 nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *layer, 
                                     const size_t index, NLK_ARRAY *output)
 {
-    /** @warning this function is duplicated inside CHECK */
 
 #ifndef NCHECKS
     if(index >= layer->weights->rows) {
@@ -458,19 +439,13 @@ nlk_layer_lookup_forward_lookup_one(struct nlk_layer_lookup_t *layer,
         NLK_ERROR_VOID("invalid lookup >= table_size", NLK_EBADLEN);
         /* unreachable */
     }
-    /* copy content from index columns to the ouput rows */
-    size_t ret;
-    ret = nlk_array_copy_row_vector(output, 0, layer->weights, index); 
-    if(ret != NLK_SUCCESS) {
-        NLK_ERROR_VOID("Invalid lookup", ret);
-    }
-#else
-    /* copy content from index columns to the ouput rows */
-    nlk_array_copy_row_vector(output, 0, layer->weights, index); 
 #endif
 
-    NLK_ARRAY_CHECK_NAN(output, "output has NaNs");
+
+    /* copy content from index columns to the ouput rows */
+    nlk_array_copy_row_vector(output, 0, layer->weights, index); 
 }
+
 
 /** 
  * Lookup Layer forward pass with input (not first layer)
@@ -491,18 +466,18 @@ nlk_layer_lookup_forward(struct nlk_layer_lookup_t *layer,
                 &layer->weights->data[index * layer->weights->cols]);
 }
 
+
 /** 
  * Lookup Layer backward pass for accumulating gradient
  *
  * @param layer         the lookup layer
- * @param update        update weights for this layer
  * @param index         the index corresponing to this gradient
  * @param grad_out      gradient at the layer above (gradient at output)
  * @param grad_acc      gradient at input accumulator (overwritten)
  */
 void
 nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer, 
-                              const bool update, const NLK_ARRAY *input, 
+                              const NLK_ARRAY *input, 
                               const size_t index, 
                               const nlk_real grad_out, NLK_ARRAY *grad_acc)
 {
@@ -511,7 +486,7 @@ nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer,
     
 
      /* learn weights for this layer */
-    if(update) {
+    if(layer->update) {
         nlk_add_scaled_vector_row(grad_out, input, layer->weights, index);
     }
 }
@@ -529,13 +504,19 @@ nlk_layer_lookup_backprop_lookup(struct nlk_layer_lookup_t *layer,
                                  const NLK_ARRAY *grad_out)
 {
     size_t ii;
+
+
+    /**! no need to calc grad at input - 1st layer*/
+
+    if(layer->update == false) {
+        return;
+    }
+
     /* update weights */
     for(ii = 0; ii < n_indices; ii++) {
         nlk_array_add_carray(grad_out,
                     &layer->weights->data[indices[ii] * layer->weights->cols]);
     }
-
-    /* no need to calc grad at input - 1st layer*/
 }
 
 /**
@@ -568,6 +549,12 @@ nlk_layer_lookup_backprop_lookup_concat(struct nlk_layer_lookup_t *layer,
     }
 #endif
 
+    /**! no need to calc grad at input - 1st layer */
+
+    if(layer->update == false) {
+        return;
+    }
+
 
     /* update weights */
     for(ii = 0; ii < n_indices; ii++) {
@@ -577,11 +564,14 @@ nlk_layer_lookup_backprop_lookup_concat(struct nlk_layer_lookup_t *layer,
             /* unreachable */
     }
 #endif
+        /* @TODO move this to nlk_array */
         cblas_saxpy(cols, 1, &grad_out->data[ii * cols + start_at * cols], 1, 
                     &layer->weights->data[indices[ii] * cols], 1); 
+
+        NLK_ARRAY_CHECK_NAN_ROW(layer->weights, indices[ii], "NaN in weights");
     }
-    /* no need to calc grad at input - 1st layer*/
 }
+
 
 /**
  *
@@ -591,15 +581,17 @@ nlk_layer_lookup_backprop_lookup_one(struct nlk_layer_lookup_t *layer,
                                      const size_t index, 
                                      const NLK_ARRAY *grad_out)
 {
+    /**! no need to calc grad at input - 1st layer */
+
+    if(layer->update == false) {
+        return;
+    }
+
     /* update weights */
     nlk_array_add_carray(grad_out,
                 &layer->weights->data[index * layer->weights->cols]);
-
-    /* no need to calc grad at input - 1st layer*/
-    
-    NLK_CARRAY_CHECK_NAN(&layer->weights->data[index * layer->weights->cols], 
-                         layer->weights->cols, "NaN in output"); 
 }
+
 
 /**
  *
@@ -612,11 +604,21 @@ nlk_layer_lookup_backprop_lookup_concat_one(struct nlk_layer_lookup_t *layer,
 {
     const size_t cols = layer->weights->cols;
 
+    /**! no need to calc grad at input - 1st layer */
+
+    if(layer->update == false) {
+        return;
+    }
+
+
     /* update weights */
+    /* @TODO move this to nlk_array */
     cblas_saxpy(cols, 1, &grad_out->data[grad_index * cols], 1, 
                 &layer->weights->data[index * cols], 1); 
-    /* no need to calc grad at input - 1st layer*/
+    NLK_ARRAY_CHECK_NAN_ROW(layer->weights, index, "NaN in weights");
+
 }
+
 
 /** 
  * Free Lookup Layer memory 
@@ -628,6 +630,7 @@ nlk_layer_lookup_free(struct nlk_layer_lookup_t *layer)
 {
     nlk_array_free(layer->weights);
     free(layer);
+    layer = NULL;
 }
 
 /**
@@ -660,6 +663,7 @@ nlk_layer_lookup_save_path(const struct nlk_layer_lookup_t *layer,
 
     nlk_layer_lookup_save(layer, fp);
     fclose(fp);
+    fp = NULL;
 }
 
 /**
@@ -682,6 +686,7 @@ nlk_layer_lookup_save_rows_path(struct nlk_layer_lookup_t *layer,
 
     nlk_array_save_rows(layer->weights, fp, start, end);
     fclose(fp);
+    fp = NULL;
 }
 
 /** 
@@ -702,6 +707,8 @@ nlk_layer_lookup_load(FILE *in)
     }
     layer = nlk_layer_lookup_create_from_array(weights);
 
+
+    NLK_ARRAY_CHECK_NAN(weights, "NaN in weights");
     return layer;
 }
 

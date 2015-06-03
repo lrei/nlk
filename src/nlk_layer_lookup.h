@@ -55,7 +55,10 @@ __BEGIN_DECLS
  * and their corresponding vectors.
  */
 struct nlk_layer_lookup_t {
-    NLK_ARRAY   *weights;       /**< weights  [table_size][layer_size] */
+    NLK_ARRAY   *weights;           /**< weights  [table_size][layer_size] */
+    bool         update;            /**< should weights change? */
+    nlk_real     learn_rate;        /**< layer specific learning rate */
+    nlk_real     learn_rate_decay;  /**< layer specific learning rate decay */
 };
 typedef struct nlk_layer_lookup_t NLK_LAYER_LOOKUP;
 
@@ -131,7 +134,7 @@ void nlk_layer_lookup_backprop_lookup_concat_one(struct nlk_layer_lookup_t *,
                                                  const NLK_ARRAY *);
 
 /* Lookup Backprop with accumulator */
-void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *, const bool,
+void nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *,
                                    const NLK_ARRAY *, const size_t, 
                                    const nlk_real, NLK_ARRAY *);
 

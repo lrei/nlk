@@ -44,7 +44,7 @@
  */
 nlk_real
 nlk_learn_rate_w2v(nlk_real learn_rate, const nlk_real start_learn_rate,
-                   const size_t epochs, const uint64_t word_count_actual, 
+                   const unsigned int epochs, const uint64_t word_count_actual, 
                    const uint64_t train_words)
 {
     learn_rate = start_learn_rate * (1 - word_count_actual / 
@@ -75,7 +75,7 @@ nlk_learn_rate_interval(nlk_real learn_rate, const unsigned int step,
 nlk_real
 nlk_learn_rate_decay(nlk_real learn_rate, const nlk_real decay)
 {
-    return learn_rate - (learn_rate * learn_rate_decay);
+    return learn_rate - (learn_rate * decay);
 }
 
 

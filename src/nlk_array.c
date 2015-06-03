@@ -335,22 +335,22 @@ nlk_array_create_copy(const struct nlk_array_t *source)
  * will fail with NLK_EBADLEN.
  * @endnote
  */
-int
+void
 nlk_array_copy_row(struct nlk_array_t *dest, const size_t dest_row,
                    const struct nlk_array_t *source, const size_t source_row)
 {
 #ifndef NCHECKS
     if(dest_row >= dest->rows) {
-        NLK_ERROR("Destination row out of range", NLK_EINVAL);
+        NLK_ERROR_VOID("Destination row out of range", NLK_EINVAL);
         /* unreachable */
     }
     if(source_row >= source->rows) {
-        NLK_ERROR("Source row out of range", NLK_EINVAL);
+        NLK_ERROR_VOID("Source row out of range", NLK_EINVAL);
         /* unreachable */
     }
     if(source->cols > dest->cols) {
-        NLK_ERROR("Destination array has a smaller number of columns "
-                  "than the source array", NLK_EBADLEN);
+        NLK_ERROR_VOID("Destination array has a smaller number of columns "
+                       "than the source array", NLK_EBADLEN);
         /* unreachable */
     }
 #endif
@@ -361,8 +361,6 @@ nlk_array_copy_row(struct nlk_array_t *dest, const size_t dest_row,
 
 
     NLK_ARRAY_CHECK_NAN_ROW(source, source_row, "NaN in source");
-
-    return NLK_SUCCESS;
 }
 
 
@@ -376,7 +374,9 @@ nlk_array_copy_row_carray(struct nlk_array_t *array, const size_t row,
     }
 #endif
 
+
     nlk_carray_copy_carray(carray, &array->data[row*array->cols], array->cols);
+
 
     NLK_ARRAY_CHECK_NAN_ROW(array, row, "NaN in source");
 }
@@ -391,37 +391,36 @@ nlk_array_copy_row_carray(struct nlk_array_t *array, const size_t row,
  *
  * @return NLK_SUCCESS or NLK_EINVAL or NLK_EBADLEN
  */
-int
+void
 nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim, 
                           const struct nlk_array_t *source, 
                           const size_t source_row)
 {
 #ifndef NCHECKS
     if(source_row > source->rows) {
-        NLK_ERROR("Source row out of range", NLK_EINVAL);
+        NLK_ERROR_VOID("Source row out of range", NLK_EINVAL);
         /* unreachable */
     }
     if(dim == 1 && source->cols > dest->cols) {
-        NLK_ERROR("Destination array has a smaller number of columns "
-                  "than the source array", NLK_EBADLEN);
+        NLK_ERROR_VOID("Destination array has a smaller number of columns "
+                       "than the source array", NLK_EBADLEN);
         /* unreachable */
     }
     if(dim == 0 && source->cols > dest->rows) {
-        NLK_ERROR("Destination array has a smaller number of columns "
-                  "than the source array", NLK_EBADLEN);
+        NLK_ERROR_VOID("Destination array has a smaller number of columns "
+                       "than the source array", NLK_EBADLEN);
         /* unreachable */
     }
 #else
     (void) dim; /* avoid unused warning */
 #endif
+
+
     cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
                 dest->data, 1);
 
 
     NLK_ARRAY_CHECK_NAN_ROW(source, source_row, "NaN in source");
-
-
-    return NLK_SUCCESS;
 }
 
 /**
@@ -911,6 +910,8 @@ nlk_array_dot(const struct nlk_array_t *v1, const struct nlk_array_t *v2,
         /* unreachable */
     } else 
 #endif
+
+
     if(dim == 0) {
         res = cblas_sdot(v1->rows, v1->data, 1, v2->data, 1);
     } else if(dim == 1) {
@@ -922,12 +923,8 @@ nlk_array_dot(const struct nlk_array_t *v1, const struct nlk_array_t *v2,
         /* unreachable */
     }
 
-#ifndef NCHECKS
-    if(isnan(res)) {
-        NLK_ERROR("NaN in result", NLK_ENAN);
-    }
-#endif
 
+    NLK_CHECK_NAN(res, "result is NaN");
     return res;
 }
 
@@ -945,7 +942,6 @@ nlk_real
 nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1, 
                   struct nlk_array_t *m2, size_t row2)
 {
-    nlk_real res;
 #ifndef NCHECKS
     if(m1->cols != m2->cols) {
         NLK_ERROR("array dimensions (columns) do not match.", NLK_EBADLEN);
@@ -953,11 +949,12 @@ nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1,
     }
 #endif
 
-    res = cblas_sdot(m1->cols, &m1->data[row1 * m1->cols], 1, 
-                     &m2->data[row2 * m2->cols], 1);
+
+    nlk_real res = cblas_sdot(m1->cols, &m1->data[row1 * m1->cols], 1, 
+                              &m2->data[row2 * m2->cols], 1);
+
 
     NLK_CHECK_NAN(res, "NaN in result");
-
     return res;
 }
 
@@ -975,16 +972,12 @@ nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
     nlk_real res = cblas_sdot(v1->rows, v1->data, 1, carr, 1);
 
 
-    NLK_ARRAY_CHECK_NAN(v1, "NaN in array");
-    NLK_CARRAY_CHECK_NAN(carr, v1->rows, "NaN in carray");
     NLK_CHECK_NAN(res, "NaN in result");
-
-
     return res;
 }
 
 /**
- * Array (vector, matrix) element-wise addition
+ * Array (vector, matrix) element-wise addition: a2[ii] += a1[ii]
  * 
  * @param a1    array
  * @param a2    array, will be overwritten with the result
@@ -992,6 +985,7 @@ nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
 void
 nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 {
+    const size_t len = a1->rows * a1->cols;
 #ifndef NCHECKS
     if(a1->cols != a2->cols || a1->rows != a2->rows) {
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
@@ -999,13 +993,18 @@ nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
     }
 #endif
 
-    cblas_saxpy(a1->rows * a1->cols, 1, a1->data, 1, a2->data, 1); 
+
+    for(size_t ii = 0; ii < len; ii++) {
+        a2->data[ii] += a1->data[ii];
+    }
+
 
     NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
 }
 
+
 /**
- * Array (vector, matrix) scaled element-wise addition (?saxpy)
+ * Array (vector, matrix) scaled element-wise addition (?saxpy):
  * a2[i] = (s * a1[i]) + a2[i]. 
  * 
  * @param s     scalar
@@ -1023,7 +1022,9 @@ nlk_array_scaled_add(const nlk_real s, const struct nlk_array_t *a1,
     }
 #endif
 
+
     cblas_saxpy(a1->rows * a1->cols, s, a1->data, 1, a2->data, 1); 
+
 
     NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
 }
@@ -1033,11 +1034,11 @@ nlk_array_scaled_add(const nlk_real s, const struct nlk_array_t *a1,
  * 
  * @param v     a column vector
  * @param m     a matrix
- * @param row   the matrix row, overwritten with the result
+ * @param row   the matrix row that will be overwritten with the result
  */
 void
 nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m, 
-                   size_t row)
+                   const size_t row)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -1051,8 +1052,15 @@ nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m,
     }
 #endif
 
-    cblas_saxpy(m->cols, 1, v->data, 1, &m->data[row * m->cols], 1); 
+
+    for(size_t ii = 0; ii < m->cols; ii++) {
+        m->data[row * m->cols + ii] += v->data[ii];
+    }
+
+
+    NLK_ARRAY_CHECK_NAN_ROW(m, row, "NaN in matrix row");
 }
+
 
 /**
  * Adds a matrix row to a vector
@@ -1062,7 +1070,8 @@ nlk_vector_add_row(const struct nlk_array_t *v, struct nlk_array_t *m,
  * @param row   the matrix row
  */
 void
-nlk_row_add_vector(const struct nlk_array_t *m, size_t row, struct nlk_array_t *v)
+nlk_row_add_vector(const struct nlk_array_t *m, const size_t row, 
+                   struct nlk_array_t *v)
 {
 #ifndef NCHECKS
     if(v->rows != m->cols) {
@@ -1076,7 +1085,13 @@ nlk_row_add_vector(const struct nlk_array_t *m, size_t row, struct nlk_array_t *
     }
 #endif
 
-    cblas_saxpy(m->cols, 1, &m->data[row * m->cols], 1, v->data, 1); 
+
+    for(size_t ii = 0; ii < m->cols; ii++) {
+        v->data[ii] += m->data[row * m->cols + ii];
+    }
+
+
+    NLK_ARRAY_CHECK_NAN(v, "NaN in result");
 }
 
 /**
@@ -1086,9 +1101,6 @@ nlk_row_add_vector(const struct nlk_array_t *m, size_t row, struct nlk_array_t *
  * @param v     a vector (row vector)
  * @param m     a matrix, will be overwritten with the result
  * @param row   the matrix row
- *
- * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes row 
- * of matrix.
  */
 void
 nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v, 
@@ -1102,27 +1114,12 @@ nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v,
         /* unreachable */
     }
 #endif
-#ifdef CHECK_NANS
-    if(nlk_array_has_nan(v)) {
-        NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
-        /* unreachable */
-    }
 
-    if(nlk_array_has_nan_row(m, row)) {
-        NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
-        /* unreachable */
-    }
-
-#endif
 
     cblas_saxpy(m->cols, s, v->data, 1, &m->data[m->cols * row], 1);
 
-#ifdef CHECK_NANS
-    if(nlk_array_has_nan_row(m, row)) {
-        NLK_ERROR_VOID("NaN in result", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
+
+    NLK_ARRAY_CHECK_NAN_ROW(m, row, "NaN in matrix row (result)");
 }
 
 /**
@@ -1160,7 +1157,6 @@ nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m,
     cblas_saxpy(m->cols, s, &m->data[m->cols * row], 1, v->data, 1);
 
 
-    NLK_ARRAY_CHECK_NAN_ROW(m, row, "NaN in matrix row");
     NLK_ARRAY_CHECK_NAN(v, "NaN in result");
 }
 
@@ -1175,72 +1171,37 @@ nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m,
 void
 nlk_array_add_carray(const struct nlk_array_t *arr, nlk_real *carr)
 {
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(arr)) {
-        NLK_ERROR_VOID("NaN in argument: arr", NLK_ENAN);
-        /* unreachable */
-    }
-    if(nlk_carray_has_nan(carr, arr->rows * arr->cols)) {
-        NLK_ERROR_VOID("NaN in argument: carr", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
 
     cblas_saxpy(arr->rows * arr->cols, 1, arr->data, 1, carr, 1); 
 
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_carray_has_nan(carr, arr->rows * arr->cols)) {
-        NLK_ERROR_VOID("NaN in result", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
+
+    NLK_CARRAY_CHECK_NAN(carr, arr->rows * arr->cols, "NaN in result");
 }
 
 /**
  * Array partial element-wise addition addition with a C array
  * 
  * @param arr       array
- * @param carray    a C array, will be overwritten with the result
  * @param len       number of elements to add
- *
- * @return no return, overwittes carray
+ * @param carray    a C array, will be overwritten with the result
  */
 void
-nlk_array_add_carray_partial(const struct nlk_array_t *arr, nlk_real *carr, 
-                             const size_t len)
+nlk_array_add_carray_partial(const struct nlk_array_t *arr, const size_t len,
+                             nlk_real *carr)
 {
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(arr)) {
-        NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
-        /* unreachable */
-    }
-    if(nlk_carray_has_nan(carr, len)) {
-        NLK_ERROR_VOID("NaN in argument: carr", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
 
     cblas_saxpy(len, 1, arr->data, 1, carr, 1); 
 
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_carray_has_nan(carr, len)) {
-        NLK_ERROR_VOID("NaN in result", NLK_ENAN);
-        /* unreachable */
+    for(size_t ii = 0; ii < len; ii++) {
+        carr[ii] += arr->data[ii];
     }
-#endif
-#endif
+
+    NLK_CARRAY_CHECK_NAN(carr, len, "NaN in result");
 }
 
 
 /**
- *  Elementwise array multiplication (NON-PARALLEL)
+ *  Elementwise array multiplication
  *
  *  @param a1   first array
  *  @param a2   second array (overwritten)
@@ -1248,8 +1209,6 @@ nlk_array_add_carray_partial(const struct nlk_array_t *arr, nlk_real *carr,
 void
 nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 {
-    const size_t len = a1->rows * a1->cols;
-    
 #ifndef NCHECKS
     if(a1->cols != a2->cols || a1->rows != a2->rows) {
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
@@ -1257,12 +1216,18 @@ nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
     }
 #endif
 
+    const size_t len = a1->rows * a1->cols;
+
     /*#pragma omp parallel for*/
     for(size_t ii = 0; ii < len; ii++) {
         a2->data[ii] *= a1->data[ii];
     }
 
+
+    NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
 }
+
+
 /**
  * Sum of absolute array values (?asum)
  *
@@ -1273,8 +1238,13 @@ nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 nlk_real
 nlk_array_abs_sum(const struct nlk_array_t *arr)
 {
-    return cblas_sasum(arr->rows * arr->cols, arr->data, 1);
+    nlk_real res = cblas_sasum(arr->rows * arr->cols, arr->data, 1);
+
+    
+    NLK_CHECK_NAN(res, "NaN in result");
+    return res;
 }
+
 
 /**
  * Sum of carray values
@@ -1293,8 +1263,10 @@ nlk_carray_sum(const nlk_real *carr, size_t len)
         res += carr[len];
     } while(len > 0);
 
+    NLK_CHECK_NAN(res, "NaN in result");
     return res;
 }
+
 
 /**
  * Sum of array values
@@ -1310,6 +1282,7 @@ nlk_array_sum(const struct nlk_array_t *arr)
    
     return nlk_carray_sum(arr->data, len);
 }
+
 
 /**
  * Sum of squared array values
@@ -1329,6 +1302,8 @@ nlk_array_squared_sum(const struct nlk_array_t *arr)
         res += arr->data[len] * arr->data[len];
     } while(len > 0);
 
+
+    NLK_CHECK_NAN(res, "NaN in result");
     return res;
 }
 
@@ -1343,8 +1318,13 @@ nlk_array_squared_sum(const struct nlk_array_t *arr)
 nlk_real
 nlk_carray_abs_sum(const nlk_real *carr, size_t length)
 {
-    return cblas_sasum(length, carr, 1);
+    nlk_real res = cblas_sasum(length, carr, 1);
+
+
+    NLK_CHECK_NAN(res, "NaN in result");
+    return res;
 }
+
 
 /**
  * Count the number of non-zero elements in the array
@@ -1374,8 +1354,6 @@ nlk_array_non_zero(const struct nlk_array_t *arr)
  * @param s     the scalar
  * @param a1    a vector
  * @paran a2    a vector, will be overwritten with the result
- *
- * @return NLK_SUCCESS on success NLK_E on failure; result overwrittes a2.
  */
 void
 nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1, 
@@ -1393,15 +1371,20 @@ nlk_add_scaled_vectors(const nlk_real s, const struct nlk_array_t *v1,
     }
 #endif
 
+
     cblas_saxpy(v1->rows, s, v1->data, 1, v2->data, 1);
+
+
+    NLK_ARRAY_CHECK_NAN(v2, "NaN in result");
 }
+
 
 /**
  * Multiplies vector a1 by the transpose of vector a2, then adds matrix a3. 
  * m = v1 * v2' + m (?ger)
  *                                  
  * @param v1    vector [m]
- * @param v2    vector [n], will be transposed
+ * @param v2    vector [n]
  * @param m     matrix [m][n], will be overwritten with the result
  *
  */
@@ -1427,13 +1410,16 @@ nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1,
     }
 #endif
 
+
      cblas_sger(CblasRowMajor, m->rows, m->cols, 1, v1->data, 
                 1, v2->data, 1, m->data, m->cols);
+
+
+    NLK_ARRAY_CHECK_NAN(v2, "NaN in result");
 }
 
 /**
- * Multiplies a matrix by a vector 
- * v2 = m * v1 + v2 or v2 = m' * v1 + v2
+ * Multiplies a matrix by a vector: v2 = m * v1 + v2 or v2 = m' * v1 + v2
  *
  *  @param m        the matrix m [n][m]
  *  @param trans    NLK_TRANSPOSE or NLK_NOTRANSPOSE
@@ -1470,9 +1456,12 @@ nlk_matrix_vector_multiply_add(const struct nlk_array_t *m,
     }
 #endif
 
-    cblas_sgemv(CblasRowMajor, trans,
-                m->rows, m->cols, 1, m->data, m->cols,
+
+    cblas_sgemv(CblasRowMajor, trans, m->rows, m->cols, 1, m->data, m->cols,
                 v1->data, 1, 1, v2->data, 1); 
+
+
+    NLK_ARRAY_CHECK_NAN(v2, "NaN in result");
 }
 
 /**
@@ -1482,8 +1471,6 @@ nlk_matrix_vector_multiply_add(const struct nlk_array_t *m,
 * size is defined by NLK_SIGMOID_TABLE_SIZE
 *
 * @param carray     the C array to initialize
-*
-* @return no return (void); array data is initialized accordingly.
 */
 void
 nlk_carray_init_sigmoid(nlk_real *carray) {
@@ -1543,10 +1530,13 @@ nlk_array_log(const struct nlk_array_t *input, struct nlk_array_t *output)
     }
 #endif
 
-    /*#pragma omp parallel for*/
+
     for(size_t ii = 0; ii < len; ii++) {
         output->data[ii] = nlk_log_approx(input->data[ii]);
     }
+
+
+    NLK_ARRAY_CHECK_NAN(output, "NaN in result");
 }
 
 /**
@@ -1622,5 +1612,7 @@ nlk_array_rescale_max_minus(NLK_ARRAY *array)
         array->data[idx] = max - array->data[idx];
     } while(idx > 0);   
 
+
+    NLK_CHECK_NAN(max, "max is NaN");
     return max;
 }

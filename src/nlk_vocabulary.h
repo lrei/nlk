@@ -127,9 +127,8 @@ void        nlk_vocab_encode_huffman(struct nlk_vocab_t **);
 /* save & load */
 int                   nlk_vocab_export(const char *, struct nlk_vocab_t **);
 struct nlk_vocab_t   *nlk_vocab_import(const char *, const size_t);
-void                  nlk_vocab_save(struct nlk_vocab_t **, const size_t, 
-                                     const size_t, FILE *);
-struct nlk_vocab_t   *nlk_vocab_load(FILE *, size_t *, size_t *);
+void                  nlk_vocab_save(struct nlk_vocab_t **, FILE *);
+struct nlk_vocab_t   *nlk_vocab_load(FILE *);
 
 /* vocabularize */
 void nlk_vocab_line_subsample(const struct nlk_line_t *, 

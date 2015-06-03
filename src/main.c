@@ -506,10 +506,11 @@ main(int argc, char **argv)
         train_opts.hs = hs;
         train_opts.negative = negative;
         train_opts.iter = iter;
+        train_opts.vector_size = vector_size;
+        train_opts.word_count = corpus->count;
 
         /* create network */
-        nn = nlk_w2v_create(train_opts, concat, vector_size, vocab,
-                            corpus->len, verbose);
+        nn = nlk_w2v_create(train_opts, concat, vocab, corpus->len, verbose);
     } else {
         nn = NULL;
         NLK_ERROR_ABORT("No neural network created or loaded", NLK_FAILURE);
@@ -525,7 +526,8 @@ main(int argc, char **argv)
                     nn->train_opts.sample, nn->train_opts.window);
         }
 
-        nlk_w2v_train(nn, corpus, verbose);
+        nlk_w2v(nn, corpus, verbose);
+
         if(verbose) { 
             printf("\nTraining finished\n");
         }

@@ -50,41 +50,27 @@ __BEGIN_DECLS
 
 /* create */
 struct nlk_neuralnet_t *nlk_w2v_create(struct nlk_nn_train_t, 
-                                       const bool, const size_t, 
-                                       struct nlk_vocab_t *, 
+                                       const bool, struct nlk_vocab_t *, 
                                        const size_t, const bool);
 
 /* train */
-void     nlk_w2v_hs(NLK_LAYER_LOOKUP *, const bool, const NLK_ARRAY *, 
-                    const nlk_real, const struct nlk_vocab_t *, NLK_ARRAY *);
+void nlk_w2v(struct nlk_neuralnet_t *, const struct nlk_corpus_t *, 
+             const bool);
 
-void     nlk_w2v_neg(NLK_LAYER_LOOKUP *, const bool, const size_t *, 
-                     const size_t, const size_t, const nlk_real, const size_t, 
-                     const NLK_ARRAY *, NLK_ARRAY *);
+void    nlk_pvdm(struct nlk_neuralnet_t *, struct nlk_layer_lookup_t *,
+                 const nlk_real, const struct nlk_context_t *, NLK_ARRAY *, 
+                 NLK_ARRAY *);
 
-void    nlk_pvdm(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
-                 const bool, NLK_LAYER_LOOKUP *, const bool,
-                 NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
-                 const bool, const size_t, const nlk_real, 
-                 const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
+void    nlk_pvdbow(struct nlk_neuralnet_t *, struct nlk_layer_lookup_t *, 
+                   const nlk_real, const struct nlk_context_t *, NLK_ARRAY *, 
+                   NLK_ARRAY *);
 
-void    nlk_pvdm_cc(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
-                    const bool, NLK_LAYER_LOOKUP *, const bool, 
-                    NLK_LAYER_LOOKUP *,  const size_t, const size_t *, 
-                    const bool, const size_t, const nlk_real, 
-                    const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
-
-void    nlk_pvdbow(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
-                   const bool, NLK_LAYER_LOOKUP *, const bool, 
-                   NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
-                   const bool, const size_t, const nlk_real, 
-                   const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
-
-void     nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *, 
-                 const bool, const bool, const bool, int, const bool);
+void    nlk_pvdm_cc(struct nlk_neuralnet_t *, struct nlk_layer_lookup_t *, 
+                    const nlk_real, const struct nlk_context_t *, 
+                    NLK_ARRAY *, NLK_ARRAY *);
 
 void     nlk_w2v_train(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *, 
-                       int);
+                       const bool);
 
 /* export */
 void    nlk_w2v_export_word_vectors(NLK_ARRAY *, NLK_FILE_FORMAT, 

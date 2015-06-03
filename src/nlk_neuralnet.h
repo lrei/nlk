@@ -73,6 +73,8 @@ struct nlk_nn_train_t {
     bool             hs;            /**< use hierarchical softmax */
     unsigned int     negative;      /**< number of negative examples */
     unsigned int     iter;          /**< number of iterations/epochs */
+    unsigned int     vector_size;   /**< word/par vector dimensionality */
+    uint64_t         word_count;    /**< total word occurances in corpus */
 };
 typedef struct nlk_w2v_train_t NLK_W2V_TRAIN;
 
@@ -98,12 +100,16 @@ typedef union nlk_layer_t NLK_LAYER;
  * A Neural Net
  */
 struct nlk_neuralnet_t {
-    size_t                       max_word_size; /**< max chars in a word */
-    size_t                       max_line_size; /**< max words in a line */
-    struct nlk_vocab_t          *vocab;         /**< the vocabulary */
     struct nlk_nn_train_t        train_opts;    /**< model training options */
+    struct nlk_vocab_t          *vocab;         /**< the vocabulary */
+    /**< language specific layers deserve their own shortcuts */
     struct nlk_layer_lookup_t   *words;         /**< word lookup layer */
     struct nlk_layer_lookup_t   *paragraphs;    /**< paragraph lookup layer */
+    /**< language model specific layers also get their own shortcuts */
+    struct nlk_layer_lookup_t   *hs;            /**< hierarchical softmax */
+    struct nlk_layer_lookup_t   *neg;           /**< negative sampling layer */
+    size_t                      *neg_table;     /**< negative sampling table */
+    /**< other layers go here */
     size_t                       n_layers;      /**< total number of layers */
     size_t                       pos;           /**< add positition */
     unsigned short int          *types;         /**< layer types */

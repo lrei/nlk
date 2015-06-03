@@ -130,11 +130,11 @@ struct  nlk_array_t *nlk_array_resize(struct nlk_array_t *, const size_t,
 struct  nlk_array_t *nlk_array_create_copy(const struct nlk_array_t *);
 struct  nlk_array_t *nlk_array_create_copy_limit(const struct nlk_array_t *,
                                                  size_t);
-int     nlk_array_copy_row(struct nlk_array_t *, const size_t,
+void    nlk_array_copy_row(struct nlk_array_t *, const size_t,
                            const struct nlk_array_t *, const size_t);
 void    nlk_array_copy_row_carray(struct nlk_array_t *, const size_t, 
                                   nlk_real *);
-int     nlk_array_copy_row_vector(struct nlk_array_t *, const unsigned int, 
+void    nlk_array_copy_row_vector(struct nlk_array_t *, const unsigned int, 
                                   const struct nlk_array_t *, const size_t);
 
 
@@ -209,8 +209,8 @@ void nlk_array_add(const struct nlk_array_t *, struct nlk_array_t *);
 void nlk_array_scaled_add(const nlk_real, const struct nlk_array_t *, 
                           struct nlk_array_t *);
 void nlk_array_add_carray(const struct nlk_array_t *, nlk_real *);
-void nlk_array_add_carray_partial(const struct nlk_array_t *, nlk_real *, 
-                                  const size_t);
+void nlk_array_add_carray_partial(const struct nlk_array_t *, const size_t, 
+                                  nlk_real *);
 void nlk_vector_add_row(const struct nlk_array_t *, struct nlk_array_t *, 
                         size_t);
 void nlk_row_add_vector(const struct nlk_array_t *, size_t, 

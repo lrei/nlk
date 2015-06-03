@@ -104,116 +104,98 @@ nlk_w2v_display(nlk_real learn_rate, size_t word_count_actual,
  * @return the neural network structure
  */
 struct nlk_neuralnet_t *
-nlk_w2v_create(struct nlk_nn_train_t train_opts, 
-               const bool concat, const size_t layer_size, 
-               struct nlk_vocab_t *vocab, 
-               const size_t paragraphs, const bool verbose) 
+nlk_w2v_create(struct nlk_nn_train_t train_opts, const bool concat,
+               struct nlk_vocab_t *vocab, const size_t paragraphs, 
+               const bool verbose) 
 {
     struct nlk_neuralnet_t *nn;
-    struct nlk_layer_lookup_t *lk1;
-    struct nlk_layer_lookup_t *pv;
-    struct nlk_layer_lookup_t *lkhs;
-    struct nlk_layer_lookup_t *lkneg;
-
-
     const size_t vocab_size = nlk_vocab_size(&vocab);
-    int n_layers = 0;
-    size_t layer_size2;
+    const size_t vector_size = train_opts.vector_size;
+    size_t layer2_size = vector_size;
+
+    /* handle concatenation models */
     if(concat) {
         /* window * words + pv */
-        layer_size2 = train_opts.window * layer_size + layer_size;
-    } else {
-        layer_size2 = layer_size;
-    }
-    if(train_opts.hs) {
-        n_layers++;
-    }
-    if(train_opts.negative) {
-        n_layers++;
-    }
+        layer2_size = train_opts.window * vector_size + vector_size;
+    } 
 
-    nn = nlk_neuralnet_create(n_layers);
+    /* create structure */
+    nn = nlk_neuralnet_create(0);
     if(nn == NULL) {
         return NULL;
     }
+
+    /* set the training options */
     nn->train_opts = train_opts;
 
-    
     /* vocabulary */
-    nn->max_word_size = NLK_LM_MAX_WORD_SIZE;
-    nn->max_line_size = NLK_LM_MAX_LINE_SIZE;
     nn->vocab = vocab;
 
-    /* random number generator initialization */
-    uint64_t seed = 6121984 * clock();
-    seed = nlk_random_fmix(seed);
-    nlk_random_init_xs1024(seed);
 
-
-    /* lookup layer 1: word table */
-    lk1 = nlk_layer_lookup_create(vocab_size, layer_size);
+    /* Word Table */
+    nn->words = nlk_layer_lookup_create(vocab_size, vector_size);
     if(verbose) {
         printf("Layer 1 (word lookup): %zu x %zu\n", 
-                lk1->weights->rows, lk1->weights->cols);
+                nn->words->weights->rows, nn->words->weights->cols);
     }
-    nlk_layer_lookup_init(lk1);
-    nn->words = lk1;
+    /* initialize */
+    nlk_layer_lookup_init(nn->words);
 
-    /* lookup layer 1: paragraph table */
+
+    /* Paragraph Table */
     if(nn->train_opts.paragraph) {
-        pv = nlk_layer_lookup_create(paragraphs, layer_size);
+        nn->paragraphs = nlk_layer_lookup_create(paragraphs, vector_size);
         if(verbose) {
             printf("Layer 1 (paragraph lookup): %zu x %zu\n", 
-                pv->weights->rows, pv->weights->cols);
+                   nn->paragraphs->weights->rows, 
+                   nn->paragraphs->weights->cols);
         }
-        nlk_layer_lookup_init(pv);
-        nn->paragraphs = pv;
+        /* initialize */
+        nlk_layer_lookup_init(nn->paragraphs);
     } else {
         nn->paragraphs = NULL;
-        nn->train_opts.paragraph = false;
     }
 
-    
-    /* lookup layer2: HS */
+    /* Hierarchical Softmax Layer */
     if(train_opts.hs) {
-        lkhs = nlk_layer_lookup_create(vocab_size, layer_size2);
+        nn->hs = nlk_layer_lookup_create(vocab_size, layer2_size);
         /* [ default initialization: zero ] */
-        nlk_neuralnet_add_layer_lookup(nn, lkhs);
         if(verbose) {
             printf("Layer 2 (HS): %zu x %zu\n", 
-                    lkhs->weights->rows, lkhs->weights->cols);
+                    nn->hs->weights->rows, nn->hs->weights->cols);
         }
     }
+    /* zero initialization by default */
 
-    /* lookup layer2: NEG */
-    if(train_opts.negative) {
-        lkneg = nlk_layer_lookup_create(vocab_size, layer_size2);
-        /* [ default initialization: zero ] */
-        nlk_neuralnet_add_layer_lookup(nn, lkneg);
+    /* Negative Sampling Layer */
+    if(nn->train_opts.negative) {
+        nn->neg = nlk_layer_lookup_create(vocab_size, layer2_size);
         if(verbose) {
             printf("Layer 2 (NEG): %zu x %zu\n",
-                   lkneg->weights->rows, lkneg->weights->cols);
+                   nn->neg->weights->rows, nn->neg->weights->cols);
         }
-
     }
+    /* zero initialization by default */
+
+    nn->neg_table = NULL;
+
+    /* others */
  
     return nn;
 }
 
 /**
  * Hierarchical Softmax
- * @param lk2hs         the hierarchical softmax layer
- * @param update        wether to update the layer weights or not
+ * @param nn            the neural network structure
  * @param lk1_out       the output of the previous layer, input to this one
  * @param learn_rate    the learning rate
  * @param center_word   the center/target word
- * @param grad_acc      the accumulated gradient (output)
- *
+ * @param grad_acc      the accumulated gradient (updated)
  */
-void
-nlk_w2v_hs(NLK_LAYER_LOOKUP *lk2hs, const bool update,
-           const NLK_ARRAY *lk1_out, const nlk_real learn_rate, 
-           const struct nlk_vocab_t *center_word, NLK_ARRAY *grad_acc)
+static void
+nlk_w2v_hs(struct nlk_neuralnet_t *nn, const NLK_ARRAY *lk1_out, 
+           const nlk_real learn_rate, const struct nlk_vocab_t *center_word, 
+           NLK_ARRAY *grad_acc)
 {
     nlk_real out;
     nlk_real lk2_out;
@@ -233,7 +215,7 @@ nlk_w2v_hs(NLK_LAYER_LOOKUP *lk2hs, const bool update,
         code = center_word->code[pp];
 
         /* forward with lookup for point pp */
-        nlk_layer_lookup_forward(lk2hs, lk1_out, point, &lk2_out);
+        nlk_layer_lookup_forward(nn->hs, lk1_out, point, &lk2_out);
         
         /* ignore points with outputs outside of sigm bounds */
         if(lk2_out >= NLK_MAX_EXP) {
@@ -244,7 +226,7 @@ nlk_w2v_hs(NLK_LAYER_LOOKUP *lk2hs, const bool update,
         out = nlk_sigmoid(lk2_out);
 
 
-        /** @section Hierarchical Softmax Backprop
+        /** Backprop
          * Using the negative log likelihood,
          *
          * log(sigma(z=v'n(w,j))'vwi) = 
@@ -261,7 +243,7 @@ nlk_w2v_hs(NLK_LAYER_LOOKUP *lk2hs, const bool update,
         grad_out *= learn_rate;
         
         /* layer2hs backprop, accumulate gradient for all points */
-        nlk_layer_lookup_backprop_acc(lk2hs, update, lk1_out, point, grad_out, 
+        nlk_layer_lookup_backprop_acc(nn->hs, lk1_out, point, grad_out, 
                                       grad_acc);
 
     } /* end of points/codes */
@@ -270,21 +252,15 @@ nlk_w2v_hs(NLK_LAYER_LOOKUP *lk2hs, const bool update,
 /**
  * Negative Sampling
  * 
- * @param lk2neg        the negative sampling layer
- * @param update        wether to update the layer weights or not
- * @param neg_table     the negative sampling table
- * @param negative      the number of negative examples to use
- * @param vocab_size    the size of the vocabulary
+ * @param nn            the neural network structure
  * @param learn_rate    the learning rate
  * @param center_word   the center/target word (i.e. positive example)
  * @param lk1_out       the output of the previous layer, input to this one
  * @param grad_acc      the accumulated gradient (output)
  *
  */
-void
-nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update, 
-            const size_t *neg_table, const size_t negative, 
-            const size_t vocab_size, const nlk_real learn_rate, 
+static void
+nlk_w2v_neg(struct nlk_neuralnet_t *nn, const nlk_real learn_rate, 
             const size_t center_word, const NLK_ARRAY *lk1_out, 
             NLK_ARRAY *grad_acc)
 {
@@ -297,7 +273,7 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
     /** @section Positive Example
      */
     /* forward with lookup for target word */
-    nlk_layer_lookup_forward(lk2neg, lk1_out, center_word, &lk2_out);
+    nlk_layer_lookup_forward(nn->neg, lk1_out, center_word, &lk2_out);
 
     /* shortcuts when outside of sigm bounds */
     if(lk2_out >= NLK_MAX_EXP) {
@@ -306,32 +282,31 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
         grad_out = learn_rate;
 
        /* layer2neg backprop, accumulate gradient for all examples */
-        nlk_layer_lookup_backprop_acc(lk2neg, update, lk1_out, center_word, 
-                                      grad_out, grad_acc);
+        nlk_layer_lookup_backprop_acc(nn->neg, lk1_out, center_word, grad_out, 
+                                      grad_acc);
     } else {
         /* inside sigmoid bounds */
         out = nlk_sigmoid(lk2_out);
 
-        /** @section Skipgram NEG Sampling Backprop
-         * Same gradient formula as in HS but this time label is 1
-         * then multiply by learning rate
+        /** NEG Sampling Backprop
+         * Same gradient formula as in HS but here label (truth) is 1
          */
         grad_out = -out * learn_rate;
 
-       /* layer2neg backprop, accumulate gradient for pos example */
-        nlk_layer_lookup_backprop_acc(lk2neg, update, lk1_out, center_word, 
+       /* Backprop and accumulate gradient for pos example */
+        nlk_layer_lookup_backprop_acc(nn->neg, lk1_out, center_word, 
                                       grad_out, grad_acc);
     }
 
 
-    /** @section Negative Examples *
+    /** @section Negative Examples
      */
-    for(size_t nn = 0; nn < negative; nn++) {
+    for(size_t ex = 0; ex < nn->train_opts.negative; ex++) {
         random = nlk_random_xs1024(); 
         if(random != 0) {
-            target = neg_table[random % NLK_NEG_TABLE_SIZE];
+            target = nn->neg_table[random % NLK_NEG_TABLE_SIZE];
         } else {
-            target = nlk_random_xs1024() % (vocab_size - 1) + 1; 
+            target = nlk_random_xs1024() % (nn->words->weights->rows - 1) + 1; 
         }
         if(target == center_word) {
             /* ignore if this is the actual word */
@@ -339,7 +314,7 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
         }
 
         /* forward with lookup for target word */
-        nlk_layer_lookup_forward(lk2neg, lk1_out, target, &lk2_out);
+        nlk_layer_lookup_forward(nn->neg, lk1_out, target, &lk2_out);
 
         /* shortcuts when outside of sigm bounds */
         if(lk2_out >= NLK_MAX_EXP) {
@@ -359,22 +334,19 @@ nlk_w2v_neg(NLK_LAYER_LOOKUP *lk2neg, const bool update,
         }
 
 
-        /* layer2neg backprop, accumulate gradient for all examples */
-        nlk_layer_lookup_backprop_acc(lk2neg, update, lk1_out, target, 
-                                      grad_out, grad_acc);
+        /* Backprop using accumulate gradient for all examples */
+        nlk_layer_lookup_backprop_acc(nn->neg, lk1_out, target, grad_out, 
+                                      grad_acc);
     } /* end of negative examples */
-
 }
+
 
 /**
  * Train CBOW for a series of word contexts
  *
  */
 static void
-nlk_cbow(NLK_LAYER_LOOKUP *word_table, NLK_LAYER_LOOKUP *lk2hs,
-         const bool hs, NLK_LAYER_LOOKUP *lk2neg, 
-         const size_t negative, const size_t *neg_table, 
-         const size_t vocab_size, const nlk_real learn_rate, 
+nlk_cbow(struct nlk_neuralnet_t *nn, const nlk_real learn_rate, 
          const struct nlk_context_t *context,
          NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
@@ -386,54 +358,36 @@ nlk_cbow(NLK_LAYER_LOOKUP *word_table, NLK_LAYER_LOOKUP *lk2hs,
 
     nlk_array_zero(grad_acc);
 
-
-    /** @section CBOW Forward through the first layer
+    /** Word Lookup Forward
      * The context words get forwarded through the first lookup layer
      * and their vectors are averaged.
      */
-    nlk_layer_lookup_forward_lookup_avg(word_table, context->window, 
+    nlk_layer_lookup_forward_lookup_avg(nn->words, context->window, 
                                         context->size, lk1_out);
 
-#ifdef CHECK_NANS
-        if(nlk_array_has_nan(lk1_out)) {
-            NLK_ERROR_VOID("lk1_out has NaNs", NLK_FAILURE);
-        }
-#endif
-
-
-    /** @section CBOW Hierarchical Softmax 
-     */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, true, lk1_out, learn_rate,
-                   context->target, grad_acc);
+    /* Hierarchical Softmax */
+    if(nn->train_opts.hs) {
+        nlk_w2v_hs(nn, lk1_out, learn_rate, context->target, grad_acc);
     } 
 
-    /** @section CBOW NEG Sampling Forward
-     */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, true, neg_table, negative, vocab_size, learn_rate, 
-                    context->target->index, lk1_out, grad_acc);
+    /* NEG Sampling  */
+    if(nn->train_opts.negative) {
+        nlk_w2v_neg(nn, learn_rate, context->target->index, lk1_out, 
+                    grad_acc);
     }
 
-    NLK_ARRAY_CHECK_NAN(grad_acc, "grad_acc has NaNs");
-
-    /** @section Backprop into the first lookup layer
-     * Learn layer1 weights using the accumulated gradient
+    /** Backprop into the words using the accumulated gradient
      */
-    nlk_layer_lookup_backprop_lookup(word_table, context->window, 
+    nlk_layer_lookup_backprop_lookup(nn->words, context->window, 
                                      context->size, grad_acc);
 }
 
 
 /**
  * Train skipgram for a word context
- *
  */
-void
-nlk_skipgram(NLK_LAYER_LOOKUP *word_table, NLK_LAYER_LOOKUP *lk2hs,
-             const bool hs, NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-             const size_t *neg_table, const size_t vocab_size, 
-             const nlk_real learn_rate, 
+static void
+nlk_skipgram(struct nlk_neuralnet_t *nn, const nlk_real learn_rate, 
              const struct nlk_context_t *context,
              NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
@@ -442,184 +396,151 @@ nlk_skipgram(NLK_LAYER_LOOKUP *word_table, NLK_LAYER_LOOKUP *lk2hs,
         nlk_array_zero(grad_acc);
 
 
-        /** @section Skipgram Lookup Layer1 Forward (common)
+        /** Word Lookup
          * Each context word gets forwarded through the first lookup layer
          */
-        nlk_layer_lookup_forward_lookup_one(word_table, context->window[jj], 
+        nlk_layer_lookup_forward_lookup_one(nn->words, context->window[jj], 
                                             lk1_out);
-        /* or equivalently w/o a copy:
+        /* @TODO or equivalently w/o a copy:
          * (but w2v_train needs to save lk1->data pointer)
          * lk1_out->data = &lk1->weights->data[context->window[jj] 
          *                                      lk1->weights->cols];
          */
 
-        /** @section Skipgram Hierarchical Softmax */
-        if(hs) {
-            nlk_w2v_hs(lk2hs, true, lk1_out, learn_rate, context->target, 
+        /* Hierarchical Softmax */
+        if(nn->train_opts.hs) {
+            nlk_w2v_hs(nn, lk1_out, learn_rate, context->target, 
                        grad_acc);
         }
             
-        /** @section Skipgram NEG Sampling
-         */
-        if(negative) {
-            nlk_w2v_neg(lk2neg, true, neg_table, negative, vocab_size, 
-                        learn_rate, context->target->index, lk1_out, 
+        /* NEG Sampling */
+        if(nn->train_opts.negative) {
+            nlk_w2v_neg(nn, learn_rate, context->target->index, lk1_out, 
                         grad_acc);
-        }   /* end of NEG sampling specific code */
-
-#ifdef CHECK_NANS
-        if(nlk_array_has_nan(grad_acc)) {
-            NLK_ERROR_VOID("grad_acc has NaNs", NLK_FAILURE);
         }
-#endif
 
-        /** @section Backprop into the first lookup layer
-         * Learn layer1 weights using the accumulated gradient
+        /** Backprop into the words using the accumulated gradient
          */
-        nlk_layer_lookup_backprop_lookup_one(word_table, context->window[jj], 
+        nlk_layer_lookup_backprop_lookup_one(nn->words, context->window[jj], 
                                              grad_acc);
 
     } /* end of context words */
 }
 
+
 /**
  * Train PVDM (CBOW for PVs) for a context
  */
 void
-nlk_pvdm(NLK_LAYER_LOOKUP *word_table, const bool update_words, 
-         NLK_LAYER_LOOKUP *paragraph_table, const bool update_paragraphs,
-         NLK_LAYER_LOOKUP *lk2hs, const bool hs, NLK_LAYER_LOOKUP *lk2neg, 
-         const size_t negative, const size_t *neg_table, 
-         const bool update_layer2,
-         const size_t vocab_size, const nlk_real learn_rate, 
-         const struct nlk_context_t *context, 
+nlk_pvdm(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
+         const nlk_real learn_rate, const struct nlk_context_t *context, 
          NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
 #ifndef NCHECKS
     if(context->size == 0) {
         NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
     }
-#endif
-
-    nlk_array_zero(grad_acc);
-
-    /* PVDM Forward through the first layer */
-#ifndef NCHEKS
-    /* check that this is a paragraph */
+    /* check that the last context is a paragraph */
     if(!context->is_paragraph[context->size - 1]) {
         NLK_ERROR_VOID("last context element is not a paragraph", NLK_EINVAL);
     }
 #endif
-    nlk_layer_lookup_forward_lookup_one(paragraph_table, 
+
+    nlk_array_zero(grad_acc);
+
+
+    /** PVDM Forward through the first layer 
+     * The window[-1] is the paragraph id and should be ignored 
+     */
+    nlk_layer_lookup_forward_lookup_one(par_table, 
                                         context->window[context->size - 1],
                                         lk1_out);
 
     /* The context words get forwarded through the first lookup layer
      * and their vectors are averaged together with the PV.
-     * The window[0] is the paragraph id and should be ignored as the PV
-     * is provided independently of the rest of the lookup layer
      */
-    nlk_layer_lookup_forward_lookup_avg_p(word_table, context->window, 
+    nlk_layer_lookup_forward_lookup_avg_p(nn->words, context->window, 
                                           context->size - 1, lk1_out);
 
     /* Hierarchical Softmax */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, update_layer2, lk1_out, learn_rate, context->target, 
-                   grad_acc);
+    if(nn->train_opts.hs) {
+        nlk_w2v_hs(nn, lk1_out, learn_rate, context->target, grad_acc);
     } 
 
     /* NEG Sampling */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, update_layer2, neg_table, negative, vocab_size, 
-                    learn_rate, context->target->index, lk1_out, grad_acc);
+    if(nn->train_opts.negative) {
+        nlk_w2v_neg(nn, learn_rate, context->target->index, lk1_out, grad_acc);
     }
 
     /* Backprop into the word vectors: Learn using the accumulated gradient */
-    if(update_words) {
-        nlk_layer_lookup_backprop_lookup(word_table, &context->window[1], 
-                                         context->size - 1, grad_acc);
-    }
+    nlk_layer_lookup_backprop_lookup(nn->words, &context->window[1], 
+                                     context->size - 1, grad_acc);
 
     /* Backprop into the PV: Learn PV weights using the accumulated gradient */
-    if(update_paragraphs) {
-        nlk_layer_lookup_backprop_lookup_one(paragraph_table, 
-                                             context->window[context->size - 1], 
-                                             grad_acc);
-    }
+    nlk_layer_lookup_backprop_lookup_one(par_table, 
+                                         context->window[context->size - 1], 
+                                         grad_acc);
 }
 
 /**
- * PVDM Concat
+ * PVDM Concat (CBOW for PVs concatenating words+pvs instead of averaging)
  * The only thing different from the PVDM function is the use of 
  * nlk_layer_lookup_forward_lookup_concat_p instead of avg_p
  */
 void
-nlk_pvdm_cc(NLK_LAYER_LOOKUP *word_table, const bool update_words,
-            NLK_LAYER_LOOKUP *paragraph_table, const bool update_paragraphs,
-            NLK_LAYER_LOOKUP *lk2hs, const bool hs, 
-            NLK_LAYER_LOOKUP *lk2neg,  const size_t negative, 
-            const size_t *neg_table, const bool update_layer2, 
-            const size_t vocab_size, const nlk_real learn_rate, 
-            const struct nlk_context_t *context,
+nlk_pvdm_cc(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
+            const nlk_real learn_rate, const struct nlk_context_t *context,
             NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
+    const size_t ppos = context->size - 1; /* = number of words */
+
 #ifndef NCHECKS
     if(context->size == 0) {
         NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
     }
-#endif
-
-    nlk_array_zero(grad_acc);
-
-    /* PVDM Forward through the first layer */
-    const size_t ppos = context->size - 1; /* = number of words */
-
-#ifndef NCHEKS
-    /* check that this is a paragraph */
+    /* check that this (last context) is a paragraph */
     if(!context->is_paragraph[ppos]) {
         NLK_ERROR_VOID("last context element is not a paragraph", NLK_EINVAL);
     }
 #endif
 
-    /* first element of lk1_out (position 0) is the PV */
-    nlk_layer_lookup_forward_lookup_one(paragraph_table, context->window[ppos],
+    nlk_array_zero(grad_acc);
+
+    /* PVDM Forward through the first layer
+     * the first element of lk1_out (position 0) is the PV 
+     */
+    nlk_layer_lookup_forward_lookup_one(par_table, context->window[ppos],
                                         lk1_out);
 
     /* The context words get forwarded through the first lookup layer
      * and their vectors are concatenate together with the PV.
      * concat_p starts concatenation into lk1_out at posion 1 (after the PV)
      */
-    nlk_layer_lookup_forward_lookup_concat_p(word_table, context->window, 
+    nlk_layer_lookup_forward_lookup_concat_p(nn->words, context->window, 
                                              ppos, lk1_out);
 
     /* Hierarchical Softmax */
-    if(hs) {
-        nlk_w2v_hs(lk2hs, update_layer2, lk1_out, learn_rate, context->target, 
-                  grad_acc);
+    if(nn->train_opts.hs) {
+        nlk_w2v_hs(nn, lk1_out, learn_rate, context->target, grad_acc);
     } 
 
     /* NEG Sampling */
-    if(negative) {
-        nlk_w2v_neg(lk2neg, update_layer2, neg_table, negative, vocab_size, 
-                    learn_rate, context->target->index, lk1_out, grad_acc);
+    if(nn->train_opts.negative) {
+        nlk_w2v_neg(nn, learn_rate, context->target->index, lk1_out, grad_acc);
     }
 
     /* Backprop into the PV: Learn PV weights using the accumulated gradient. 
      * The PV in the gradient is at position 0
      */
-    if(update_paragraphs) {
-        nlk_layer_lookup_backprop_lookup_concat_one(paragraph_table,
-                                                    context->window[ppos], 
-                                                    0, grad_acc);
-    }
+    nlk_layer_lookup_backprop_lookup_concat_one(par_table, 
+                                                context->window[ppos], 
+                                                0, grad_acc);
 
     /* Backprop into the word vectors: Learn using the accumulated gradient 
      * words in the gradient start at position 1 (after PV)
      */
-    if(update_words) {
-        nlk_layer_lookup_backprop_lookup_concat(word_table, context->window, 
-                                                ppos, 1, grad_acc);
-    }
+    nlk_layer_lookup_backprop_lookup_concat(nn->words, context->window, 
+                                            ppos, 1, grad_acc);
 }
 
 
@@ -629,59 +550,50 @@ nlk_pvdm_cc(NLK_LAYER_LOOKUP *word_table, const bool update_words,
  * the PV.
  */
 void
-nlk_pvdbow(NLK_LAYER_LOOKUP *word_table, const bool update_words,
-           NLK_LAYER_LOOKUP *paragraph_table, const bool update_paragraphs,
-           NLK_LAYER_LOOKUP *lk2hs, const bool hs, 
-           NLK_LAYER_LOOKUP *lk2neg, const size_t negative,
-           const size_t *neg_table, const bool update_layer2,
-           const size_t vocab_size, const nlk_real learn_rate, 
-           const struct nlk_context_t *context, 
+nlk_pvdbow(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table, 
+           const nlk_real learn_rate, const struct nlk_context_t *context, 
            NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
     /* for each context word jj */
     for(size_t jj = 0; jj < context->size; jj++) {
         nlk_array_zero(grad_acc);
-        
+
+        /** PVDM Lookup Words or Paragraphs
+         * Each context word gets forwarded through the first lookup layer
+         */
         if(context->is_paragraph[jj]) {
-            nlk_layer_lookup_forward_lookup_one(paragraph_table, 
+            nlk_layer_lookup_forward_lookup_one(par_table, 
                                                 context->window[jj], lk1_out);
         } else {
-            /** @section PVDM Lookup Layer1 Forward for words (common)
-             * Each context word gets forwarded through the first lookup layer
-             */
-            nlk_layer_lookup_forward_lookup_one(word_table, 
+            nlk_layer_lookup_forward_lookup_one(nn->words, 
                                                 context->window[jj], lk1_out);
         }
 
-        /** @section Skipgram Hierarchical Softmax */
-        if(hs) {
-            nlk_w2v_hs(lk2hs, update_layer2, lk1_out, learn_rate, 
-                       context->target, grad_acc);
+        /* Hierarchical Softmax */
+        if(nn->train_opts.hs) {
+            nlk_w2v_hs(nn, lk1_out, learn_rate, context->target, grad_acc);
         }
             
-        /** @section Skipgram NEG Sampling
-         */
-        if(negative) {
-            nlk_w2v_neg(lk2neg, update_layer2, neg_table, negative, vocab_size, 
-                        learn_rate, context->target->index, lk1_out, grad_acc);
-        }   /* end of NEG sampling specific code */
+        /* NEG Sampling */
+        if(nn->train_opts.negative) {
+            nlk_w2v_neg(nn, learn_rate, context->target->index, lk1_out, 
+                        grad_acc);
+        }
 
-        NLK_ARRAY_CHECK_NAN(grad_acc, "grad_acc has NaNs");
-
-        /** @section Backprop into the first lookup layer
-         * Learn layer1 weights using the accumulated gradient
+        /** Backprop into Words or Paragraphs using the accumulated gradient
          */
-        if(context->is_paragraph[jj] == true && update_paragraphs) { 
-           nlk_layer_lookup_backprop_lookup_one(paragraph_table, 
+        if(context->is_paragraph[jj] == true) { 
+           nlk_layer_lookup_backprop_lookup_one(par_table, 
                                                 context->window[jj], 
                                                 grad_acc);
-        } else if(context->is_paragraph[jj] == false && update_words) {
-            nlk_layer_lookup_backprop_lookup_one(word_table, 
+        } else if(context->is_paragraph[jj] == false) {
+            nlk_layer_lookup_backprop_lookup_one(nn->words, 
                                                  context->window[jj], 
                                                  grad_acc);
         }
     } /* end of context words */
 }
+
 
 /**
  * Train or update a word2vec model
@@ -696,8 +608,7 @@ nlk_pvdbow(NLK_LAYER_LOOKUP *word_table, const bool update_words,
  */
 void
 nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus, 
-        const bool update_words, const bool update_paragraphs, 
-        const bool update_layer2, int num_threads, const bool verbose)
+        const bool verbose)
 {
     /*goto_set_num_threads(1);*/
 
@@ -706,30 +617,18 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     const bool hs = nn->train_opts.hs;
     const unsigned int negative = nn->train_opts.negative;
     const size_t window = nn->train_opts.window;
-    const float sample_rate = nn->train_opts.sample;
     nlk_real learn_rate = nn->train_opts.learn_rate;
     unsigned int epochs = nn->train_opts.iter;
 
     /* shortcuts */
     struct nlk_vocab_t **vocab = &nn->vocab;
-    struct nlk_layer_lookup_t *word_table = nn->words;
-    struct nlk_layer_lookup_t *paragraph_table = nn->paragraphs;
+    size_t layer_size2 = 0;
 
-    size_t layer_n = 0;
-    size_t layer_size2;
-    struct nlk_layer_lookup_t *lkhs = NULL;
     if(hs) {
-        lkhs = nn->layers[layer_n].lk;
-        layer_n++;
-        layer_size2 = lkhs->weights->cols;
+        layer_size2 = nn->hs->weights->cols;
+    } else if(negative) {
+        layer_size2 = nn->neg->weights->cols;
     }
-    struct nlk_layer_lookup_t *lkneg = NULL;
-    if(negative) {
-        lkneg = nn->layers[layer_n].lk;
-        layer_size2 = lkneg->weights->cols;
-    }
-
-    const size_t vocab_size = nlk_vocab_size(vocab);
 
     /* for vocabularize we need the real total number of words in our corpus */
     const size_t train_words = corpus->count;
@@ -764,10 +663,9 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     nlk_random_init_xs1024(nlk_random_seed());
 
     /* neg table for negative sampling */
-    size_t *neg_table = NULL;
-    if(negative) {
-        neg_table = nlk_vocab_neg_table_create(vocab, NLK_NEG_TABLE_SIZE, 
-                                               0.75);
+    if(negative && nn->neg_table == NULL) {
+        nn->neg_table = nlk_vocab_neg_table_create(vocab, NLK_NEG_TABLE_SIZE, 
+                                                   0.75);
     }
 
     /* time keeping */
@@ -775,10 +673,9 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     nlk_tic_reset();
     nlk_tic(NULL, false);
 
+    /* threads */
+    int num_threads = omp_get_num_procs();
 
-    if(num_threads <= 0) {
-        num_threads = omp_get_num_procs();
-    }
 
     /** @section Thread Private initializations 
      * Variables declared in this section are thread private and thus 
@@ -877,9 +774,9 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
                 continue;
             }
             
-            /* subsample */
-            nlk_vocab_line_subsample(line, corpus->count, sample_rate, 
-                                     line_sample);
+            /* subsample: use NN word count instead of corpus->count */
+            nlk_vocab_line_subsample(line, nn->train_opts.word_count, 
+                                     nn->train_opts.sample, line_sample);
             if(line_sample->len < 2) {
                 line_cur++;
                 continue;
@@ -895,47 +792,35 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
 
             /** @subsection Algorithm Parallel Loop Over Contexts
              */
-            switch(model_type) {
+            switch(nn->train_opts.model_type) {
                 case NLK_SKIPGRAM:
                     for(ex = 0; ex < n_examples; ex++) {
-                        nlk_skipgram(word_table, lkhs, hs, lkneg, negative, 
-                                     neg_table, vocab_size, learn_rate, 
-                                     contexts[ex], grad_acc, lk1_out);
+                        nlk_skipgram(nn, learn_rate, contexts[ex], grad_acc, 
+                                     lk1_out);
                     }
                     break;
                 case NLK_CBOW:
                     for(ex = 0; ex < n_examples; ex++) {
-                        nlk_cbow(word_table, lkhs, hs, lkneg, negative, 
-                                 neg_table, vocab_size, learn_rate, 
-                                 contexts[ex], grad_acc, lk1_out);
-
+                        nlk_cbow(nn, learn_rate, contexts[ex], grad_acc, 
+                                lk1_out);
                     }
                     break;
                 case NLK_PVDBOW:
                     for(ex = 0; ex < n_examples; ex++) {
-                        nlk_pvdbow(word_table, update_words, paragraph_table, 
-                                   update_paragraphs, lkhs, hs, lkneg, 
-                                   negative, neg_table, update_layer2,
-                                   vocab_size, learn_rate, contexts[ex], 
-                                   grad_acc, lk1_out);
+                        nlk_pvdbow(nn, nn->paragraphs, learn_rate, 
+                                   contexts[ex], grad_acc, lk1_out);
                     }
                     break;
                 case NLK_PVDM:
                     for(ex = 0; ex < n_examples; ex++) {
-                        nlk_pvdm(word_table, update_words, paragraph_table, 
-                                 update_paragraphs, lkhs, hs, lkneg, negative, 
-                                 neg_table, update_layer2, vocab_size, 
-                                 learn_rate, contexts[ex], grad_acc, lk1_out);
+                        nlk_pvdm(nn, nn->paragraphs, learn_rate, contexts[ex], 
+                                grad_acc, lk1_out);
                     }
                     break;
                 case NLK_PVDM_CONCAT:
                     for(ex = 0; ex < n_examples; ex++) {
-                        nlk_pvdm_cc(word_table, update_words, paragraph_table, 
-                                    update_paragraphs, lkhs, hs, lkneg, 
-                                    negative, neg_table, update_layer2,
-                                    vocab_size, learn_rate, contexts[ex], 
-                                    grad_acc, lk1_out);
-
+                        nlk_pvdm_cc(nn, nn->paragraphs, learn_rate, 
+                                    contexts[ex], grad_acc, lk1_out);
                     }
                     break;
                 default:
@@ -960,26 +845,11 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
 
     /** @section End
      */
+    free(nn->neg_table);
+    nn->neg_table = NULL;
     nlk_tic_reset();
-    if(negative) {
-        free(neg_table);
-    }
 }
 
-/**
- * Train a word2vec model (shortcut)
- *
- * @param nn                the neural network
- * @param train_file_path   the path of the train file
- * @param epochs
- * @param verbose
- */
-void
-nlk_w2v_train(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus, 
-              int verbose)
-{
-    nlk_w2v(nn, corpus, true, true, true, 0, verbose);
-}
 
 /**
  * Export word-vector pairs in word2vec text compatible format
