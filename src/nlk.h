@@ -1,7 +1,7 @@
 /******************************************************************************
  * NLK - Neural Language Kit
  *
- * Copyright (c) 2014-2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+ * Copyright (c) 2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to 
@@ -23,19 +23,16 @@
  *****************************************************************************/
 
 
-/** @file nlk_learn_rate.h
- * Learning Rate update function definitions.
+/** @file nlk.h
+ * NLK common definitions
  */
 
+#ifndef __NLK_H__
+#define __NLK_H__
 
-#ifndef __NLK_LEARN_RATE_H__
-#define __NLK_LEARN_RATE_H__
+#include <stdbool.h>
 
-
-#include <stdint.h>
-
-#include "nlk_array.h"
-
+#include "nlk_layer_lookup.h"
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS
@@ -48,14 +45,20 @@
 #endif
 __BEGIN_DECLS
 
-nlk_real nlk_learn_rate_w2v(nlk_real, const nlk_real, const unsigned int,
-                            const uint64_t, const uint64_t);
-nlk_real nlk_learn_rate_interval(nlk_real, const unsigned int, 
-                                 const unsigned int);
-nlk_real nlk_learn_rate_decay(nlk_real, const nlk_real);
+/** @enum NLK_FORMAT
+ * File formats for saving weights
+ */
+enum nlk_file_format_t {
+    NLK_FILE_W2V_TXT = 0,
+    NLK_FILE_W2V_BIN = 1,
+    NLK_FILE_BIN = 2,
+    NLK_FILE_TXT = 3,
+};
+typedef enum nlk_file_format_t NLK_FILE_FORMAT;
 
-nlk_real nlk_learn_rate_bol(nlk_real, nlk_real, nlk_real);
+NLK_FILE_FORMAT nlk_format(const char *);
+void nlk_init();
 
 
 __END_DECLS
-#endif /* __NLK_ARRAY_H__ */
+#endif /* __NLK_H__ */

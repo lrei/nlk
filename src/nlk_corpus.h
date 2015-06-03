@@ -1,7 +1,7 @@
 /******************************************************************************
  * NLK - Neural Language Kit
  *
- * Copyright (c) 2014-2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+ * Copyright (c) 2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to 
@@ -23,19 +23,14 @@
  *****************************************************************************/
 
 
-/** @file nlk_learn_rate.h
- * Learning Rate update function definitions.
+/** @file nlk_corpus.h
+ * Defines the corpus handling structures and functions
  */
 
+#ifndef __NLK_CORPUS_H__
+#define __NLK_CORPUS_H__
 
-#ifndef __NLK_LEARN_RATE_H__
-#define __NLK_LEARN_RATE_H__
-
-
-#include <stdint.h>
-
-#include "nlk_array.h"
-
+#include "nlk_vocabulary.h"
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS
@@ -48,14 +43,22 @@
 #endif
 __BEGIN_DECLS
 
-nlk_real nlk_learn_rate_w2v(nlk_real, const nlk_real, const unsigned int,
-                            const uint64_t, const uint64_t);
-nlk_real nlk_learn_rate_interval(nlk_real, const unsigned int, 
-                                 const unsigned int);
-nlk_real nlk_learn_rate_decay(nlk_real, const nlk_real);
 
-nlk_real nlk_learn_rate_bol(nlk_real, nlk_real, nlk_real);
+/** @struct nlk_vocab_corpus_t
+ *
+ */
+struct nlk_corpus_t {
+    struct nlk_line_t   *lines;     /**< the vocabularized lines */
+    size_t               len;       /**< size of the lines array */
+    uint64_t             count;     /**< total word count */
+};
+
+
+struct nlk_corpus_t *nlk_corpus_read(char *, struct nlk_vocab_t **);
+
+uint64_t nlk_corpus_subset_count(const struct nlk_corpus_t *, const size_t *,
+                                 const size_t);
 
 
 __END_DECLS
-#endif /* __NLK_ARRAY_H__ */
+#endif /* __NLK_CORPUS_H__ */

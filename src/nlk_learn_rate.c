@@ -43,9 +43,9 @@
  * @return  new learn rate
  */
 nlk_real
-nlk_learn_rate_w2v_update(nlk_real learn_rate, nlk_real start_learn_rate,
-                          size_t epochs, size_t word_count_actual, 
-                          size_t train_words)
+nlk_learn_rate_w2v(nlk_real learn_rate, const nlk_real start_learn_rate,
+                   const size_t epochs, const uint64_t word_count_actual, 
+                   const uint64_t train_words)
 {
     learn_rate = start_learn_rate * (1 - word_count_actual / 
                                      (nlk_real) (epochs * train_words + 1));
@@ -57,24 +57,33 @@ nlk_learn_rate_w2v_update(nlk_real learn_rate, nlk_real start_learn_rate,
     return learn_rate;
 }
 
+
 /**
- * Step decrease learning rate update function
+ * Interval step decrease learning rate update function
  */
-
 nlk_real
-nlk_learn_rate_step_dec_update(nlk_real learn_rate, const unsigned int step,
-                               const unsigned int steps)
+nlk_learn_rate_interval(nlk_real learn_rate, const unsigned int step,
+                        const unsigned int total_steps)
 {
-    return ((learn_rate - 0.0001) / (steps - step)) + 0.0001;
-
+    return ((learn_rate - 0.0001) / (total_steps - step)) + 0.0001;
 }
+
+
+/**
+ * Learn Rate Decay update function
+ */
+nlk_real
+nlk_learn_rate_decay(nlk_real learn_rate, const nlk_real decay)
+{
+    return learn_rate - (learn_rate * learn_rate_decay);
+}
+
 
 /**
  * Bold learning rate update function
  */
 nlk_real
-nlk_learn_rate_bold_update(nlk_real learn_rate, nlk_real err_previous, 
-                         nlk_real err)
+nlk_learn_rate_bold(nlk_real learn_rate, nlk_real err_previous, nlk_real err)
 {
     nlk_real err_diff;
     /* kind of bold learning rate update */

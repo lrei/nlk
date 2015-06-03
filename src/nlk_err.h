@@ -42,6 +42,7 @@
 __BEGIN_DECLS
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 
@@ -140,20 +141,41 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
  *  @warn requires a error label
  *  @note meant to use in situations were NLK_ERROR is unnecessary
  */
-#define nlk_check(A, M, ...) \
+#define nlk_assert(A, M, ...) \
     if(!(A)) { \
-        log_err(M, ##__VA_ARGS__); \
+        nlk_log_err(M, ##__VA_ARGS__); \
         errno=0; \
         goto error; \
     }
 
-/* same as above but only prints in DEBUG mode (NDEBUG not defined) */
-#define nlk_check_debug(A, M, ...) \
+/* same as nlk_assert but only prints in DEBUG mode (NDEBUG not defined) */
+#define nlk_assert_debug(A, M, ...) \
     if(!(A)) { \
         nlk_debug(M, ##__VA_ARGS__); \
         errno=0; \
         goto error; \
     }
+
+/* same as nlk_assert but only defined if CHECK mode (NCHECKS not defined) */
+#ifdef NCHECKS
+#define nlk_check(A, M, ...)
+#else
+#define nlk_check(A, M, ...) \
+    if(!(A)) { \
+        nlk_log_err(M, ##__VA_ARGS__); \
+        errno=0; \
+        goto error; \
+    }
+#endif
+
+
+/* same as nlk_assert() but without printing */
+#define nlk_assert_silent(A) \
+    if(!(A)) { \
+        errno=0; \
+        goto error; \
+    }
+
 
 /* OMP DEFS FOR DEBUG without OMP (NOMP flag) */
 #ifdef NOMP

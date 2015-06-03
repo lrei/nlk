@@ -41,6 +41,7 @@
 
 #include "nlk_err.h"
 #include "nlk_random.h"
+#include "nlk_math.h"
 #include "nlk_array.h"
 
 
@@ -91,7 +92,7 @@ nlk_print_array(const struct nlk_array_t *array, const size_t row_limit,
 
 
 /**
- * Check if array has any NaN value
+ * Check if array has any NaN or inf value
  *
  * @param array the array to check
  *
@@ -100,7 +101,7 @@ nlk_print_array(const struct nlk_array_t *array, const size_t row_limit,
 bool
 nlk_array_has_nan(const struct nlk_array_t *array) {
     for(size_t ii = 0; ii < array->rows * array->cols; ii++) {
-        if(isnan(array->data[ii])) {
+        if(!isfinite(array->data[ii])) {
             return true;
         }
     }
@@ -108,7 +109,7 @@ nlk_array_has_nan(const struct nlk_array_t *array) {
 }
 
 /**
- * Check if array has any NaN value at a row
+ * Check if array has any NaN or inf value at a row
  *
  * @param array the array to check
  * @param row   the row number to check
@@ -118,7 +119,7 @@ nlk_array_has_nan(const struct nlk_array_t *array) {
 bool
 nlk_array_has_nan_row(const struct nlk_array_t *array, const size_t row) {
     for(size_t ii = 0; ii < array->cols; ii++) {
-        if(isnan(array->data[row * array->cols + ii])) {
+        if(!isfinite(array->data[row * array->cols + ii])) {
             return true;
         }
     }
@@ -127,7 +128,7 @@ nlk_array_has_nan_row(const struct nlk_array_t *array, const size_t row) {
 
 
 /**
- * Check if array has any NaN value
+ * Check if array has any NaN or inf value
  *
  * @param array the array to check
  * @param length of the array to check
@@ -137,7 +138,7 @@ nlk_array_has_nan_row(const struct nlk_array_t *array, const size_t row) {
 bool
 nlk_carray_has_nan(const nlk_real *carray, const size_t len) {
     for(size_t ii = 0; ii < len; ii++) {
-        if(isnan(carray[ii])) {
+        if(!isfinite(carray[ii])) {
             return true;
         }
     }
@@ -275,11 +276,11 @@ nlk_array_resize(struct nlk_array_t *old, const size_t rows, const size_t cols)
  * @return the copy
  *
  * @note
- * iff n_rows > source->rows then n_rows = source->rows
+ * if n_rows > source->rows then n_rows = source->rows
  * @endnote
  */
 struct nlk_array_t *
-nlk_array_create_copy(const struct nlk_array_t *source, size_t n_rows)
+nlk_array_create_copy_limit(const struct nlk_array_t *source, size_t n_rows)
 {
     if(n_rows == 0) {
         n_rows = source->rows;
@@ -297,6 +298,24 @@ nlk_array_create_copy(const struct nlk_array_t *source, size_t n_rows)
 
     return dest;
 }
+
+/**
+ * Create a copy of an array.
+ *
+ * @param source    array to copy
+ *
+ * @return the copy
+ *
+ * @note
+ * if n_rows > source->rows then n_rows = source->rows
+ * @endnote
+ */
+struct nlk_array_t *
+nlk_array_create_copy(const struct nlk_array_t *source)
+{
+     return nlk_array_create_copy_limit(source, source->rows);
+}
+
 
 
 /**
@@ -335,27 +354,13 @@ nlk_array_copy_row(struct nlk_array_t *dest, const size_t dest_row,
         /* unreachable */
     }
 #endif
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan_row(source, source_row)) {
-        NLK_ERROR("NaN in argument", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
 
-    
+
     cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
                 &dest->data[dest_row * dest->cols], 1);
 
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(dest)) {
-        NLK_ERROR("NaN in result", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
+
+    NLK_ARRAY_CHECK_NAN_ROW(source, source_row, "NaN in source");
 
     return NLK_SUCCESS;
 }
@@ -372,6 +377,8 @@ nlk_array_copy_row_carray(struct nlk_array_t *array, const size_t row,
 #endif
 
     nlk_carray_copy_carray(carray, &array->data[row*array->cols], array->cols);
+
+    NLK_ARRAY_CHECK_NAN_ROW(array, row, "NaN in source");
 }
 
 /**
@@ -404,10 +411,15 @@ nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim,
                   "than the source array", NLK_EBADLEN);
         /* unreachable */
     }
-
+#else
+    (void) dim; /* avoid unused warning */
 #endif
     cblas_scopy(source->cols, &source->data[source_row * source->cols], 1, 
                 dest->data, 1);
+
+
+    NLK_ARRAY_CHECK_NAN_ROW(source, source_row, "NaN in source");
+
 
     return NLK_SUCCESS;
 }
@@ -432,26 +444,24 @@ nlk_array_copy(struct nlk_array_t *dest, const struct nlk_array_t *source)
 
 #ifndef NCHECKS
     if(dest->rows != source->rows || dest->cols != source->cols) {
+        nlk_debug("dest = [%zu, %zu], source = [%zu, %zu]", 
+                  dest->rows, dest->cols, source->rows, source->cols);
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
         /* unreachable */
     }
 #endif
 
     cblas_scopy(len, source->data, 1, dest->data, 1);
+
+    NLK_ARRAY_CHECK_NAN(source, "NaN in source");
 }
 
 void
 nlk_carray_copy_carray(nlk_real *dest, const nlk_real *source, size_t length)
 {
-#ifdef CHECK_NANS
-    /* check source */
-    if(nlk_carray_has_nan(source, length)) {
-        NLK_ERROR_VOID("NaNs in copy source", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-
     cblas_scopy(length, source, 1, dest, 1);
+
+    NLK_CARRAY_CHECK_NAN(source, length, "NaN in source");
 }
 
 /**
@@ -751,7 +761,7 @@ nlk_array_load_text(FILE *fp)
 {
     size_t rows;
     size_t cols;
-    size_t ret;
+    int ret;
     struct nlk_array_t *array;
 
     /* read header */
@@ -829,6 +839,20 @@ nlk_array_scale(const nlk_real scalar, struct nlk_array_t *array)
 }
 
 /**
+ * Add a constant to an array
+ */
+void
+nlk_array_add_constant(const nlk_real constant, struct nlk_array_t *array)
+{
+    const size_t len = array->rows * array->cols;
+
+/* #pragma omp parallel for */
+    for(size_t ii = 0; ii < len; ii++) {
+        array->data[ii] += constant;
+    }
+}
+
+/**
  * Normalizes the row vectors of a matrix
  *
  * @param m     the matrix
@@ -867,11 +891,11 @@ nlk_array_normalize_vector(struct nlk_array_t *v)
  *
  * @param v1    the first vector
  * @param v2    the second vector
- * @param dim   0 (for row vectors) or 1 (for column vectors)
+ * @param dim   0 (for row vectors) or 1 (for column vectors), -1 (dont care)
  */
 nlk_real
-nlk_array_dot(const struct nlk_array_t *v1, struct nlk_array_t *v2, 
-              uint8_t dim)
+nlk_array_dot(const struct nlk_array_t *v1, const struct nlk_array_t *v2, 
+              int8_t dim)
 {
     nlk_real res;
 
@@ -882,13 +906,17 @@ nlk_array_dot(const struct nlk_array_t *v1, struct nlk_array_t *v2,
     } else if(dim == 1 && v1->cols != v2->cols) {
         NLK_ERROR("array dimensions (cols) do not match.", NLK_EBADLEN);
         /* unreachable */
-    } 
-    else 
+    } else if(dim < 0 && v1->cols * v1->rows != v2->cols * v2->rows) {
+        NLK_ERROR("array dimensions do not match.", NLK_EBADLEN);
+        /* unreachable */
+    } else 
 #endif
     if(dim == 0) {
         res = cblas_sdot(v1->rows, v1->data, 1, v2->data, 1);
     } else if(dim == 1) {
         res = cblas_sdot(v1->cols, v1->data, 1, v2->data, 1);
+    } else if(dim < 0) {
+        res = cblas_sdot(v1->cols * v1->rows, v1->data, 1, v2->data, 1);
     } else {
         NLK_ERROR("invalid array dimension", NLK_EINVAL);
         /* unreachable */
@@ -928,11 +956,7 @@ nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1,
     res = cblas_sdot(m1->cols, &m1->data[row1 * m1->cols], 1, 
                      &m2->data[row2 * m2->cols], 1);
 
-#ifdef CHECK_NANS
-    if(isnan(res)) {
-        NLK_ERROR("NaN in result", NLK_ENAN);
-    }
-#endif
+    NLK_CHECK_NAN(res, "NaN in result");
 
     return res;
 }
@@ -948,25 +972,13 @@ nlk_array_row_dot(const struct nlk_array_t *m1, size_t row1,
 nlk_real
 nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
 {
-    nlk_real res;
+    nlk_real res = cblas_sdot(v1->rows, v1->data, 1, carr, 1);
 
-#ifdef CHECK_NANS
-    if(nlk_array_has_nan(v1)) {
-        NLK_ERROR("NaN in array", NLK_ENAN);
-    }
 
-    if(nlk_carray_has_nan(carr, v1->rows)) {
-        NLK_ERROR("NaN in carray", NLK_ENAN);
-    }
-#endif
+    NLK_ARRAY_CHECK_NAN(v1, "NaN in array");
+    NLK_CARRAY_CHECK_NAN(carr, v1->rows, "NaN in carray");
+    NLK_CHECK_NAN(res, "NaN in result");
 
-    res = cblas_sdot(v1->rows, v1->data, 1, carr, 1);
-
-#ifdef CHECK_NANS
-    if(isnan(res)) {
-        NLK_ERROR("NaN in result", NLK_ENAN);
-    }
-#endif
 
     return res;
 }
@@ -989,14 +1001,31 @@ nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 
     cblas_saxpy(a1->rows * a1->cols, 1, a1->data, 1, a2->data, 1); 
 
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(a2)) {
-        NLK_ERROR_VOID("NaN in result", NLK_ENAN);
+    NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
+}
+
+/**
+ * Array (vector, matrix) scaled element-wise addition (?saxpy)
+ * a2[i] = (s * a1[i]) + a2[i]. 
+ * 
+ * @param s     scalar
+ * @param a1    array
+ * @param a2    array, will be overwritten with the result
+ */
+void
+nlk_array_scaled_add(const nlk_real s, const struct nlk_array_t *a1, 
+                    struct nlk_array_t *a2)
+{
+#ifndef NCHECKS
+    if(a1->cols != a2->cols || a1->rows != a2->rows) {
+        NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
+        /* unreachable */
     }
 #endif
-#endif
 
+    cblas_saxpy(a1->rows * a1->cols, s, a1->data, 1, a2->data, 1); 
+
+    NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
 }
 
 /**
@@ -1112,7 +1141,6 @@ nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m,
                           const size_t row, const unsigned int dim, 
                           struct nlk_array_t *v)
 {
-    
 #ifndef NCHECKS
     if(dim == 0 && v->rows != m->cols) {
         NLK_ERROR_VOID("vector columns do not match matrix columns.", 
@@ -1124,26 +1152,16 @@ nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m,
                        NLK_EBADLEN);
         /* unreachable */
     }
+#else
+    (void) dim; /* avoid unused warning */
 #endif
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(m)) {
-        NLK_ERROR_VOID("NaN in argument", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
+
 
     cblas_saxpy(m->cols, s, &m->data[m->cols * row], 1, v->data, 1);
 
-#ifdef CHECK_NANS
-#if (CHECK_NANS > 1)
-    if(nlk_array_has_nan(v)) {
-        NLK_ERROR_VOID("NaN in result", NLK_ENAN);
-        /* unreachable */
-    }
-#endif
-#endif
+
+    NLK_ARRAY_CHECK_NAN_ROW(m, row, "NaN in matrix row");
+    NLK_ARRAY_CHECK_NAN(v, "NaN in result");
 }
 
 /**
@@ -1283,7 +1301,7 @@ nlk_carray_sum(const nlk_real *carr, size_t len)
  *
  * @param arr the array
  *
- * @return the sum of c array values
+ * @return the sum of array values
  */
 nlk_real
 nlk_array_sum(const struct nlk_array_t *arr)
@@ -1291,6 +1309,27 @@ nlk_array_sum(const struct nlk_array_t *arr)
     size_t len = arr->rows * arr->cols;
    
     return nlk_carray_sum(arr->data, len);
+}
+
+/**
+ * Sum of squared array values
+ *
+ * @param arr the array
+ *
+ * @return the sum of squared array elements
+ */
+nlk_real
+nlk_array_squared_sum(const struct nlk_array_t *arr)
+{
+    size_t len = arr->rows * arr->cols;
+    nlk_real res = 0;
+    
+    do {
+        len--;
+        res += arr->data[len] * arr->data[len];
+    } while(len > 0);
+
+    return res;
 }
 
 
@@ -1373,13 +1412,17 @@ nlk_vector_transposed_multiply_add(const struct nlk_array_t *v1,
 {
 #ifndef NCHECKS
     if(v1->rows != m->rows) {
+        nlk_debug("m = [%zu, %zu], v1 = [%zu, %zu]", m->rows, m->cols,
+                  v1->rows, v1->cols);
         NLK_ERROR_VOID("vector v1 length must be equal to number of matrix "
                        "rows", NLK_EBADLEN);
         /* unreachable */
     }
     if(v2->rows != m->cols) {
-        NLK_ERROR_VOID("vector v2 length must be equal to number of matrix "
-                       "columns", NLK_EBADLEN);
+        nlk_debug("m = [%zu, %zu], v2 = [%zu, %zu]", m->rows, m->cols,
+                  v2->rows, v2->cols);
+        NLK_ERROR_VOID("vector v2 length (row array) must be equal to number "
+                       "of matrix columns", NLK_EBADLEN);
         /* unreachable */
     }
 #endif
@@ -1416,13 +1459,13 @@ nlk_matrix_vector_multiply_add(const struct nlk_array_t *m,
                        "matrix columns", NLK_EBADLEN);
     }
     if(trans == NLK_TRANSPOSE && v2->rows != m->cols) {
-        NLK_ERROR_VOID("result vector (v2) length must be equal to the number "
-                       "of matrix columns", NLK_EBADLEN);
+        NLK_ERROR_VOID("result vector (row array v2) length must be equal to "
+                       "the number of matrix columns", NLK_EBADLEN);
         /* unreachable */
     }
     if(trans == NLK_NOTRANSPOSE && v2->rows != m->rows) {
-        NLK_ERROR_VOID("result vector (v2) length must be equal to the number " 
-                       "of matrix rows", NLK_EBADLEN);
+        NLK_ERROR_VOID("result vector (row array v2) length must be equal to "
+                       "the number of matrix rows", NLK_EBADLEN);
         /* unreachable */
     }
 #endif
@@ -1455,59 +1498,6 @@ nlk_carray_init_sigmoid(nlk_real *carray) {
     }
 }
 
-/**
- * Create a sigmoid table for computing 1/(exp(-x) + 1)
- * 
- * @param size      table size
- *
- * @return  returns the sigmoid table or NULL
- *
- * @note
- * Learned this little performance trick from word2vec.
- * Another trick (not used) is Leon Bottou approx exp(-x) in Torch7
- * @endnote
- */
-nlk_real *
-nlk_table_sigmoid_create()
-{
-    nlk_real *table;
-
-    /* allocate array and set fields */
-    table = malloc(NLK_SIGMOID_TABLE_SIZE * sizeof(nlk_real));
-    if(table == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for sigmoid table",
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
-
-    /* precompute the values */
-    nlk_carray_init_sigmoid(table);
-
-    return table;
-}
-
-/**
- * Calculates the sigmoid 1/(exp(-x) + 1) for a real valued x.
- * 
- * @param sigmoid_table     a precomputed sigmoid table
- * @param x                 the real valued x for calculating its sigmoid
- *
- * @return the sigmoid of x
- */
-nlk_real
-nlk_sigmoid_lookup(const nlk_real *sigmoid_table, const nlk_real x) 
-{
-    int idx;
-
-    if(sigmoid_table == NULL) {
-        return 1.0 / (1.0 + exp(-x));
-    }
-
-    idx = ((x + NLK_MAX_EXP) * 
-           ((double) NLK_SIGMOID_TABLE_SIZE / (nlk_real) NLK_MAX_EXP / 2.0));
-
-    return sigmoid_table[idx];
-}
 
 /**
  * Calculates the elemtwise sigmoid for an entire array
@@ -1518,22 +1508,14 @@ nlk_sigmoid_lookup(const nlk_real *sigmoid_table, const nlk_real x)
  * @return NLK_SUCCESS or NLK_E* on error
  */
 int
-nlk_sigmoid_array(const nlk_real *sigmoid_table, struct nlk_array_t *arr)
+nlk_sigmoid_array(struct nlk_array_t *arr)
 {
     const size_t len = arr->rows * arr->cols;
 
 
     /*#pragma omp parallel for*/
     for(size_t ii = 0; ii < len; ii++) {
-        if(arr->data[ii] >= NLK_MAX_EXP) {
-            arr->data[ii] = 1;
-        } else if(arr->data[ii]  <= -NLK_MAX_EXP) {
-            arr->data[ii] = 0;
-        }
-        else {
-            arr->data[ii] = nlk_sigmoid_lookup(sigmoid_table, arr->data[ii]);
-        }
-
+        arr->data[ii] = nlk_sigmoid(arr->data[ii]);
     }
 
     return NLK_SUCCESS;
@@ -1563,7 +1545,82 @@ nlk_array_log(const struct nlk_array_t *input, struct nlk_array_t *output)
 
     /*#pragma omp parallel for*/
     for(size_t ii = 0; ii < len; ii++) {
-        output->data[ii] = log(input->data[ii]);
+        output->data[ii] = nlk_log_approx(input->data[ii]);
     }
+}
 
+/**
+ * Position of maximum value in a row vector (array)
+ *
+ * @param v the row vector
+ *
+ * @return row number (position) of the maximum value in the array
+ */
+size_t
+nlk_array_max_i(const NLK_ARRAY *v)
+{
+#ifndef NCHECKS
+    if(v->cols != 1) {
+        NLK_ERROR("not a row array", NLK_EBADLEN);
+        /* unreachable */
+    }
+#endif
+
+    size_t idx = v->rows - 1;   /* -1 is the last valid index */
+    /* the initial values */
+    nlk_real max = v->data[idx];
+    size_t max_i = idx;
+
+    do {
+        idx--;
+        if(v->data[idx] > max) {
+            max = v->data[idx];
+            max_i = idx;
+        }
+    } while(idx > 0);
+
+    return max_i;
+}
+
+
+/**
+ * Max value in an array
+ *
+ * @param array the array
+ *
+ * @return the maximum value of the array
+ */
+nlk_real
+nlk_array_max(const NLK_ARRAY *array)
+{
+    size_t idx = array->rows * array->cols - 1; /* index not length */
+    nlk_real max = array->data[idx];            /* initial value */
+    do {
+        idx--;
+        if(array->data[idx] > max) {
+            max = array->data[idx];
+        }
+    } while(idx > 0);
+
+    return max;
+}
+
+/**
+ * Rescale an array by replacing every element e with e = max_e - e
+ *
+ * @param array the array to rescale (overwritten)
+ *
+ * @return the max value
+ */
+nlk_real
+nlk_array_rescale_max_minus(NLK_ARRAY *array)
+{
+    const nlk_real max = nlk_array_max(array);
+    size_t idx = array->rows * array->cols;
+    do {
+        idx--;
+        array->data[idx] = max - array->data[idx];
+    } while(idx > 0);   
+
+    return max;
 }

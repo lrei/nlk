@@ -29,11 +29,58 @@
 
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "nlk_err.h"
+#include "nlk_layer_lookup.h"
 #include "nlk_layer_linear.h"
 
 #include "nlk_neuralnet.h"
+
+
+/**
+ * Is this model a Paragraph model?
+ */
+bool
+nlk_neuralnet_is_paragraph_model(const NLK_LM model_type) 
+{
+    switch(model_type) {
+        case NLK_PVDBOW:
+            return true;
+        case NLK_PVDM:
+            return true;
+        case NLK_PVDM_CONCAT:
+            return true;
+        case NLK_PVDM_SUM:
+            return true;
+        case NLK_CBOW:
+            return false;
+        case NLK_SKIPGRAM:
+            return false;
+        case NLK_MODEL_NULL:
+            return false;
+        default:
+            NLK_ERROR("Invalid model type", NLK_EINVAL);
+            /* unreachable */
+    }
+
+    /* should be unreachable */
+    return false;
+}
+
+/**
+ * Is this model a concatenate model?
+ */
+bool
+nlk_neuralnet_is_concat_model(const NLK_LM model_type)
+{
+    switch(model_type) {
+        case NLK_PVDM_CONCAT:
+            return true;
+        default:
+            return false;
+    }
+}
 
 
 /**
@@ -60,6 +107,7 @@ nlk_neuralnet_create(size_t n_layers)
 
     nn->words = NULL;
     nn->paragraphs = NULL;
+    nn->vocab = NULL;
 
     nn->layers = (union nlk_layer_t *) malloc(sizeof(union nlk_layer_t *) *
                                               n_layers);
@@ -76,6 +124,50 @@ nlk_neuralnet_create(size_t n_layers)
     }
 
     return nn;
+}
+
+/**
+ * Increase the maximum number of layers in a NN
+ *
+ * @param nn        the neural network
+ * @param add_n     number of layers to expand by
+ */
+int
+nlk_neuralnet_expand(struct nlk_neuralnet_t *nn, size_t add_n)
+{
+    /* calculate new size */
+    size_t n_layers = nn->n_layers + add_n;
+
+    /* realloc layers */
+    union nlk_layer_t *layers = (union nlk_layer_t *) 
+        realloc(nn->layers, sizeof(union nlk_layer_t *) * n_layers);
+
+    if(layers == NULL) {
+        NLK_ERROR("unable to allocate memory for neural net", 
+                  NLK_ENOMEM);
+        /* unreachable */
+    }
+    nn->layers = layers;
+
+
+    /* realloc types */
+    unsigned short int *types = (unsigned short int *) 
+                                realloc(nn->types, sizeof(unsigned short int));
+
+    if(types == NULL) {
+        NLK_ERROR("unable to allocate memory for neural net", 
+                  NLK_ENOMEM);
+        /* unreachable */
+    }
+    nn->types = types;
+
+
+    /* replace */
+    nn->layers = layers;
+    nn->types = nn->types;
+    nn->n_layers = n_layers;
+
+    return NLK_SUCCESS;
 }
 
 /**
@@ -96,7 +188,7 @@ nlk_neuralnet_add_layer_lookup(struct nlk_neuralnet_t *nn,
 
     nn->layers[nn->pos].lk = lk;
     nn->types[nn->pos] = NLK_LAYER_LOOKUP_TYPE;
-    nn->pos++;
+    nn->pos = nn->pos + 1;
 }
 
 /**
@@ -117,7 +209,7 @@ nlk_neuralnet_add_layer_linear(struct nlk_neuralnet_t *nn,
 
     nn->layers[nn->pos].ll = ll;
     nn->types[nn->pos] = NLK_LAYER_LINEAR_TYPE;
-    nn->pos++;
+    nn->pos = nn->pos + 1;
 }
 
 /**
@@ -161,6 +253,7 @@ nlk_neuralnet_free(struct nlk_neuralnet_t *nn)
     free(nn->types);
 
     free(nn);
+    nn = NULL;
 }
 
 /**
@@ -197,20 +290,34 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
 {
     size_t ii;
 
-    /* write training options */
+    /** @section Write training options 
+     */
+    /* 1 - model type */
     fprintf(fp, "%d\n", nn->train_opts.model_type); 
+    /* 2 - paragraph model? */
     fprintf(fp, "%d\n", nn->train_opts.paragraph); 
+    /* 3 - window size */
     fprintf(fp, "%u\n", nn->train_opts.window); 
+    /* 4 - sample */
     fprintf(fp, "%f\n", nn->train_opts.sample); 
+    /* 5 - learn_rate */
     fprintf(fp, "%f\n", nn->train_opts.learn_rate); 
+    /* 6 - hs? */
     fprintf(fp, "%d\n", nn->train_opts.hs); 
+    /* 7 - negative */
     fprintf(fp, "%u\n", nn->train_opts.negative); 
+    /* 8 - iterations (epochs) */
+    fprintf(fp, "%u\n", nn->train_opts.iter); 
 
-    /* write header */
+    /* write header: number of layers */
     fprintf(fp, "%zu\n", nn->n_layers);
     for(ii = 0; ii < nn->n_layers; ii++) {
+        /* layer types */
         fprintf(fp, "%d\n", nn->types[ii]);
     }
+
+    /* write vocabulary */
+    nlk_vocab_save(&nn->vocab, nn->max_word_size, nn->max_line_size, fp);
 
     /* write word lookup */
     nlk_layer_lookup_save(nn->words, fp);
@@ -225,6 +332,9 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
         switch(nn->types[ii]) {
             case NLK_LAYER_LOOKUP_TYPE:
                 nlk_layer_lookup_save(nn->layers[ii].lk, fp);
+                break;
+            case NLK_LAYER_LINEAR_TYPE:
+                nlk_layer_linear_save(nn->layers[ii].ll, fp);
                 break;
             default:
                 NLK_ERROR("invalid layer type", NLK_FAILURE);
@@ -279,75 +389,95 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     /**
      * @section read training options and header
      */
-    /* model type */
+    /* 1 - model type */
     ret = fscanf(fp, "%d\n", &tmp); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
     opts.model_type = tmp;
-    /* paragraph */
+    /* 2 - paragraph */
     ret = fscanf(fp, "%d\n", &tmp); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
     opts.paragraph = tmp;
-    /* window */
+    /* 3 - window */
     ret = fscanf(fp, "%u\n", &opts.window); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-    /* sample */
+    /* 4 - sample */
     ret = fscanf(fp, "%f\n", &opts.sample); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-    /* learn rate */
+    /* 5 - learn rate */
     ret = fscanf(fp, "%f\n", &opts.learn_rate); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-    /* hierarchical softmax */
+    /* 6 - hierarchical softmax */
     ret = fscanf(fp, "%d\n", &tmp); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
     opts.hs = tmp;
-    /* negative sampling */
+    /* 7 - negative sampling */
     ret = fscanf(fp, "%u\n", &opts.negative); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-    /* read header */
+    /* 8 - iterations */
+    ret = fscanf(fp, "%u\n", &opts.iter); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
+
+
+    /**
+     * @section create neural network and load weights
+     */
+    /* read header: number of layers */
     ret = fscanf(fp, "%zu\n", &n_layers);
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
-    /**
-     * @section create neural network and load weights
-     */
+    /* create neural network */
     nn = nlk_neuralnet_create(n_layers);
     nn->train_opts = opts;
     if(verbose) {
         printf("Loading Neural Network\nLayers: %zu\n", n_layers);
     }
 
-    /* header */
+    /* continue with header: layer types */
     for(ii = 0; ii < nn->n_layers; ii++) {
-        ret = fscanf(fp, "%hu\n", &nn->types[ii]);
+        ret = fscanf(fp, "%d\n", &tmp);
         if(ret <= 0) {
             goto nlk_neuralnet_load_err_head;
         }
+        nn->types[ii] = tmp;
     }
+
+    /* read vocabulary */
+    nn->vocab = nlk_vocab_load(fp, &nn->max_word_size, &nn->max_line_size);
 
     /* read word lookup */
     nn->words = nlk_layer_lookup_load(fp);
+    if(verbose) {
+        printf("Loaded Word Table\n");
+    }
+
 
     /* read paragraph lookup */
     if(nn->train_opts.paragraph) {
         nn->paragraphs = nlk_layer_lookup_load(fp);
+        if(verbose) {
+            printf("Loaded Paragraph Table\n");
+        }
     }
 
     /* read the other layers */
+    nn->pos = 0;
     for(ii = 0; ii < nn->n_layers; ii++) {
         switch(nn->types[ii]) {
             case NLK_LAYER_LOOKUP_TYPE:
@@ -361,11 +491,29 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
                             nn->layers[ii].lk->weights->cols);
                 }
                 break;
+            case NLK_LAYER_LINEAR_TYPE:
+                nn->layers[ii].ll = nlk_layer_linear_load(fp);
+                if(nn->layers[ii].ll == NULL) {
+                    goto nlk_neuralnet_load_err;
+                }
+                if(verbose) {
+                    printf("Loaded Linear Layer %zu: %zu x %zu bias = %d\n", 
+                            n_layers,
+                            nn->layers[ii].ll->weights->rows,
+                            nn->layers[ii].ll->weights->cols,
+                            nn->layers[ii].ll->bias != NULL);
+                }
+                break;
             default:
                 NLK_ERROR_NULL("invalid layer type", NLK_FAILURE);
                 /* unreachable */
-        }
-    }
+        } /* end of switch for layer type */
+
+    } /* end of layers */
+
+    /* set position */
+    nn->pos =  nn->n_layers;
+
 
     return nn;
 
@@ -382,4 +530,64 @@ nlk_neuralnet_load_err:
     nlk_neuralnet_free(nn);
     NLK_ERROR_NULL("unable to read neural network", NLK_FAILURE);
     /* unreachable */
+}
+
+
+NLK_LM
+nlk_lm_model(const char *model_name, const bool concat)
+{
+    NLK_LM lm_type;
+
+    if(strcasecmp(model_name, "cbow") == 0) { 
+        lm_type = NLK_CBOW;
+    } else if(strcasecmp(model_name, "sg") == 0) {
+        lm_type = NLK_SKIPGRAM;
+    } else if(strcasecmp(model_name, "pvdm") == 0) {
+        if(concat) {
+            lm_type = NLK_PVDM_CONCAT;
+        } else {
+            lm_type = NLK_PVDM;
+        }
+    } else if(strcasecmp(model_name, "pvdbow") == 0) {
+        lm_type = NLK_PVDBOW;
+    } else {
+        NLK_ERROR_ABORT("Invalid model type.", NLK_EINVAL);
+    }
+
+    return lm_type;
+}
+
+/**
+ * Default learning rates
+ *
+ * @note
+ * skip/PVDBOW: learn_rate = 0.05; 
+ * cbow/PVDM: learn_rate = 0.025; 
+ * other: 0.01
+ * @endnote
+ */
+nlk_real
+nlk_lm_learn_rate(NLK_LM lm_type)
+{
+    switch(lm_type) {
+        case NLK_CBOW_SUM:
+            /* fall through */
+        case NLK_PVDM:
+            /* fall through */
+        case NLK_PVDM_CONCAT:
+            /* fall through */
+        case NLK_PVDM_SUM:
+            /* fall through */
+        case NLK_CBOW: 
+            return 0.025;
+        case NLK_PVDBOW:
+            /* fall through */
+        case NLK_SKIPGRAM:
+            return 0.05;
+        case NLK_MODEL_NULL:
+            return 0.01;
+        default:
+            return 0.01;
+    }
+    return 0.01;
 }

@@ -237,7 +237,7 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
  * @return the context or NULL
  */
 struct nlk_context_t *
-nlk_context_create(size_t max_context_size) 
+nlk_context_create(const size_t max_context_size) 
 {
     struct nlk_context_t *context;
     context = (struct nlk_context_t *) malloc(sizeof(struct nlk_context_t));
@@ -283,6 +283,52 @@ nlk_context_free(struct nlk_context_t *context)
     free(context->is_paragraph);
     free(context);
 }
+
+/**
+ * Create an array of contexts
+ */
+struct nlk_context_t **
+nlk_context_create_array(const size_t max_context_size, const size_t n)
+{
+    struct nlk_context_t **contexts = (struct nlk_context_t **) 
+        malloc(n * sizeof(struct nlk_context_t *));
+    if(contexts == NULL) {
+        NLK_ERROR_NULL("unable to allocate memory for contexts", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    for(size_t zz = 0; zz < n; zz++) {
+        contexts[zz] = nlk_context_create(max_context_size);
+        if(contexts[zz] == NULL) {
+            NLK_ERROR_ABORT("unable to allocate memory for contexts", 
+                            NLK_ENOMEM);
+        }
+    }
+
+    return contexts;
+}
+
+/**
+ * Free an array of contexts
+ */
+void
+nlk_context_free_array(struct nlk_context_t **contexts, const size_t n)
+{
+    if(contexts == NULL) {
+        return;
+    }
+
+    for(size_t zz = 0; zz < n; zz++) {
+        if(contexts[zz] != NULL) {
+            nlk_context_free(contexts[zz]);
+            contexts[zz] = NULL;
+        }
+    }
+
+    free(contexts);
+    contexts = NULL;
+}
+
 
 /**
  * @brief Print a context

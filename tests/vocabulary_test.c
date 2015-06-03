@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include "minunit.h"
 #include "../src/nlk_vocabulary.h"
 #include "../src/nlk_text.h"
@@ -7,15 +8,48 @@ int tests_run = 0;
 int tests_passed = 0;
 
 
-/**
- * Test file split
- *
-static char *
-test_text_file_split()
+int
+compare_vocab(struct nlk_vocab_t *created, struct nlk_vocab_t *loaded)
 {
+
+    /* match stats */
+    size_t csize = nlk_vocab_size(&created);
+    size_t lsize = nlk_vocab_size(&loaded);
+    if(csize != lsize) {
+        printf("csize = %zu, lsize = %zu\n", csize, lsize);
+        return 1;
+    }
+
+    uint64_t ctotal = nlk_vocab_total(&created);
+    uint64_t ltotal = nlk_vocab_total(&created);
+    if(ctotal != ltotal) {
+        printf("ctotal = %"SCNu64", ltotal = %"SCNu64"\n", ctotal, ltotal);
+        return 2;
+    }
+
+    /* iterate through */
+    struct nlk_vocab_t *cv;
+    struct nlk_vocab_t *lv;
+    for(size_t index = 0; index < csize; index++) {
+        cv = nlk_vocab_at_index(&created, index);
+        lv = nlk_vocab_at_index(&loaded, index);
+
+        /* @TODO match strings */
+
+
+        /* match counts */
+        if(cv->count != lv->count) {
+            printf("Words at %zu have different counts: "
+                    "%"SCNu64" != %"SCNu64"\n", 
+                   index, cv->count, lv->count);
+            return 3;
+        }
+
+        /* @TODO match codes/points if exist */
+    }
+
     return 0;
 }
-*/
 
 /**
  * Test creating a vocabulary from a dataset and loading from disk
@@ -25,51 +59,55 @@ static char *
 test_vocab_create_large()
 {
     struct nlk_vocab_t *created;
+    struct nlk_vocab_t *imported;
     struct nlk_vocab_t *loaded;
+    int ret = 0;
     
     /* create */
-    created = nlk_vocab_create("../data/imdb.txt", false, 100, false);
-    nlk_vocab_sort(&created);
-    nlk_vocab_reduce(&created, 10);
+    created = nlk_vocab_create("../data/imdb-id.txt", 10, false);
 
     /* load, ensure sorted */
-    loaded = nlk_vocab_load("data/imdb.vocab.txt", 100);
-    nlk_vocab_sort(&loaded);
+    imported = nlk_vocab_import("data/imdb.vocab.txt", 100);
+    nlk_vocab_sort(&imported);
 
     /* save created since it might be necessary to debug */
-    nlk_vocab_save("tmp/imdb.vocab.created.txt", &created);
+    nlk_vocab_export("tmp/imdb.vocab.created.txt", &created);
 
-    /* match stats */
-    size_t csize = nlk_vocab_size(&created);
-    size_t lsize = nlk_vocab_size(&loaded);
-    if(csize != lsize) {
-        printf("csize = %zu, lsize = %zu\n", csize, lsize);
-    }
-    mu_assert("Large Vocabulary: Created != Loaded Size", csize == lsize); 
+    /* Compare */
+    ret = compare_vocab(created, imported);
+    mu_assert("Large Vocabulary: Created != Imported Size", ret != 1);
+    mu_assert("Large Vocabulary: Created != Imported Total", ret != 2); 
+    mu_assert("Large Vocabulary: Created != Imported word count", ret != 3);
 
-    uint64_t ctotal = nlk_vocab_total(&created);
-    uint64_t ltotal = nlk_vocab_total(&created);
-    if(ctotal != ltotal) {
-        printf("ctotal = %zu, ltotal = %zu\n", ctotal, ltotal);
-    }
-    mu_assert("Large Vocabulary: Created != Loaded Total", ctotal == ltotal); 
+    nlk_vocab_free(&imported);
 
-    /* iterate through and match counts */
-    struct nlk_vocab_t *cv;
-    struct nlk_vocab_t *lv;
-    for(size_t index = 0; index < csize; index++) {
-        cv = nlk_vocab_at_index(&created, index);
-        lv = nlk_vocab_at_index(&loaded, index);
+    /* save binary */
+    FILE *vf;
+    vf = fopen("tmp/imdb.vocab.created.full.txt", "wb");
+    mu_assert("unable to open file for saving", vf != NULL);
+    nlk_vocab_save(&created, 100, 50000, vf);
+    fclose(vf);
 
-        if(cv->count != lv->count) {
-            printf("Words at %zu have different counts: %zu != %zu\n", 
-                   index, cv->count, lv->count);
-        }
-        mu_assert("Large Vocabulary: different word counts", 
-                  cv->count == lv->count);
-        
-    }
+    /* load binary */
+    size_t max_word_size = 0;
+    size_t max_line_size = 0;
+    vf = fopen("tmp/imdb.vocab.created.full.txt", "rb");
+    mu_assert("unable to open file", vf != NULL);
+    loaded = nlk_vocab_load(vf, &max_word_size, &max_line_size);
+    fclose(vf);
+    mu_assert("bad word size", max_word_size == 100);
+    mu_assert("bad line size", max_line_size == 50000);
+    
+    /* compare */
+    ret = compare_vocab(created, loaded);
+    mu_assert("Large Vocabulary: Created != Loaded Size", ret != 1);
+    mu_assert("Large Vocabulary: Created != Loaded Total", ret != 2); 
+    mu_assert("Large Vocabulary: Created != Loaded word count", ret != 3);
 
+
+    /* free and return */
+    nlk_vocab_free(&loaded);
+    nlk_vocab_free(&created);
     return 0;
 }
 
@@ -83,7 +121,8 @@ all_tests() {
     return 0;
 }
  
-int main(int argc, char **argv) {
+int 
+main() {
     printf("---------------------------------------------------------\n");
     printf("Vocabulary Tests\n");
     printf("---------------------------------------------------------\n");
@@ -95,7 +134,7 @@ int main(int argc, char **argv) {
     else {
         printf("ALL TESTS PASSED\n");
     }
-    printf("Tests Passed: %d/%d\n", tests_run, tests_passed);
+    printf("Tests Passed: %d/%d\n", tests_passed, tests_run);
  
     return result != 0;
 }

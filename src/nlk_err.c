@@ -120,6 +120,11 @@ nlk_set_error_handler(nlk_error_handler_t *new_handler)
 static void
 __nlk_nop_handler(const char *reason, const char *file, int line, int nlk_errno)
 {
+    /* prevent unused warnings */
+    (void) reason;
+    (void) file;
+    (void) line;
+    (void) nlk_errno;
     return ;
 }
 

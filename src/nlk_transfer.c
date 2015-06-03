@@ -27,7 +27,6 @@
  * Linear Layer operations
  */
 
-
 #include <stdlib.h>
 #include <stdbool.h>
 
@@ -36,74 +35,21 @@
 #include "nlk_transfer.h"
 
 
-/** @fn void nlk_transfer_concat_forward(NLK_ARRAY *concat_view, 
- *                                       const NLK_ARRAY *source)
- * Concatenated view of all rows in a matrix into a single vector.
- *
- * @param input        the array (matrix) containing the data
- * @param concat_view  an array view (destination of the concat operation)
- *
- * @note
- * This function "performs" a concatenation, given a 2D array (matrix)
- *@code
- *      [row 1,
- *       row 2,
- *       ...
- *       row n]
- * @endcode
- *
- * This function changes concat_view to a 1D array (vector)
- * @code
- *      [ row 1, row 2, ...,  row n]
- * @endcode
- * @endnote
- */
-void
-nlk_transfer_concat_forward(const NLK_ARRAY *input, NLK_ARRAY *concat)
-{
-    const size_t len = input->rows * input->cols;
-    nlk_carray_copy_carray(concat->data, input->data, len);
-}
-
-/** @fn void nlk_transfer_concat_backprop(NLK_ARRAY *grad_int, 
- *                                        const NLK_ARRAY *grad_out)
- * Backwards pass for a concatenation operation. 
- *
- * @param grad_out      gradient at the output of the function
- * @param grad_in_view  gradient at the input of the function
- *
- * grad_in_view is overwritten.
- */ 
-void
-nlk_transfer_concat_backprop(const NLK_ARRAY *grad_out, 
-                             NLK_ARRAY *grad_in)
-{
-    size_t ii;
-    for(ii = 0; ii < grad_in->rows; ii++) {
-        nlk_carray_copy_carray(&grad_in->data[ii * grad_in->cols],
-                               &grad_out->data[ii * grad_in->cols],
-                               grad_in->cols);
-    }
-}
-
-
 
 /**  
  * Sigmoid transfer function
  *
- * @param sigmoid_table     precomputed sigmoid table
  * @param input             the input to the sigmoid transfer function
  * @param output            output of the layer (overwritten with the result)
- *
- * @return NLK_SUCCESS or error code NLK_E*
  */
 void
-nlk_sigmoid_forward_table(const nlk_real *sigmoid_table, NLK_ARRAY *input)
+nlk_sigmoid_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
 {
-    nlk_sigmoid_array(sigmoid_table, input);
+    nlk_array_copy(output, input);
+    nlk_sigmoid_array(output);
 }
 
-/** @fn nlk_sigmoid_backprop
+/** 
  * Calculates the gradient of the sigmoid
  *
  * @param output            the output of the sigmoid transfer forward step
@@ -112,7 +58,7 @@ nlk_sigmoid_forward_table(const nlk_real *sigmoid_table, NLK_ARRAY *input)
  *
  * @return NLK_SUCCESS or error code NLK_E*
  */
-int
+void
 nlk_sigmoid_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out, 
                     NLK_ARRAY *grad_in)
 {
@@ -124,37 +70,133 @@ nlk_sigmoid_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out,
         grad_in->data[ii] = grad_out->data[ii] * output->data[ii] *
                             (1.0 - output->data[ii]);
     }
-
-    return NLK_SUCCESS;
 }
 
-/** @fn nlk_average(const NLK_ARRAY *input, NLK_ARRAY *output)
- * Averaging layer: takes matrix where each row represents an input and
- * averages the rows, writting it to the output.
+
+/**
+ * Softmax forward
+ * defined as f_i(x) = exp(x_i)/a  where a = sum(exp(x_i)) for all i
+ * this version uses scalling to prevent nasty overflows
  *
- * @param input     the input matrix
- * @param n_rows    the number of rows to average (first n_rows)
- * @param output    the output array (overwritten)
- *
+ * @note
+ * untested, unused
+ * @endnote
  */
 void
-nlk_average(const NLK_ARRAY *input, size_t n_rows, NLK_ARRAY *output) 
+nlk_softmax_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
 {
-    size_t ii;
+    size_t idx = input->rows * input->cols;
+    nlk_real sum = 0;
 
-    if(input->cols != output->rows) {
-        NLK_ERROR_VOID("number of input matrix columns must be equal to the "
-                       "number of output rows", NLK_EBADLEN);
-        /* unreachable */
-    }
+    /* copy */
+    nlk_array_copy(output, input);
 
-    nlk_array_zero(output);
+    /* scale => all positve or 0 */
+    nlk_array_rescale_max_minus(output);
+    
+    /* exp(-s) 
+     * making the past steps equivalent to having done exp(x_i - max)
+     */
+    do {
+        idx--;
+        output->data[idx] = nlk_exp_minus_approx(-output->data[idx]);
+        /* sum of exp(z_i) */
+        sum += output->data[idx]; 
+    } while(idx > 0);
+    /* sum = nlk_array_sum(output); */
+    
+    /* divide */
+    nlk_array_scale(1.0/sum, output); 
 
-    /* add the rows */
-    for(ii = 0; ii < n_rows; ii++) {
-        nlk_row_add_vector(input, ii, output);
-    }
+    NLK_ARRAY_CHECK_NAN(output, "output has NaNs");
+}
 
-    /* average */
-    nlk_array_scale(1.0/(nlk_real) n_rows, output);
+/**
+ * Softmax backprop
+ *
+ * @note
+ * untested, unused
+ * @endnote
+ */
+void
+nlk_softmax_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out, 
+                     NLK_ARRAY *grad_in)
+{
+    size_t idx = output->rows * output->cols;
+    nlk_real sum = nlk_array_dot(grad_out, output, -1); /*@TODO fix the -1 */
+
+     do {
+        idx--;
+        grad_in->data[idx] = output->data[idx] * (grad_out->data[idx] - sum);
+    } while(idx > 0);
+
+
+    NLK_ARRAY_CHECK_NAN(grad_in, "grad_in has NaNs");
+}
+
+
+/**
+ * Log Softmax forward
+ * it is defined as f_i(x) = log(1/a exp(x_i)), where a = sum_j exp(x_j) 
+ *
+ * @param input     input into the layer
+ * @param output    log softmax of the input (result)
+ *
+ * @note
+ *
+ * @endnote
+ */
+void
+nlk_log_softmax_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
+{
+    nlk_real logsum = 0;
+    nlk_real max;           /* holds the max value of the array */
+    const size_t len = input->rows * input->cols;
+    size_t idx = len;
+
+    max =  nlk_array_max(input);
+    /* calculate the logsum */
+    do {
+        idx--;
+        logsum += nlk_exp_minus_approx(max - input->data[idx]);
+    } while(idx > 0);   
+
+    logsum = max + nlk_log_approx(logsum);
+
+    do {
+        output->data[idx] = input->data[idx] - logsum;
+        idx++;
+    } while(idx < len);
+
+#ifdef CHECK_NANS
+        if(nlk_array_has_nan(output)) {
+            NLK_ERROR_VOID("output has NaNs", NLK_ENAN);
+        }
+#endif
+
+}
+
+
+/**
+ * Log Softmax backprop
+ *
+ * @param output    log softmax of the input during forward step
+ * @param grad_out  the gradient at the output of the log_softmax
+ * @param grad_in   the gradient at the input notes (result)
+ */
+void
+nlk_log_softmax_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out, 
+                         NLK_ARRAY *grad_in)
+{
+    size_t idx = grad_out->rows * grad_out->cols;
+    nlk_real sum = nlk_array_sum(grad_out);
+
+    do {
+        idx--;
+        grad_in->data[idx] = grad_out->data[idx] 
+                             - (nlk_exp(output->data[idx]) * sum);
+    } while(idx > 0);
+
+
+    NLK_ARRAY_CHECK_NAN(grad_in, "NaN in gradient at input (result)");
 }

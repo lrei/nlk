@@ -1,7 +1,7 @@
 /******************************************************************************
  * NLK - Neural Language Kit
  *
- * Copyright (c) 2014-2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+ * Copyright (c) 2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to 
@@ -23,18 +23,13 @@
  *****************************************************************************/
 
 
-/** @file nlk_learn_rate.h
- * Learning Rate update function definitions.
+/** @file nlk_util.h
+ * Utility function definitions
  */
 
 
-#ifndef __NLK_LEARN_RATE_H__
-#define __NLK_LEARN_RATE_H__
-
-
-#include <stdint.h>
-
-#include "nlk_array.h"
+#ifndef __NLK_UTIL_H__
+#define __NLK_UTIL_H__
 
 
 #undef __BEGIN_DECLS
@@ -48,14 +43,13 @@
 #endif
 __BEGIN_DECLS
 
-nlk_real nlk_learn_rate_w2v(nlk_real, const nlk_real, const unsigned int,
-                            const uint64_t, const uint64_t);
-nlk_real nlk_learn_rate_interval(nlk_real, const unsigned int, 
-                                 const unsigned int);
-nlk_real nlk_learn_rate_decay(nlk_real, const nlk_real);
 
-nlk_real nlk_learn_rate_bol(nlk_real, nlk_real, nlk_real);
+size_t   nlk_count_unique(const unsigned int *, const size_t);
+bool     nlk_in(const size_t, const size_t *, const size_t);
+size_t  *nlk_range(const size_t);
+size_t  *nlk_range_not_in(const size_t *, const size_t, const size_t, 
+                          size_t *len_r);
 
 
 __END_DECLS
-#endif /* __NLK_ARRAY_H__ */
+#endif /* __NLK_UTIL_H__ */

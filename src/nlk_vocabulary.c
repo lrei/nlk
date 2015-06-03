@@ -35,6 +35,7 @@
 #include <math.h>
 #include <time.h>
 #include <omp.h>
+#include <unistd.h>
 
 #include "uthash.h"
 
@@ -43,6 +44,7 @@
 #include "nlk_array.h"
 #include "nlk_random.h"
 #include "nlk_tic.h"
+#include "nlk_util.h"
 
 #include "nlk_vocabulary.h"
 
@@ -129,17 +131,16 @@ nlk_vocab_init()
 
    /* word 0 is reserved for start symbol </s> */
     struct nlk_vocab_t *start_symbol = nlk_vocab_add_item(&vocab, 
-                                                        NLK_START_SYMBOL, 
-                                                        0, NLK_VOCAB_SPECIAL);
+                                                          NLK_START_SYMBOL, 
+                                                          0, NLK_VOCAB_SPECIAL);
     if(start_symbol == NULL) {
-        return NULL;
+        NLK_ERROR_NULL("unable to add to vocabulary", NLK_EINVAL);
     }
     return vocab;
 }
 
 static int
-nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
-                   const bool numbered, const size_t max_word_size, 
+nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
                    const bool verbose) 
 {
     /** @section Shared Initializations
@@ -149,8 +150,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     size_t updated = 0;
     clock_t start = clock();
 
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
-
     /* open file */
     FILE *in = fopen(filepath, "rb");
     if(in == NULL) {
@@ -159,6 +158,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     }
     total_lines = nlk_text_count_lines(in);
     fclose(in);
+    in = NULL;
     
     /* Limit the number of threads */
     int num_threads = omp_get_num_procs();
@@ -176,7 +176,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 
     /* create and initialize vocabularies */
     struct nlk_vocab_t *vocabs[NLK_VOCAB_MAX_THREADS];
-    for(size_t vv = 0; vv < num_threads; vv++) {
+    for(int vv = 0; vv < num_threads; vv++) {
         vocabs[vv] = nlk_vocab_init();
     }
 
@@ -204,19 +204,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
     }
 
     /* allocate memory for reading from the input file */
-    char **text_line = (char **) calloc(max_line_size, sizeof(char *));
-    if(text_line == NULL) {
-        NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-        /* unreachable */
-    }
-    for(zz = 0; zz < max_line_size; zz++) {
-        text_line[zz] = calloc(max_word_size, sizeof(char));
-        if(text_line[zz] == NULL) {
-            NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-            /* unreachable */
-        }
-    }
-
+    char **text_line = nlk_text_line_create();
     /** @section Parallel Creation of Vocabularies (Map)
      * Each thread reads from a different part of the file.
      */
@@ -247,23 +235,14 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
             }
 
             /* read from file */
-            if(numbered) {
-                ret = nlk_read_number_line(file, text_line, &par_id, 
-                                           max_word_size, max_line_size);
-            } else {
-                ret = nlk_read_line(file, text_line, max_word_size, 
-                                    max_line_size);
-            }
+            ret = nlk_read_number_line(file, text_line, &par_id);
+           
             line_counter++;
             cur_line++;
 
             /* all sentences must start with </s> except empty lines */
             if(text_line[0][0] != '\0') {
-                if(numbered) {
                     start_symbol->count += 1;
-                } else if(ret != NLK_ETRUNC && ret != EOF) {
-                    start_symbol->count += 1;
-                }
             }
 
             /* process each word in line */
@@ -301,13 +280,8 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, char *filepath,
 
     /** @section Free Memory and Close File
      */
-    for(zz = 0; zz < max_line_size; zz++) {
-        free(text_line[zz]);
-    }
-    free(text_line);
-
-
     fclose(file);
+    file = NULL;
 
 } /* end of pragma omp parallel */
 
@@ -365,8 +339,7 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * Build a vocabulary from a file
  *
  * @param filepath        the path of the file to read from
- * @param numbered        lines begin with their id number
- * @param max_word_size   maximum size of a word including null terminator
+ * @param min_count       minimum word frequency (count)
  * @param verbose         display progress
  *
  * @return a pointer to the first item in the vocabulary use &vocab to pass it
@@ -374,17 +347,36 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  *
  * @note
  * This file should have sentences separated by a newline and words separated 
- * by spaces or tabs.
+ * by spaces.
+ * @endnote
+ *
+ * @note
+ * Vocabulary is sorted and huffman encoding is created
  * @endnote
  */
 struct nlk_vocab_t *
-nlk_vocab_create(char *filepath, const bool numbered, 
-                 const size_t max_word_size, const bool verbose) {
+nlk_vocab_create(const char *filepath, const uint64_t min_count, 
+                 const bool verbose) {
 
     struct nlk_vocab_t *vocab = nlk_vocab_init();
-    
-    nlk_vocab_read_add(&vocab, filepath, numbered, max_word_size, verbose);
-    
+
+    /* create vocabulary */
+    if(verbose) {
+        nlk_tic(NULL, false);
+    }
+
+    /* create */
+    nlk_vocab_read_add(&vocab, filepath, verbose);
+
+    /* reduce - also sorts and encodes */
+    nlk_vocab_reduce(&vocab, min_count);
+
+    if(verbose) {
+        nlk_tic_reset();
+        printf("\nVocabulary words: %zu (total count: %zu)\n", 
+                nlk_vocab_size(&vocab), nlk_vocab_total(&vocab));
+    }
+
     return vocab;
 }
 
@@ -392,11 +384,9 @@ nlk_vocab_create(char *filepath, const bool numbered,
  * Extend a vocabulary
  */
 void
-nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath, 
-                 const bool numbered, const size_t max_word_size, 
-                 const size_t max_line_size) {
+nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath) {
 
-    nlk_vocab_read_add(vocab, filepath, numbered, max_word_size, false);
+    nlk_vocab_read_add(vocab, filepath, false);
 }
 
 /** @fn void nlk_vocab_free(struct nlk_vocab_t *vocab)
@@ -510,10 +500,11 @@ nlk_vocab_total(struct nlk_vocab_t **vocab)
  * @note
  * Sort is called to update the position index which after the reduce call
  * has "holes".
+ * New huffman coding is calculated
  * @endnote
  */
 void
-nlk_vocab_reduce(struct nlk_vocab_t **vocab, const size_t min_count)
+nlk_vocab_reduce(struct nlk_vocab_t **vocab, const uint64_t min_count)
 {
     struct nlk_vocab_t *vi;
     struct nlk_vocab_t *tmp;
@@ -537,6 +528,9 @@ nlk_vocab_reduce(struct nlk_vocab_t **vocab, const size_t min_count)
 
     /* call sort to update the index */
     nlk_vocab_sort(vocab);
+
+    /* encode */
+    nlk_vocab_encode_huffman(vocab);
 }
 
 /**
@@ -849,26 +843,27 @@ vocab_max_code_length(struct nlk_vocab_t **vocab)
  * @endnote
  */
 int
-nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
+nlk_vocab_export(const char *filepath, struct nlk_vocab_t **vocab)
 {
     struct nlk_vocab_t *vi;
-    struct nlk_vocab_t *end;
+    struct nlk_vocab_t *vstart;
     FILE *out = fopen(filepath, "wb");
     if(out == NULL) {
         NLK_ERROR(strerror(errno), errno);
         /* unreachable */
     }
 
-    HASH_FIND_STR(*vocab, NLK_START_SYMBOL, end);
-    fprintf(out, "%s %zu\n", end->word, end->count);
+    HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vstart);
+    fprintf(out, "%s %"SCNu64"\n", vstart->word, vstart->count);
 
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi == end) {
+        if(vi == vstart) {
             continue;
         }
-        fprintf(out, "%s %zu\n", vi->word, vi->count);
+        fprintf(out, "%s %"SCNu64"\n", vi->word, vi->count);
     }
     fclose(out);
+    out = NULL;
     return NLK_SUCCESS;
 }
 
@@ -879,10 +874,13 @@ nlk_vocab_save(const char *filepath, struct nlk_vocab_t **vocab)
  * @param max_word_size     maximum string size
  * @param vocab             the vocabulary structure
  *
- * @returns NLK_SUCCESS or errno
+ * @note
+ * Vocabulary is sorted and huffman encoded
+ * @endnote
+ *
  */
 struct nlk_vocab_t *
-nlk_vocab_load(const char *filepath, const size_t max_word_size)
+nlk_vocab_import(const char *filepath, const size_t max_word_size)
 {
     struct nlk_vocab_t *vocab = nlk_vocab_init();
     struct nlk_vocab_t *start;
@@ -914,16 +912,52 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
         nlk_vocab_add_item(&vocab, word, count, NLK_VOCAB_WORD);
     }
 
+    /* free/close */
     free(word);
+    word = NULL;
     fclose(in);
+    in = NULL;
+
+    /* sort and encode */
+    nlk_vocab_sort(&vocab);
+    nlk_vocab_encode_huffman(&vocab);
+
     return vocab;
 }
+
+void
+nlk_vocab_save_item(struct nlk_vocab_t *vi, FILE *file)
+{
+    size_t ii = 0;
+
+    fprintf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
+             vi->word, vi->type, vi->index, vi->count, vi->code_length);
+
+    if(vi->code_length != 0) {
+        /* code */
+        for(ii = 0; ii < vi->code_length - 1; ii++) {
+            fprintf(file, "%"PRIu8" ", vi->code[ii]);
+        }
+        fprintf(file, "%"PRIu8"\t", vi->code[vi->code_length - 1]);
+
+        /* point */
+        for(ii = 0; ii < vi->code_length - 1; ii++) {
+            fprintf(file, "%zu ", vi->point[ii]);
+        }
+        fprintf(file, "%zu\n", vi->point[vi->code_length - 1]);
+    } else {
+        fprintf(file, "\n");
+    }
+}
+
 
 /**
  * Save the vocabulary structure to disk.
  *
- * @param filepath  the path of the file to which the vocabulary will be saved
- * @param vocab     the vocabulary structure
+ * @param vocab             the vocabulary structure
+ * @param max_word_size     maximum number of characters in a word
+ * @param max_line_size     maximum number of words in a line (paragraph)
+ * @param file              the file to which the vocabulary will be saved
  *
  * @note
  * There is no escaping if the word strings somehow contains tabs and newlines.
@@ -931,130 +965,102 @@ nlk_vocab_load(const char *filepath, const size_t max_word_size)
  * of the items is the same as specified in the structure definition
  * (e.g. sort order).
  * @endnote
- *
- * @returns 0 or errno
  */
-int
-nlk_vocab_save_full(const char *filepath, struct nlk_vocab_t **vocab)
+void
+nlk_vocab_save(struct nlk_vocab_t **vocab, const size_t max_word_size, 
+               const size_t max_line_size, FILE *file)
 {
     struct nlk_vocab_t *vi;
-    FILE *file;
-    size_t ii;
+    struct nlk_vocab_t *vstart;
 
-    file = fopen(filepath, "wb");
-    if (file == NULL) {
-        NLK_ERROR(strerror(errno), errno);
-        /* unreachable */
-    }
+    /* save header */
+    fprintf(file, "%zu %zu %zu\n", 
+            nlk_vocab_size(vocab), max_word_size, max_line_size);
 
+    /* save start symbol */
+    HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vstart);
+    nlk_vocab_save_item(vstart, file);
+
+    /* save the rest */
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        fprintf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
-                 vi->word, vi->type, vi->index, vi->count, vi->code_length);
-
-        if(vi->code_length != 0) {
-            /* code */
-            for(ii = 0; ii < vi->code_length - 1; ii++) {
-                fprintf(file, "%"PRIu8" ", vi->code[ii]);
-            }
-            fprintf(file, "%"PRIu8"\t", vi->code[vi->code_length - 1]);
-
-            /* point */
-            for(ii = 0; ii < vi->code_length - 1; ii++) {
-                fprintf(file, "%zu ", vi->point[ii]);
-            }
-            fprintf(file, "%zu\n", vi->point[vi->code_length - 1]);
-        } else {
-            fprintf(file, "\n");
+        if(vi == vstart) {
+            continue;
         }
+        nlk_vocab_save_item(vi, file);
     }
-
-    fclose(file);
-    return NLK_SUCCESS;
 }
 
 /**
- * "Vocabularizes" a series of words: for each word, the output vector will 
- * contain a pointer to the vocabulary item of that word.
- *
- * @param vocab                 the vocabulary used for vectorization
- * @param paragraph             an array of strings (char arrays)
- * @param sample                sample rate for subsampling frequent words
- *                              - if <= 0, no subsampling will happen
- * @param replacement           vocab to use for words not in the vocabulary
- *                              - NULL means do not replace
- * @param start_symbol            if true, add the start symbol
- * @param varray                the vocabulary item array to be written
- * @param n_subsampled          number of subsampled words (overwritten)
- *
- * @returns number of words vocabularized (size of the array)
- *
- * @note
- * The paragraph is expected to be terminated by a null word (word[0] = 0)
- * as generated by nlk_read_line(). This will be replaced by the end sentence 
- * token.
- *
- * If replacement is NULL, the word will simply be ignored, i.e. treated 
- * as if it was not there and the returned size will be small than the size of 
- * the paragraph.
- *
- * @endnote
+ * Loads a vocabulary structure from a file
  */
-size_t
-nlk_vocab_vocabularize(struct nlk_vocab_t **vocab, const uint64_t total_words, 
-                       char **paragraph, const float sample,
-                       struct nlk_vocab_t *replacement, const bool start_symbol,
-                       struct nlk_vocab_t **varray, size_t *n_subsampled) 
-              
+struct nlk_vocab_t *
+nlk_vocab_load(FILE *file, size_t *max_word_size, size_t *max_line_size)
 {
-    struct nlk_vocab_t *vocab_word; /* vocab item that corresponds to word */
-    size_t par_idx;                 /* position in paragraph */
-    float prob;                     /* probability of being sampled */
-    float r;                        /* random number */
-    size_t vec_idx = 0;             /* position in vectorized array */
-    *n_subsampled = 0;              /* number of subsampled words */
+    struct nlk_vocab_t *vocab = NULL;
+    struct nlk_vocab_t *vocab_word = NULL;
+    size_t vocab_size = 0;
+    size_t vv, ii;
+    int ret = 0;
+    char *word = NULL;
+    int type = 0;
+    size_t index = 0;
+    uint64_t count = 0;
+    size_t code_length = 0;
 
+    /* load header */
+    ret = fscanf(file, "%zu %zu %zu\n", 
+                 &vocab_size, max_word_size, max_line_size);
+    nlk_assert(ret > 0, "invalid header");
 
-    /* add start_symbol? */
-    if(start_symbol && vec_idx == 0) {
-        HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vocab_word);
-        varray[0] = vocab_word;
-        vec_idx++;
+    /* allocate space for words */
+    word = (char *) malloc(*max_word_size * sizeof(char));
+    if(word == NULL) {
+        NLK_ERROR_NULL("not enough memory for a word", NLK_ENOMEM);
+        /* unreachable */
     }
 
-    for(par_idx = 0; paragraph[par_idx][0] != '\0'; par_idx++) {
-        HASH_FIND_STR(*vocab, paragraph[par_idx], vocab_word);
+    for(vv = 0; vv < vocab_size; vv++) {
+        ret = fscanf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
+                     word, &type, &index, &count, &code_length);
+        nlk_assert(ret > 0, "invalid word");
+        vocab_word = nlk_vocab_add_item(&vocab, word, count, type);
+        if(vocab_word == NULL) {
+            NLK_ERROR_NULL("unable to add to vocabulary", NLK_FAILURE);
+            /* unreachable */
+        }
 
-        if(vocab_word != NULL && sample > 0) {
-            /* calculate sampling probability */
-            prob = sqrt((float)vocab_word->count / (sample * total_words)) + 1;
-            prob *= (sample * total_words) / (float) vocab_word->count;
+        if(code_length != 0) {
+            vocab_word->code_length = code_length;
 
-            /* "flip coin " */
-            r = nlk_random_xs1024_float();
-            if(prob < r) {
-                *n_subsampled += 1;
-                continue;
-                /* 
-                 * word was not sampled 
-                 * unreachable
-                 */
+            /* code */
+            for(ii = 0; ii < code_length - 1; ii++) {
+                ret = fscanf(file, "%"SCNu8" ", &vocab_word->code[ii]);
+                nlk_assert(ret > 0, "invalid code");
             }
-            /* word was sampled */
-            varray[vec_idx] = vocab_word;
-            vec_idx++;
-        } else if(vocab_word == NULL && replacement != NULL) { 
-            /* word NOT in vocabulary but will be replaced */ 
-            varray[vec_idx] = replacement;
-            vec_idx++;
-        }  else if(vocab_word != NULL) {
-            /* the word is in the vocabulary */
-            varray[vec_idx] = vocab_word;
-            vec_idx++;
-        } 
-        /* word not in vocabulary, not replacing, do nothing */
+            ret = fscanf(file, "%"SCNu8"\t", &vocab_word->code[code_length - 1]);
+            nlk_assert(ret > 0, "invalid code");
+
+            /* point */
+            for(ii = 0; ii < code_length - 1; ii++) {
+                ret = fscanf(file, "%zu ", &vocab_word->point[ii]);
+                nlk_assert(ret > 0, "invalid point");
+            }
+            ret = fscanf(file, "%zu\n", &vocab_word->point[code_length - 1]);
+            nlk_assert(ret > 0, "invalid point");
+
+
+        } else {
+            fscanf(file, "\n");
+        }
     }
-   
-    return vec_idx; /* the count */
+
+    nlk_vocab_sort(&vocab);
+    return vocab;
+
+
+error:
+    NLK_ERROR_NULL("invalid vocabulary", NLK_FAILURE);
+    /* unreachable */
 }
 
 /**
@@ -1097,8 +1103,8 @@ nlk_vocab_at_index(struct nlk_vocab_t **vocab, size_t index)
     return NULL;
 }
 
-/** @fn void nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length)
- * Print a vocabularized line.
+/** 
+ * Print a vocabularized array
  */
 void
 nlk_vocab_print_line(struct nlk_vocab_t **varray, size_t length, bool indexes)
@@ -1152,8 +1158,8 @@ nlk_vocab_neg_table_save(struct nlk_vocab_t **vocab, size_t *neg_table, size_t s
     }
     fprintf(fp, "%s\t%zu\n", word->word, count);
 
-
     fclose(fp);
+    fp = NULL;
 }
 
 /**
@@ -1218,10 +1224,283 @@ nlk_vocab_neg_table_create(struct nlk_vocab_t **vocab, const size_t size, double
  *
  */
 struct nlk_vocab_t *
-nlk_vocab_get_start_symbol(struct nlk_vocab_t **vocab) {
+nlk_vocab_get_start_symbol(struct nlk_vocab_t **vocab) 
+{
     struct nlk_vocab_t *vi;
 
     HASH_FIND_STR(*vocab, NLK_START_SYMBOL, vi);
 
     return vi;
+}
+
+
+
+/**
+ * @param sample                sample rate for subsampling frequent words
+ *                              - if <= 0, no subsampling will happen
+ */
+void
+nlk_vocab_line_subsample(const struct nlk_line_t *in, 
+                         const uint64_t total_words, 
+                         const float sample, struct nlk_line_t *out)
+{
+    struct nlk_vocab_t *vocab_word;
+    float prob;                     /* probability of being sampled */
+    float r;                        /* random number */
+    size_t out_idx = 0;
+
+    out->line_id = in->line_id;
+
+    for(size_t ii = 0; ii < in->len; ii++) {
+        vocab_word = in->varray[ii];
+        if(sample <= 0) {
+            /* simply copy */
+            out->varray[out_idx] = vocab_word;
+            out_idx++;
+            continue;
+        }
+        /* calculate sampling probability */
+        prob = sqrt((float)vocab_word->count / (sample * total_words)) + 1;
+        prob *= (sample * total_words) / (float) vocab_word->count;
+
+        /* "flip coin " */
+        r = nlk_random_xs1024_float();
+        if(prob < r) {
+            continue;
+            /* 
+             * word was not sampled 
+             * unreachable
+             */
+        } else {
+            out->varray[out_idx] = vocab_word;
+            out_idx++;
+        }
+    } /* end of input array */
+
+    /* set length */
+    out->len = out_idx;
+}
+
+/**
+ * "Vocabularizes" a series of words: for each word, the output vector will 
+ * contain a pointer to the vocabulary item of that word.
+ *
+ * @param vocab                 the vocabulary used for vectorization
+ * @param paragraph             an array of strings (char arrays)
+ * @param replacement           vocab to use for words not in the vocabulary
+ *                              - NULL means do not replace
+ * @param varray                the vocabulary item array to be written
+ *
+ * @returns number of words vocabularized (size of the array)
+ *
+ * @note
+ * The paragraph is expected to be terminated by a null word (word[0] = 0)
+ * as generated by nlk_read_line(). This will be replaced by the end sentence 
+ * token.
+ *
+ * If replacement is NULL, the word will simply be ignored, i.e. treated 
+ * as if it was not there and the returned size will be small than the size of 
+ * the paragraph.
+ *
+ * @endnote
+ */
+size_t
+nlk_vocab_vocabularize(struct nlk_vocab_t **vocab,  char **paragraph, 
+                       struct nlk_vocab_t *replacement,
+                       struct nlk_vocab_t **varray) 
+              
+{
+    struct nlk_vocab_t *vocab_word; /* vocab item that corresponds to word */
+    size_t par_idx;                 /* position in paragraph */
+    size_t vec_idx = 0;             /* position in vectorized array */
+
+    for(par_idx = 0; paragraph[par_idx][0] != '\0'; par_idx++) {
+        HASH_FIND_STR(*vocab, paragraph[par_idx], vocab_word);
+        if(vocab_word != NULL) {
+            /* the word is in the vocabulary */
+            varray[vec_idx] = vocab_word;
+            vec_idx++;
+        } else if(vocab_word == NULL && replacement != NULL) { 
+            /* word NOT in vocabulary but will be replaced */ 
+            varray[vec_idx] = replacement;
+            vec_idx++;
+        }
+        /* word not in vocabulary, not replacing, do nothing */
+    }
+   
+    return vec_idx; /* = the count, not index because of ++ */
+}
+
+
+uint64_t
+nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
+                             const size_t *ids, const size_t n_ids,
+                             const size_t total_lines, const int thread_id,
+                             const int num_threads)
+{
+    uint64_t total_words = 0;
+    size_t cur_line;
+    size_t end_line;
+    size_t line_len;
+    size_t par_id;
+    int ret = 0;
+     
+
+    /**@section Init
+     */
+    /* allocate memory for reading from the input file */
+    char **text_line = nlk_text_line_create();
+
+    /* for converting to a vocabularized representation of text */
+    struct nlk_vocab_t *vectorized[NLK_LM_MAX_LINE_SIZE];
+
+    /* open file */
+    errno = 0;
+    FILE *ft = fopen(file_path, "r");
+    if(ft == NULL) {
+        NLK_ERROR_ABORT(strerror(errno), errno);
+        /* unreachable */
+    }
+
+    /* set train file part position */
+    cur_line = nlk_text_get_split_start_line(total_lines, num_threads, 
+                                              thread_id);
+    nlk_text_goto_line(ft, cur_line);
+    end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
+                                              thread_id);
+
+    /**@section Count
+     */
+    while(ret != EOF && cur_line < end_line) {
+        /* read line */
+        ret = nlk_read_number_line(ft, text_line, &par_id);
+        if(n_ids > 0 && ret != EOF) {
+            if(nlk_in(par_id, ids, n_ids) == false) {
+                cur_line++;
+                continue;
+            }
+        }
+            
+        /* vocabularize */
+        line_len = nlk_vocab_vocabularize(vocab, text_line, NULL, 
+                                          vectorized); 
+
+        /* increment word and line counts */
+        total_words += line_len;
+        cur_line++;
+    }
+
+    /* end of file */
+    fclose(ft);
+    ft = NULL;
+    nlk_text_line_free(text_line);
+
+    return total_words;
+}   
+
+
+/**
+ * Count how many vocabulary words there are in the file
+ */
+uint64_t
+nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
+                      const size_t *ids, const size_t n_ids,
+                      const size_t total_lines)
+{
+    size_t total_words = 0;
+    int num_threads = omp_get_num_threads();
+
+    /** @section Parallel Count (Map)
+     */
+#pragma omp parallel for reduction(+ : total_words)
+    for(int thread_id = 0; thread_id < num_threads; thread_id++) {
+        total_words = nlk_vocab_count_words_worker(vocab, file_path, ids, 
+                                                   n_ids, total_lines, 
+                                                   thread_id, num_threads);
+    }
+    return total_words;
+}
+
+/**
+ * Read line from file and vocabularize it.
+ *
+ * @param fp        the file pointer to read from
+ * @param vocab     the vocabulary
+ * @param text_line temporary memory for text read from file
+ * @param v         vocalularized line
+ */
+void
+nlk_vocab_read_vocabularize(FILE *fp, struct nlk_vocab_t **vocab, 
+                            char **text_line, struct nlk_line_t *v)
+{
+    int ret;
+
+    /* read text line */
+    ret = nlk_read_number_line(fp, text_line, &v->line_id);
+
+    /* unexpected end of file (empty line) */
+    if(ret == EOF && text_line[0][0] == '\0' ) {
+        v->len = 0; 
+        return;
+    }
+
+    /* vocabularize */
+    v->len = nlk_vocab_vocabularize(vocab, text_line, NULL, v->varray); 
+
+    /* ignore lines with a single word */
+    if(v->len <= 1) {
+        v->len = 0; 
+    }
+}
+
+/**
+ * Create a line 
+ *
+ * @param size  size of the line
+ *
+ * @return the line
+ */
+struct nlk_line_t *
+nlk_line_create(const size_t size) {
+    struct nlk_line_t *line;
+
+    if(size == 0) {
+        NLK_ERROR_NULL("invalid size parameter", NLK_EINVAL);
+        /* unreachable */
+    }
+    
+    line = malloc(sizeof(struct nlk_line_t));
+    if(line == NULL) {
+        NLK_ERROR_NULL("insufficient memory for line", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    line->varray = (struct nlk_vocab_t **) malloc(sizeof(struct nlk_vocab_t *) 
+                                                  * size);
+    if(line->varray == NULL) {
+        NLK_ERROR_NULL("insufficient memory for line", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    return line;
+}
+
+/**
+ * Free a line
+ *
+ * @param line  the line to free
+ */
+void
+nlk_line_free(struct nlk_line_t *line)
+{
+    if(line == NULL) {
+        return;
+    }
+
+    if(line->varray != NULL) {
+        free(line->varray);
+        line->varray = NULL;
+    }
+
+    free(line);
 }

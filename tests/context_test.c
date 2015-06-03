@@ -20,7 +20,6 @@ test_context_pvdbow()
     size_t par_id;
     size_t window = 10;
     size_t ctx_size = window * 2 + 1; // pvdbow
-    size_t n_subsampled = 0;
     size_t line_len = 0;
     size_t n_examples = 0;
 
@@ -48,7 +47,7 @@ test_context_pvdbow()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_load("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 
@@ -62,14 +61,12 @@ test_context_pvdbow()
     FILE *train = fopen("data/cat.txt", "rb");
 
     /* read line */
-    nlk_read_number_line(train, text_line, &par_id, max_word_size, 
-                         max_line_size);
+    nlk_read_number_line(train, text_line, &par_id);
 
 
     /* vectorize */
-    line_len = nlk_vocab_vocabularize(&vocab, 0, text_line, 
-                                      0, NULL, false, vectorized, 
-                                      &n_subsampled); 
+    line_len = nlk_vocab_vocabularize(&vocab, text_line, 
+                                      NULL, vectorized); 
 
 
      /* contextify */
@@ -118,7 +115,6 @@ test_context_pvdm()
     size_t par_id;
     size_t window = 10;
     size_t ctx_size = window * 2 + 1; // pvdbow
-    size_t n_subsampled = 0;
     size_t line_len = 0;
     size_t n_examples = 0;
 
@@ -146,7 +142,7 @@ test_context_pvdm()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_load("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 
@@ -160,14 +156,11 @@ test_context_pvdm()
     FILE *train = fopen("data/cat.txt", "rb");
 
     /* read line */
-    nlk_read_number_line(train, text_line, &par_id, max_word_size, 
-                         max_line_size);
+    nlk_read_number_line(train, text_line, &par_id);
 
 
     /* vectorize */
-    line_len = nlk_vocab_vocabularize(&vocab, 0, text_line, 
-                                      0, NULL, false, vectorized, 
-                                      &n_subsampled); 
+    line_len = nlk_vocab_vocabularize(&vocab, text_line, NULL, vectorized); 
 
 
      /* contextify */
@@ -200,7 +193,8 @@ all_tests() {
     return 0;
 }
  
-int main(int argc, char **argv) {
+int 
+main() {
     printf("---------------------------------------------------------\n");
     printf("Context Tests\n");
     printf("---------------------------------------------------------\n");
@@ -211,7 +205,7 @@ int main(int argc, char **argv) {
     else {
         printf("ALL TESTS PASSED\n");
     }
-    printf("Tests Passed: %d/%d\n", tests_run, tests_passed);
+    printf("Tests Passed: %d/%d\n", tests_passed, tests_run);
  
     return result != 0;
 }

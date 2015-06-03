@@ -24,7 +24,7 @@
 
 
 /** @file nlk_criterion.h
- * Neural Network Criterions
+ * Neural Network Criterion Definitions
  */
 
 #ifndef __NLK_CRITERION_H__
@@ -45,14 +45,11 @@
 #endif
 __BEGIN_DECLS
 
-/* Negative Likelihood gradient for a single of  binary classification */ 
-void nlk_bin_nl_sgradient(const nlk_real, const uint8_t, nlk_real *);
+nlk_real    nlk_nll_forward(const NLK_ARRAY *, const size_t);
+void        nlk_nll_backprop(const NLK_ARRAY *, const size_t, NLK_ARRAY *);
+void        nlk_nll_backprop_reg(const NLK_ARRAY *, const size_t, 
+                                const nlk_real,  NLK_ARRAY *);
 
-int nlk_binary_neg_log_likelihood(const NLK_ARRAY *, const uint8_t *);
-
-int nlk_neg_log_likelihood_gradient(const NLK_ARRAY *, const size_t, 
-                                    NLK_ARRAY *);
-nlk_real nlk_neg_log_likelihood(const NLK_ARRAY *, const size_t);
 
 
 __END_DECLS

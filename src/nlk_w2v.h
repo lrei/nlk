@@ -24,14 +24,16 @@
 
 
 /** @file nlk_w2v.h
- * Word2Vec: CBOW & Skipgram model definitions
+ * Word2Vec: CBOW, Skipgram, PVDM, PVDBOW definitions
  */
-
 
 #ifndef __NLK_W2V_H__
 #define __NLK_W2V_H__
 
 
+#include "nlk.h"
+#include "nlk_layer_lookup.h"
+#include "nlk_corpus.h"
 #include "nlk_window.h"
 
 
@@ -47,49 +49,48 @@
 __BEGIN_DECLS
 
 /* create */
-struct nlk_neuralnet_t *nlk_w2v_create(NLK_LM, bool, unsigned int, 
-                                      float, nlk_real, bool, unsigned int, 
-                                      size_t, size_t, size_t, bool);
+struct nlk_neuralnet_t *nlk_w2v_create(struct nlk_nn_train_t, 
+                                       const bool, const size_t, 
+                                       struct nlk_vocab_t *, 
+                                       const size_t, const bool);
 
 /* train */
-void      nlk_w2v_hs(NLK_LAYER_LOOKUP *, const bool, const NLK_ARRAY *, 
-                     const nlk_real, const nlk_real *, 
-                     const struct nlk_vocab_t *, NLK_ARRAY *);
+void     nlk_w2v_hs(NLK_LAYER_LOOKUP *, const bool, const NLK_ARRAY *, 
+                    const nlk_real, const struct nlk_vocab_t *, NLK_ARRAY *);
 
 void     nlk_w2v_neg(NLK_LAYER_LOOKUP *, const bool, const size_t *, 
                      const size_t, const size_t, const nlk_real, const size_t, 
-                     const NLK_ARRAY *, const nlk_real *, NLK_ARRAY *);
+                     const NLK_ARRAY *, NLK_ARRAY *);
 
 void    nlk_pvdm(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
                  const bool, NLK_LAYER_LOOKUP *, const bool,
                  NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
                  const bool, const size_t, const nlk_real, 
-                 const nlk_real *, const struct nlk_context_t *, 
-                 NLK_ARRAY *, NLK_ARRAY *);
+                 const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
 
 void    nlk_pvdm_cc(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
                     const bool, NLK_LAYER_LOOKUP *, const bool, 
                     NLK_LAYER_LOOKUP *,  const size_t, const size_t *, 
                     const bool, const size_t, const nlk_real, 
-                    const nlk_real *, const struct nlk_context_t *,
-                    NLK_ARRAY *, NLK_ARRAY *);
+                    const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
 
 void    nlk_pvdbow(NLK_LAYER_LOOKUP *, const bool, NLK_LAYER_LOOKUP *, 
                    const bool, NLK_LAYER_LOOKUP *, const bool, 
                    NLK_LAYER_LOOKUP *, const size_t, const size_t *, 
                    const bool, const size_t, const nlk_real, 
-                   const nlk_real *, const struct nlk_context_t *, 
-                   NLK_ARRAY *, NLK_ARRAY *);
+                   const struct nlk_context_t *, NLK_ARRAY *, NLK_ARRAY *);
 
+void     nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *, 
+                 const bool, const bool, const bool, int, const bool);
 
-void     nlk_w2v_train(struct nlk_neuralnet_t *nn, const char *, const bool,
-                       struct nlk_vocab_t **, const size_t, unsigned int, int);
+void     nlk_w2v_train(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *, 
+                       int);
 
 /* export */
 void    nlk_w2v_export_word_vectors(NLK_ARRAY *, NLK_FILE_FORMAT, 
-                                    struct nlk_vocab_t **, char *);
+                                    struct nlk_vocab_t **, const char *);
 void    nlk_w2v_export_paragraph_vectors(NLK_ARRAY *, NLK_FILE_FORMAT, 
-                                         char *, char *);
+                                         const char *);
 
 
 __END_DECLS

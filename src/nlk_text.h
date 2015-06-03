@@ -35,8 +35,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include <sys/types.h>
-
 
 #define NLK_LM_MAX_WORD_SIZE    128
 #define NLK_LM_MAX_LINE_SIZE    100000
@@ -54,39 +52,32 @@
 __BEGIN_DECLS
 
 
+/* create/free */
+char    **nlk_text_line_create();
+void    nlk_text_line_free(char **);
+
+/* lower */
 void    nlk_text_lower(char *, wchar_t *);
 void    nlk_text_ascii_lower(char *st);
 
 /* read */
 int     nlk_read_word(FILE *, char *, const size_t);
 int     nlk_read_line(FILE *, char **, const size_t, const size_t);
-int     nlk_read_number_line(FILE *, char **, size_t *, const size_t, 
-                             const size_t);
+int     nlk_read_number_line(FILE *,  char **, size_t *);
 size_t  nlk_text_line_size(char **line);
 size_t  nlk_text_get_line(FILE *);
 size_t  nlk_text_count_words(FILE *);
 size_t  nlk_text_count_lines(FILE *);
 
 /* go to line, splits */
-void    nlk_text_goto_line(FILE *, size_t);
+void    nlk_text_goto_line(FILE *, long);
 size_t  nlk_text_get_split_start_line(size_t, unsigned int, unsigned int);
 size_t  nlk_text_get_split_end_line(size_t,  unsigned int, unsigned int);
-size_t  nlk_set_file_pos(FILE *, bool, size_t, size_t, int);
+size_t  nlk_set_file_pos(FILE *, bool, size_t, int, int);
 
 /* print */
 void    nlk_text_print_line(char **);
 void    nlk_text_print_numbered_line(char **, size_t, int);
-
-
-/* Mem Mapped functions */
-off_t   nlk_text_mem_open(char *, char **);
-void    nlk_text_mem_close(caddr_t *, size_t);
-size_t  nlk_text_mem_count_lines(char *, off_t);
-int     nlk_text_mem_read_word(char *, off_t *, off_t, char *, wchar_t *, 
-                               const size_t);
-off_t   nlk_text_mem_get_line_pos(char *, size_t, size_t);
-int     nlk_text_mem_read_line(char *, off_t *, off_t, char **, off_t *,
-                               wchar_t *, const size_t, const size_t);
 
 
 __END_DECLS

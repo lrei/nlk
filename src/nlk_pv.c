@@ -30,6 +30,7 @@
 
 
 #include <errno.h>
+#include <stdio.h>
 
 #include <omp.h>
 
@@ -37,90 +38,27 @@
 #include "nlk_array.h"
 #include "nlk_tic.h"
 #include "nlk_text.h"
+#include "nlk_corpus.h"
 #include "nlk_random.h"
+#include "nlk_layer_lookup.h"
+#include "nlk_layer_linear.h"
+#include "nlk_transfer.h"
+#include "nlk_criterion.h"
 #include "nlk_w2v.h"
 #include "nlk_learn_rate.h"
+#include "nlk_util.h"
+#include "nlk_class.h"
 
 #include "nlk_pv.h"
 
 
-
-
-
-/**
- * Learn a Paragraph vector for a single line
- */
-void
-nlk_pv_gen_one(const NLK_LM model_type, struct nlk_neuralnet_t *nn, 
-               const bool hs, const unsigned int negative, nlk_real learn_rate, 
-               const unsigned int steps, struct nlk_vocab_t **vocab, 
-               const size_t vocab_size, char **paragraph, 
-               const size_t *neg_table, const nlk_real *sigmoid_table, 
-               struct nlk_context_t **contexts, NLK_CONTEXT_OPTS *ctx_opts, 
-               NLK_ARRAY *pv, NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
-{
-    size_t n_examples;
-    size_t n_subsampled;
-    size_t line_len;
-    struct nlk_vocab_t *vectorized[NLK_LM_MAX_LINE_SIZE];
-
-
-    struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
-    size_t layer_n = 1;
-    struct nlk_layer_lookup_t *lkhs = NULL;
-    if(hs) {
-        lkhs = nn->layers[layer_n].lk;
-        layer_n++;
-    }
-    struct nlk_layer_lookup_t *lkneg = NULL;
-    if(negative) {
-        lkneg = nn->layers[layer_n].lk;
-    }
-
-
-    /* vocabularize: no subsampling */
-    line_len = nlk_vocab_vocabularize(vocab, 0, paragraph, 0, NULL, false, 
-                                      vectorized, &n_subsampled); 
-
-    /* context window */
-    n_examples = nlk_context_window(vectorized, line_len, 0, 
-                                    ctx_opts, contexts);
-
-    unsigned int step;
-    if(model_type == NLK_PVDBOW) {
-        for(step = 0; step < steps; step++) {
-            for(size_t ex = 0; ex < n_examples; ex++) {
-            }
-            learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
-                                                        steps);
-        }
-    } else if(model_type == NLK_PVDM) {
-        for(step = 0; step < steps; step++) {
-            for(size_t ex = 0; ex < n_examples; ex++) {
-
-            }
-            learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
-                                                        steps);
-        }
-    } else if(model_type == NLK_PVDM_CONCAT) {
-        for(step = 0; step < steps; step++) {
-            for(size_t ex = 0; ex < n_examples; ex++) {
-            }
-            learn_rate = nlk_learn_rate_step_dec_update(learn_rate, step, 
-                                                        steps);
-        }
-    } else {
-        NLK_ERROR_ABORT("invalid model type", NLK_EINVAL);
-        /* unreachable */
-    }
-}
 
 /**
  * Display progress of paragraph vector generation
  *
  * @param generated number of PVs generated so far
  * @param total     total number of PVs to generate
- */
+ *
 static void
 nlk_pv_display(const size_t generated, const size_t total)
 {
@@ -132,220 +70,288 @@ nlk_pv_display(const size_t generated, const size_t total)
             progress, generated, total, omp_get_num_threads());
     nlk_tic(display_str, false);
 }
+*/
 
+
+
+void
+nlk_pv_gen(struct nlk_neuralnet_t *nn, struct nlk_corpus_t *corpus)
+{
+    struct nlk_layer_lookup_t *par_table;
+    par_table = nlk_layer_lookup_create(corpus->len, nn->words->weights->cols);
+
+
+}
+
+
+
+unsigned int *
+nlk_pv_classify(struct nlk_neuralnet_t *nn, 
+                struct nlk_layer_lookup_t *par_table, size_t *ids, size_t n)
+{
+    /** @section Init
+     */
+    bool ids_mine = false; /* true if function created the ids array */
+    /* if no ids are passed, classify the entire table */
+    if(n == 0) {
+        n = par_table->weights->rows;
+        ids = nlk_range(n);
+        ids_mine = true;
+    }
+
+    unsigned int *pred = NULL;
+    pred = (unsigned int *) malloc(n * sizeof(unsigned int));
+    if(pred == NULL) {
+        NLK_ERROR_NULL("unable to allocate memory", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+    /* PV size */
+    const size_t pv_size = par_table->weights->cols;
+
+    /* softmax layer */
+    struct nlk_layer_linear_t *linear = nn->layers[nn->n_layers - 1].ll;
+    unsigned int n_classes = linear->weights->rows;
+
+    /** @section Classify
+     */
+#pragma omp parallel
+{
+    /** @subsection Parallel Initialization
+     */
+    /* paragraph id */
+    size_t pid = 0;
+    /* paragraph vector */
+    NLK_ARRAY *pv = nlk_array_create(pv_size, 1);    
+    /* output of the linear layer */
+    NLK_ARRAY *linear_out = nlk_array_create(n_classes, 1);
+    /* output of the softmax transfer (and thus the network) */
+    NLK_ARRAY *out = nlk_array_create(n_classes, 1);
+
+    /** @subsection Parallel Classify
+     */
+#pragma omp parallel for
+    /* for each pv */
+    for(size_t tid = 0; tid < n; tid++) {
+            pid = ids[tid];
+            /* forward step 1: get paragraph vector (lookup) */
+            nlk_layer_lookup_forward_lookup_one(par_table, pid, pv);
+            /* forward step 2: linear layer */
+            nlk_layer_linear_forward(linear, pv, linear_out);
+            /* forward step 3: softmax transfer */
+            nlk_log_softmax_forward(linear_out, out);
+
+            pred[tid] = nlk_array_max_i(out);
+    }
+
+} /* end of parallel region */
+
+    if(ids_mine) {
+        free(ids);
+        ids = NULL;
+    }
+
+    return pred;
+}
+
+
+float
+nlk_pv_class_train(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset, 
+                   const unsigned int iter, nlk_real learn_rate, 
+                   const nlk_real learn_rate_decay, const bool verbose)
+{
+    float accuracy = 0;
+
+    /** @section Shortcuts
+     */
+    /* paragraph lookup table */
+    struct nlk_layer_lookup_t *par_table = nn->paragraphs; 
+
+    /* PV size */
+    const size_t pv_size = par_table->weights->cols;
+
+    /* softmax layer */
+    struct nlk_layer_linear_t *linear = nn->layers[nn->n_layers - 1].ll;
+    const unsigned int n_classes = dset->n_classes;
+    /* n_classes should be equal to linear->weights->rows */
+
+    /* dataset */
+    const size_t size = dset->size;
+
+
+    /** @section Train Classes
+     */
+    size_t pid; /* the parapraph id */
+    /* paragraph vector */
+    NLK_ARRAY *pv = nlk_array_create(pv_size, 1);    
+    /* output of the linear layer */
+    NLK_ARRAY *linear_out = nlk_array_create(n_classes, 1);
+    /* output of the softmax transfer (and thus the network) */
+    NLK_ARRAY *out = nlk_array_create(n_classes, 1);
+
+    /* gradient at output */
+    NLK_ARRAY *grad_out = nlk_array_create(n_classes, 1);
+    /* gradient at softmax input = gradient at linear output */
+    NLK_ARRAY *grad_sm_in = nlk_array_create(n_classes, 1);
+    /* gradient at linear layer input */
+    NLK_ARRAY *grad_in = nlk_array_create(pv_size, 1);
+
+
+    /** @subsection Train Cycle
+     */
+    for(unsigned int local_iter = 1; local_iter <= iter; local_iter++) {
+        accuracy = 0;
+        size_t correct = 0;
+        unsigned int pred = 0;
+
+        /* shuffle the data */
+        nlk_dataset_shuffle(dset);
+
+        /* for each pv */
+        for(size_t tid = 0; tid < size; tid++) {
+            /** @subsection Forward
+             */
+            /* get paragraph id */
+            pid = dset->ids[tid];
+
+            /* forward step 1: get paragraph vector (lookup) */
+            nlk_layer_lookup_forward_lookup_one(par_table, pid, pv);
+
+            /* forward step 2: linear layer */
+            nlk_layer_linear_forward(linear, pv, linear_out);
+
+            /* forward step 3: softmax transfer */
+            nlk_log_softmax_forward(linear_out, out);
+
+
+            /* check result */
+            pred = nlk_array_max_i(out);
+            if(pred == dset->classes[tid]) {
+                correct++;
+            }
+
+
+            /** @subsection Backpropation 
+             */
+            /* Backprop step 1: Negative Log Likelihood */
+            nlk_nll_backprop(out, dset->classes[tid], grad_out);
+
+            /* learning rate */
+            nlk_array_scale(learn_rate, grad_out);
+
+            /* Backprop step 2: softmax transfer */
+            nlk_log_softmax_backprop(out, grad_out, grad_sm_in); 
+
+            /* Backprop step3: linear layer */
+            nlk_layer_linear_backprop(linear, pv, grad_sm_in, grad_in);
+
+        } /* end of paragraphs */
+
+        accuracy = correct / (float) dset->size;
+        if(verbose) {
+            printf("[%d/%d] accuracy = %f (%zu / %zu) alpha = %f\n", 
+                    local_iter, iter, accuracy, correct, dset->size, 
+                    learn_rate);
+        }
+
+        /* update learning rate */
+        learn_rate = nlk_learn_rate_decay(learn_rate, learn_rate_decay);
+    } /* end of iterations */
+
+    /** @subsection Cleanup 
+     */
+    nlk_array_free(pv);
+    nlk_array_free(linear_out);
+    nlk_array_free(out);
+    nlk_array_free(grad_out);
+    nlk_array_free(grad_sm_in);
+    nlk_array_free(grad_in);
+
+    return accuracy;
+}
 
 /**
- * Learn a series of paragraph vectors from a file
+ * Creates and Trains PV classifier
+ * Creates a LogSoftMax Layer and ads it to the network then trains it.
  *
+ * @param iter          the number of supervised iterations
+ *
+ * @return accuracy on the train set
  */
-NLK_ARRAY *
-nlk_pv(struct nlk_neuralnet_t *nn, const char *par_file_path, 
-       const bool numbered, struct nlk_vocab_t **vocab, 
-       const unsigned int steps, int verbose)
+float
+nlk_pv_classifier(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset, 
+                  const unsigned int iter, nlk_real learn_rate,
+                  const nlk_real learn_rate_decay, const bool verbose)
 {
-    int num_threads = omp_get_num_threads();
-    size_t generated = 0;
+    double accuracy = 0;
 
-    /* time keeping */
-    nlk_tic_reset();
-    nlk_tic(NULL, false);
+    /**@section Shortcuts and Initializations 
+     */
+    
+    /**@subsection Create the softmax layer
+     * softmax layer = linear layer followed by a softmax transfer
+     */
+    /* embedding size of the paragraphs */
+    const size_t pv_size = nn->paragraphs->weights->cols;
 
-    /* unpack training options */
-    const NLK_LM model_type = nn->train_opts.model_type;
-    const bool hs = nn->train_opts.hs;
-    const unsigned int negative = nn->train_opts.negative;
-    const size_t window = nn->train_opts.window;
-    nlk_real learn_rate = nn->train_opts.learn_rate;
+    /* create */
+    struct nlk_layer_linear_t *linear = NULL;
+    linear = nlk_layer_linear_create(dset->n_classes, pv_size,  true);
 
-    /* shortcuts */
-    struct nlk_layer_lookup_t *lk1 = nn->layers[0].lk;
-    size_t layer_size = lk1->weights->cols;
-    size_t layer_size2 = nn->layers[1].lk->weights->cols;
-    size_t vocab_size = nlk_vocab_size(vocab);
+    /* init */
+    nlk_layer_linear_init_sigmoid(linear); /* not a sigmoid but meh */
 
-    /* context */
-    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
+    /* add to neural network */
+    nlk_neuralnet_expand(nn, 1);
+    nlk_neuralnet_add_layer_linear(nn, linear);
 
-    size_t ctx_size = window * 2;   /* max context size */
-    size_t context_multiplier = 1;  /* != 1 only for PVDBOW */
+   
+    /**@section Train
+     */
+    nlk_pv_class_train(nn, dset, iter, learn_rate, learn_rate_decay, verbose);
 
-    if(model_type == NLK_PVDBOW) { 
-    /* PVDBOW */
-        context_multiplier = ctx_size;
-        ctx_size = 1;   /* one (word, paragraph) pair at a time */
-    /* PVDM */
-    } else if(model_type == NLK_PVDM || model_type == NLK_PVDM_CONCAT) { 
-        ctx_size += 1; /* space for the paragraph (1st elem of window) */
-    }
+    /* test */
+    unsigned int *pred = NULL;
+    pred = nlk_pv_classify(nn, nn->paragraphs, dset->ids, 
+                           dset->size);
+    accuracy = nlk_class_score_accuracy(pred, dset->classes, 
+                                        dset->size);
+    free(pred);
 
-    struct nlk_context_opts_t ctx_opts;
-    nlk_context_model_opts(model_type, window, vocab, &ctx_opts);
-
-
-    /* open file */
-    errno = 0;
-    FILE *in = fopen(par_file_path, "rb");
-    if(in == NULL) {
-        NLK_ERROR_ABORT(strerror(errno), errno);
-        /* unreachable */
-    }
-
-    /* count lines */
-    size_t total_lines = nlk_text_count_lines(in);
     if(verbose) {
-        printf("Generating Paragraphs: %zu\n", total_lines);
+        printf("\naccuracy classifying train set: %f (%zu)\n", 
+                accuracy, dset->size); 
+        printf("Finished training\n");
     }
 
-    /* random number generator initialization */
-    uint64_t seed = 6121984 * clock();
-    seed = nlk_random_fmix(seed);
-    nlk_random_init_xs1024(seed);
+    return accuracy;
+}
 
-    /* create and init PVs */
-    NLK_ARRAY *par_vectors = nlk_array_create(total_lines, layer_size);
-    nlk_layer_lookup_init_array(par_vectors);
-
-    /* sigmoid table */
-    nlk_real *sigmoid_table = nlk_table_sigmoid_create();
-
-    /* neg table for negative sampling */
-    size_t *neg_table = NULL;
-    if(negative) {
-        neg_table = nlk_vocab_neg_table_create(vocab, NLK_NEG_TABLE_SIZE, 
-                                               0.75);
-    }
-
-
-#pragma omp parallel shared(generated) 
+/**
+ * Convenience function
+ * @warning this function should probably be moved to eval or something
+ */
+float
+nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path, 
+                     const bool verbose)
 {
-    /** @subsection NN training initializations
-     */
-    /* current paragraph vector (empty shell) */
-    NLK_ARRAY pv;
-    pv.cols = 1;
-    pv.rows = layer_size;
-
-
-    /* output of the first layer */
-    NLK_ARRAY *lk1_out = nlk_array_create(layer_size2, 1);
-
-    /* for storing gradients */
-    NLK_ARRAY *grad_acc = nlk_array_create(1, layer_size2);
-    
-    /** @subsection Input Text and Context Window initializations 
-     */
-    
-    /* allocate memory for reading from the input file */
-    char **text_line = (char **) calloc(max_line_size, sizeof(char *));
-    if(text_line == NULL) {
-        NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-        /* unreachable */
-    }
-    for(size_t zz = 0; zz < max_line_size; zz++) {
-        text_line[zz] = calloc(max_word_size, sizeof(char));
-        if(text_line[zz] == NULL) {
-            NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
-            /* unreachable */
-        }
-    }
-
-    /* for converting a sentence to a series of training contexts */
-    struct nlk_context_t **contexts = (struct nlk_context_t **) 
-        malloc(max_line_size * context_multiplier * 
-               sizeof(struct nlk_context_t *));
-    if(contexts == NULL) {
-        NLK_ERROR_ABORT("unable to allocate memory for contexts", NLK_ENOMEM);
+    float ac = 0;
+    unsigned int *pred;
+    struct nlk_dataset_t *test_set = NULL;
+    test_set = nlk_dataset_load_path(test_path);
+    if(test_set == NULL) {
+        NLK_ERROR("invalid test set", NLK_FAILURE);
         /* unreachable */
     }
 
-    for(size_t zz = 0; zz < max_line_size * context_multiplier; zz++) {
-        contexts[zz] = nlk_context_create(ctx_size);
-        if(contexts[zz] == NULL) {
-            NLK_ERROR_ABORT("unable to allocate memory for contexts", 
-                            NLK_ENOMEM);
-        }
+    pred = nlk_pv_classify(nn, nn->paragraphs, test_set->ids, test_set->size);
+    ac = nlk_class_score_accuracy(pred, test_set->classes, test_set->size);
+    if(verbose) {
+        printf("\nTEST SCORE = %f\n", ac);
     }
+    free(pred);
+    nlk_dataset_free(test_set);
 
-    /* 
-     * The train file is divided into parts, one part for each thread.
-     * Open file and move to thread specific starting point
-     */
-    size_t line_start = 0;
-    size_t line_cur = 0;
-    size_t end_line = 0;
-    FILE *par_file = fopen(par_file_path, "rb");
-    size_t par_id;
+    return ac;
 
-#pragma omp for 
-    for(int thread_id = 0; thread_id < num_threads; thread_id++) {
-        /* set train file part position */
-        line_cur = nlk_text_get_split_start_line(total_lines, num_threads, 
-                                                 thread_id);
-        nlk_text_goto_line(par_file, line_cur);
-        end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
-                                                  thread_id);
-
-
-
-        /* determine line number */
-        line_start = nlk_text_get_line(par_file);
-        line_cur = line_start;
-
-
-        while(true) {
-           /* read line */
-            if(numbered) {
-                nlk_read_number_line(par_file, text_line, &par_id, 
-                                     max_word_size, max_line_size);
-            } else {
-                nlk_read_line(par_file, text_line, max_word_size, 
-                              max_line_size);
-                par_id = line_cur;
-            }
-
-            /* select paragraph */
-            pv.data = &par_vectors->data[par_id * layer_size];
-
-
-            /* generate */
-            nlk_pv_gen_one(model_type, nn, hs, negative, learn_rate, steps,
-                           vocab, vocab_size, text_line, neg_table, 
-                           sigmoid_table, contexts, &ctx_opts, &pv, grad_acc, 
-                           lk1_out);
-
-            generated++;
-            line_cur++;
-            if(verbose) {
-                nlk_pv_display(generated, total_lines);
-            }
-            if(line_cur > end_line) {
-                break;
-            }
-        }     
-    } /* end of threaded algorithm execution */
-
-    /** @subsection Free Thread Private Memory and Close Files
-     */
-    for(size_t zz = 0; zz < max_line_size * context_multiplier; zz++) {
-        nlk_context_free(contexts[zz]);
-    }
-    for(size_t zz = 0; zz < max_line_size; zz++) {
-        free(text_line[zz]);
-    }
-    free(text_line);
-    nlk_array_free(lk1_out);
-    nlk_array_free(grad_acc);
-    fclose(par_file);
-} /* *** End of Paralell Region *** */
-
-    /** @section End
-     */
-    nlk_tic_reset();
-    free(sigmoid_table);
-    if(negative) {
-        free(neg_table);
-    }
-
-    return par_vectors;
 }

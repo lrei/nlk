@@ -66,6 +66,8 @@ nlk_random_xs64(uint64_t *x) {
 	*x = *x * UINT64_C(2685821657736338717);
 }
 
+static uint64_t __s[16];
+static int __p;
 /**
  * xorshift1024*
  * Written in 2014 by Sebastiano Vigna (vigna@acm.org)
@@ -75,17 +77,14 @@ nlk_random_xs64(uint64_t *x) {
  * more than this was designed to handle but "meh".
  * @endnote
  */
-static uint64_t s[16];
-static int p;
-
 uint64_t 
 nlk_random_xs1024() { 
-	uint64_t s0 = s[p];
-	uint64_t s1 = s[p = ( p + 1 ) & 15];
+	uint64_t s0 = __s[__p];
+	uint64_t s1 = __s[__p = ( __p + 1 ) & 15];
 	s1 ^= s1 << 31; // a
 	s1 ^= s1 >> 11; // b
 	s0 ^= s0 >> 30; // c
-	return ( s[p] = s0 ^ s1 ) * 1181783497276652981LL; 
+	return ( __s[__p] = s0 ^ s1 ) * 1181783497276652981LL; 
 }
 
 /**
@@ -108,7 +107,7 @@ nlk_random_init_xs1024(uint64_t seed)
     init = nlk_random_fmix(seed);
     for(int ii = 0; ii < 16; ii++) {
         nlk_random_xs64(&init);
-        s[ii] = init;
+        __s[ii] = init;
     }
 
 }

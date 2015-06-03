@@ -65,7 +65,7 @@ void nlk_analogy_test_free(struct nlk_analogy_test_t *);
 
 /* paraphrases */
 int nlk_eval_on_paraphrases(struct nlk_neuralnet_t *, const unsigned int, 
-                            const char *, const bool, struct nlk_vocab_t **, 
+                            const char *, struct nlk_vocab_t **, 
                             const int, nlk_real *);
 
 int nlk_eval_on_paraphrases_pre_gen(const NLK_ARRAY *, size_t, const int, 

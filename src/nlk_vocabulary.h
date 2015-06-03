@@ -93,17 +93,25 @@ struct nlk_vocab_t {
 typedef struct nlk_vocab_t NLK_VOCAB;
 
 
+/** @struct nlk_vocab_line_t
+ * A vocabularized line of text and associated options
+ */
+struct nlk_line_t {
+    size_t                line_id;          /**< line id read from file */
+    size_t                len;              /**< vocabularized array length */
+    struct nlk_vocab_t  **varray;           /**< vocabularized line read */
+};
+
 /* creation */
-struct nlk_vocab_t   *nlk_vocab_create(char *, const bool, const size_t, 
+struct nlk_vocab_t   *nlk_vocab_create(const char *, const uint64_t, 
                                        const bool); 
-void                  nlk_vocab_extend(struct nlk_vocab_t **, char *, 
-                                       const bool, const size_t, const size_t); 
+void                  nlk_vocab_extend(struct nlk_vocab_t **, char *); 
 void                  nlk_vocab_add_vocab(struct nlk_vocab_t **dest, 
                                           struct nlk_vocab_t **source);
 void                  nlk_vocab_free(struct nlk_vocab_t **);
 
 /* reduce */
-void                  nlk_vocab_reduce(struct nlk_vocab_t **, const size_t);
+void                  nlk_vocab_reduce(struct nlk_vocab_t **, const uint64_t);
 void                  nlk_vocab_reduce_replace(struct nlk_vocab_t **, 
                                                const size_t);
 /* stats */
@@ -117,15 +125,22 @@ void        nlk_vocab_sort(struct nlk_vocab_t **);
 void        nlk_vocab_encode_huffman(struct nlk_vocab_t **);
 
 /* save & load */
-int                   nlk_vocab_save(const char *, struct nlk_vocab_t **);
-struct nlk_vocab_t   *nlk_vocab_load(const char *, const size_t);
-int                   nlk_vocab_save_full(const char *, struct nlk_vocab_t **);
+int                   nlk_vocab_export(const char *, struct nlk_vocab_t **);
+struct nlk_vocab_t   *nlk_vocab_import(const char *, const size_t);
+void                  nlk_vocab_save(struct nlk_vocab_t **, const size_t, 
+                                     const size_t, FILE *);
+struct nlk_vocab_t   *nlk_vocab_load(FILE *, size_t *, size_t *);
 
 /* vocabularize */
-size_t       nlk_vocab_vocabularize(struct nlk_vocab_t **, const uint64_t , 
-                                    char **, const float sample, 
-                                    struct nlk_vocab_t *, const bool, 
-                                    struct nlk_vocab_t **, size_t *);
+void nlk_vocab_line_subsample(const struct nlk_line_t *, 
+                              const uint64_t, const float, 
+                              struct nlk_line_t *);
+
+size_t  nlk_vocab_vocabularize(struct nlk_vocab_t **, char **,
+                               struct nlk_vocab_t *, struct nlk_vocab_t **);
+void    nlk_vocab_read_vocabularize(FILE *, struct nlk_vocab_t **, 
+                                    char **, struct nlk_line_t *);
+
 void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t, bool);
 
 /* NEG table */
@@ -138,6 +153,14 @@ struct nlk_vocab_t   *nlk_vocab_at_index(struct nlk_vocab_t **, size_t);
 /*size_t       nlk_vocab_last_id(struct nlk_vocab_t **); */
 size_t                nlk_vocab_last_index(struct nlk_vocab_t **);
 struct nlk_vocab_t   *nlk_vocab_get_start_symbol(struct nlk_vocab_t **);
+
+uint64_t nlk_vocab_count_words(struct nlk_vocab_t **, const char *, 
+                               const size_t *, const size_t, const size_t);
+
+/* line */
+struct nlk_line_t  *nlk_line_create(const size_t);
+void                nlk_line_free(struct nlk_line_t *);
+
 
 
 __END_DECLS

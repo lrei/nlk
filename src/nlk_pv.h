@@ -23,13 +23,17 @@
  *****************************************************************************/
 
 
-/** @file nlk_w2v.h
- * Word2Vec: CBOW & Skipgram model definitions
+/** @file nlk_pv.h
+ * Paragraph Vector specific definitions
  */
 
 
 #ifndef __NLK_PV_H__
 #define __NLK_PV_H__
+
+
+#include "nlk_corpus.h"
+#include "nlk_class.h"
 
 
 #undef __BEGIN_DECLS
@@ -43,17 +47,16 @@
 #endif
 __BEGIN_DECLS
 
-void nlk_pv_gen_one(const NLK_LM, struct nlk_neuralnet_t *, 
-                    const bool, const unsigned int, nlk_real, 
-                    const unsigned int, struct nlk_vocab_t **, 
-                    const size_t, char **, const size_t *, 
-                    const nlk_real *, struct nlk_context_t **, 
-                    NLK_CONTEXT_OPTS *, NLK_ARRAY *, NLK_ARRAY *, 
-                    NLK_ARRAY *);
 
-NLK_ARRAY *nlk_pv(struct nlk_neuralnet_t *, const char *, const bool,
-                  struct nlk_vocab_t **, const unsigned int, int);
+unsigned int *nlk_pv_classify(struct nlk_neuralnet_t *, 
+                              struct nlk_layer_lookup_t *, size_t *, size_t);
 
+float nlk_pv_classifier(struct nlk_neuralnet_t *, struct nlk_dataset_t *,
+                        const unsigned int, nlk_real, 
+                        const nlk_real, const bool);
+
+
+float nlk_pv_classify_test(struct nlk_neuralnet_t *, const char *, const bool);
 
 __END_DECLS
 #endif /* __NLK_PV_H__ */

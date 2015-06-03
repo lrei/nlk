@@ -53,7 +53,7 @@ Function names are lower case and words in them are separated by an underscore
 e.g. nlk_set_error_handler(...). 
 
 
-Macros and enums are full upper case e.g. NLK_FAILURE.
+Enums are full upper case e.g. NLK_FAILURE.
 
 
 ### Typedefs
@@ -70,35 +70,36 @@ e.g. size_t for lengths.
 Linux kernel style typedefs i.e. typedef uint32_t u32; are not ok. A name of a 
 type should mean something. size_t is a typedef but it means something. u32 just
 means you type faster than you think. There's no reason for both u32 and 
-uint32_t to coexist in 
+uint32_t to coexist in the same codebase.
 
 
 Second, typedefing structures... yes. Structures are typedefed. I would prefer 
 not to but GSL and others do this so it would be weird not to. It also makes 
 things easier for non-C-natives. This is contrary to the Linux kernel style.
 
+Code which needs to deal with the insides of structures should always use the
+full struct definition.
 
-Typedefs are capitalized (not camel case) as in K&R:
 
-    Treenode or Tree_Huffman_Node
+Typedefs are full capital (not camel case) or capitalized as in K&R:
+
+    NLK_ARRAY
 
     not
 
-    TreeNode or treeNode or TREENODE or whatever
+    Nlk_Array or nlk_Array or nlk_ARRAY or whatever
 
-Adding a _t to types is unnecessary.
+The reasoning is that other cases are generally ambigous
 
+    Treenode or TreeNode?
+
+nlk_Treenode (single capital case) seems to be the best alternative. 
     
-Function typedefs which are all lower case (like functions themselves). In 
-function typedefs adding a _t suffix is actually preferred since they are not 
-capitalized and the concept of a function type is kind of weird and poorly 
-implementedin C.
-
 
 ### Prefixing
 
-All library functions are prefixed with *nlk_*. The *nlk_* prefix is always 
-lower case. Non-library functions have no prefix.
+All functions are prefixed with *nlk_*. The *nlk_* prefix is always 
+lower case.
 
 Global variables (and functions) are pre-prefixed with two underscores meant to 
 indicate "private" i.e. the variable should only be set by calling functions 
@@ -107,8 +108,7 @@ directly defined in that file. E.g.
     nlk_error_handler_t *__nlk_error_handler = NULL;
 
 I realise this makes things harder to read in many places specially when the 
-variable is preceeded by '*'. Global variables should be rare enough to make 
-it a non issue. This is python convention. I've adopted it because it makes it
+variable is preceeded by '*'. This has the benifit of making it
 clearer when global variables are set inside a function.
 
 
@@ -141,8 +141,8 @@ see parentheses clearly.
 When declaring pointer data or a function that returns a pointer type, the '*' 
 is adjacent to the data name or function name and not adjacent to the type name.
 
-	nlk_Bock *block;
-	nlk_Real *nlk_func(nlk_Real *s);
+	nlk_array *block;
+	nlk_real  *nlk_func(nlk_Real *s);
 
 Use one space around (on each side of) binary and ternary operators but not
 around unary operators
@@ -177,12 +177,14 @@ if(cond) {
 
 ## Chapter 4: Centralized exiting of functions
 
-No goto. Structure your if-elses correctly, duplicate minimal code if necessary.
+Preferably, structure conditionals correctly. 
+When not possible use goto or preferably nlk_err.h macros.
 
 ## Chapter 5: Functions
 
 Declarations do not include parameter names.
-Output parameters are always the last parameters in the function.
+Temporary memory are the last parameters of a function if they exist.
+Otherwise, output parameters are always the last in the function call.
 
 Unlike variables, functions include type information: they are prefixed with 
 the type they operate on. The reason for this is obvious: there can't be two 
@@ -198,8 +200,8 @@ No, code is not it's own documentation. And it's certainly not it's own
 commentary. That makes no sense. It's like saying watching a sports match is 
 it's own commentary. It's a dumb assertion.
 
-Code is instructions to a computer. The computer (fortunately/unfortunaly) never
-asks "why" and does not need to know. People do. 
+Code is instructions to a computer. The computer (fortunately/unfortunaly) 
+never asks "why" and does not need to know. People do. 
 
 
 "Generally, you want your comments to tell WHAT your code does, not HOW." 

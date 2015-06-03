@@ -72,13 +72,14 @@ struct nlk_nn_train_t {
     nlk_real         learn_rate;    /**< the initial learn rate */
     bool             hs;            /**< use hierarchical softmax */
     unsigned int     negative;      /**< number of negative examples */
+    unsigned int     iter;          /**< number of iterations/epochs */
 };
 typedef struct nlk_w2v_train_t NLK_W2V_TRAIN;
 
 /** @enum NLK_LAYER_T
  * The type of layer
  */
-enum nlk_layer_type { 
+enum nlk_layer_type_t { 
     NLK_LAYER_LINEAR_TYPE   = 0,  /**< a regular linear layer */
     NLK_LAYER_LOOKUP_TYPE   = 1   /**< a lookup table */
 };
@@ -88,8 +89,8 @@ typedef enum nlk_layer_type NLK_LAYER_TYPE;
  * A Layer
  */
 union nlk_layer_t {
-    struct nlk_layer_lookup_t *lk;
-    NLK_LAYER_LINEAR *ll;
+    struct nlk_layer_lookup_t *lk;  /**< lookup */
+    struct nlk_layer_linear_t *ll;  /**< linear */
 };
 typedef union nlk_layer_t NLK_LAYER;
 
@@ -97,6 +98,9 @@ typedef union nlk_layer_t NLK_LAYER;
  * A Neural Net
  */
 struct nlk_neuralnet_t {
+    size_t                       max_word_size; /**< max chars in a word */
+    size_t                       max_line_size; /**< max words in a line */
+    struct nlk_vocab_t          *vocab;         /**< the vocabulary */
     struct nlk_nn_train_t        train_opts;    /**< model training options */
     struct nlk_layer_lookup_t   *words;         /**< word lookup layer */
     struct nlk_layer_lookup_t   *paragraphs;    /**< paragraph lookup layer */
@@ -108,8 +112,15 @@ struct nlk_neuralnet_t {
 typedef struct nlk_neuralnet_t NLK_NEURALNET;
 
 
+bool nlk_neuralnet_is_paragraph_model(const NLK_LM); 
+bool nlk_neuralnet_is_concat_model(const NLK_LM);
+
+
 /* create */
 struct nlk_neuralnet_t *nlk_neuralnet_create(size_t);
+
+/* expand */
+int nlk_neuralnet_expand(struct nlk_neuralnet_t *, size_t);
 /* add layers */
 void nlk_neuralnet_add_layer_lookup(struct nlk_neuralnet_t *,
                                     struct nlk_layer_lookup_t *);
@@ -125,6 +136,10 @@ int nlk_neuralnet_save_path(struct nlk_neuralnet_t *, char *);
 /* load */
 struct nlk_neuralnet_t *nlk_neuralnet_load(FILE *, bool);
 struct nlk_neuralnet_t *nlk_neuralnet_load_path(char *, bool);
+
+/* misc */
+NLK_LM nlk_lm_model(const char *, const bool);
+nlk_real nlk_lm_learn_rate(NLK_LM);
 
 __END_DECLS
 #endif /* __NLK_NEURALNET_H__ */

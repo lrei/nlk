@@ -116,7 +116,7 @@ __nlk_read_question_line(struct nlk_vocab_t **vocab, bool lower_words,
  * @return an array of word analogy tests
  */
 struct nlk_analogy_test_t *
-__nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
+nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
                              const bool lower_words, size_t *total_tests)
 {
     char line[NLK_WORD_REL_MAX_LINE_SIZE];
@@ -221,14 +221,14 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
     size_t executed = 0;
 
     /* read file */
-    tests = __nlk_read_analogy_test_file(filepath, vocab, lower_words, 
-                                         &total_tests);
+    tests = nlk_read_analogy_test_file(filepath, vocab, lower_words, 
+                                       &total_tests);
     if(tests == NULL) {
         return NLK_FAILURE;
     }
 
     /* normalize weights to make distance calculations easier */
-    weights_norm = nlk_array_create_copy(weights, 0);
+    weights_norm = nlk_array_create_copy(weights);
     nlk_array_normalize_row_vectors(weights_norm);
 
 
@@ -325,7 +325,7 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
  */
 int
 nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn, const unsigned int steps, 
-                        const char *test_file_path, const bool numbered, 
+                        const char *test_file_path, 
                         struct nlk_vocab_t **vocab, const int verbose, 
                         nlk_real *accuracy)
 {
@@ -346,8 +346,15 @@ nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn, const unsigned int steps,
     if(verbose) {
         nlk_tic("generating paragraph vectors", true);
     }
+    /*
     NLK_ARRAY *par_vectors = nlk_pv(nn, test_file_path, numbered, vocab, 
                                     steps, verbose);
+    */
+    (void) nn;
+    (void) steps;
+    (void) vocab;
+    NLK_ARRAY *par_vectors;
+    NLK_ERROR_ABORT("unimplemented", 1);
 
     /* normalize weights to make distance calculations easier */
     if(verbose) {
@@ -413,7 +420,7 @@ nlk_eval_on_paraphrases_pre_gen(const NLK_ARRAY *pvs, size_t limit,
     int total = 0;
 
     /* create resized copy */
-    NLK_ARRAY *par_vectors = nlk_array_create_copy(pvs, limit);
+    NLK_ARRAY *par_vectors = nlk_array_create_copy_limit(pvs, limit);
     limit = par_vectors->rows;
 
     if(verbose) {
