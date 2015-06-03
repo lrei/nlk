@@ -402,6 +402,7 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
 {
     struct nlk_neuralnet_t *nn = NULL;
     struct nlk_nn_train_t opts;
+    struct nlk_context_opts_t ctx_opts;
     size_t n_layers;
     size_t ii;
     int ret;
@@ -464,7 +465,6 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
         goto nlk_neuralnet_load_err_head;
     }
 
-
     /**
      * @section create neural network and load weights
      */
@@ -475,7 +475,13 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     }
     /* create neural network */
     nn = nlk_neuralnet_create(n_layers);
+
+    /* set training options */
     nn->train_opts = opts;
+
+    /* set context options */
+    nn->context_opts = ctx_opts;
+
     if(verbose) {
         printf("Loading Neural Network\nLayers: %zu\n", n_layers);
     }
@@ -574,6 +580,12 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     nn->pos =  nn->n_layers;
 
 
+    /* set context options */
+    nlk_lm_context_opts(nn->train_opts.model_type, nn->train_opts.window, 
+                        &nn->vocab, &ctx_opts);
+    nn->context_opts = ctx_opts;
+
+
     return nn;
 
     /* generic header error */
@@ -649,4 +661,59 @@ nlk_lm_learn_rate(NLK_LM lm_type)
             return 0.01;
     }
     return 0.01;
+}
+
+
+void
+nlk_lm_context_opts(NLK_LM model, unsigned int window, 
+                    struct nlk_vocab_t **vocab, 
+                    struct nlk_context_opts_t *opts)
+{
+    /* defaults */
+    opts->before = window;
+    opts->after = window;
+    opts->b_equals_a = true;
+    opts->prepad = false;
+    opts->postpad = false;
+    opts->paragraph = false;
+    opts->prepad_paragraph = false;
+
+    /* random_window in range before=[1, before], after=[1, after] */
+    opts->random_windows = true;
+
+    switch(model) {
+        case NLK_PVDM_CONCAT:
+            /* fixed size windows */
+            opts->random_windows = false;
+            /* prepad/postpad if smaller */
+            opts->prepad = true;
+            opts->postpad = true;
+            /* FALL THROUGH: all other options are common to PVDM */
+        case NLK_PVDM:
+            /* predict the next word => after = 0 */
+            opts->b_equals_a = false;
+            opts->after = 0;
+            opts->paragraph = true;
+            break;
+        case NLK_PVDBOW:
+            opts->paragraph = true;
+            opts->prepad_paragraph = true;
+            break;
+        case NLK_CBOW:
+        case NLK_SKIPGRAM:
+            opts->paragraph = false;
+            /* options for CBOW/SKIPGRAM are already set */
+            break;
+        case NLK_MODEL_NULL:
+        default:
+            NLK_ERROR_VOID("Invalid model for context generation", NLK_EINVAL);
+            /*unreachable */
+    }
+    opts->start = nlk_vocab_get_start_symbol(vocab)->index;
+
+    opts->max_size = window * 2;
+    if(opts->paragraph) {
+        opts->max_size += 1;
+    }
+
 }

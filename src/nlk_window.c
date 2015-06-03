@@ -30,12 +30,13 @@
 
 #include <stdbool.h>
 
-
 #include "nlk_err.h"
 #include "nlk_array.h"
 #include "nlk_vocabulary.h"
 #include "nlk_neuralnet.h"
 #include "nlk_random.h"
+#include "nlk_text.h"
+
 #include "nlk_window.h"
 
 
@@ -288,8 +289,9 @@ nlk_context_free(struct nlk_context_t *context)
  * Create an array of contexts
  */
 struct nlk_context_t **
-nlk_context_create_array(const size_t max_context_size, const size_t n)
+nlk_context_create_array(const size_t max_context_size)
 {
+    const size_t n = NLK_LM_MAX_LINE_SIZE;
     struct nlk_context_t **contexts = (struct nlk_context_t **) 
         malloc(n * sizeof(struct nlk_context_t *));
     if(contexts == NULL) {
@@ -312,13 +314,13 @@ nlk_context_create_array(const size_t max_context_size, const size_t n)
  * Free an array of contexts
  */
 void
-nlk_context_free_array(struct nlk_context_t **contexts, const size_t n)
+nlk_context_free_array(struct nlk_context_t **contexts)
 {
     if(contexts == NULL) {
         return;
     }
 
-    for(size_t zz = 0; zz < n; zz++) {
+    for(size_t zz = 0; zz < NLK_LM_MAX_LINE_SIZE; zz++) {
         if(contexts[zz] != NULL) {
             nlk_context_free(contexts[zz]);
             contexts[zz] = NULL;
@@ -351,56 +353,5 @@ void nlk_context_print(struct nlk_context_t *context,
         fflush(stdout);
     }
     printf("\n");
-
-}
-
-
-void
-nlk_context_model_opts(NLK_LM model, unsigned int window, 
-                       struct nlk_vocab_t **vocab,
-                       struct nlk_context_opts_t *opts)
-{
-    opts->model = model;
-
-    /* defaults */
-    opts->before = window;
-    opts->after = window;
-    opts->b_equals_a = true;
-    opts->prepad = false;
-    opts->postpad = false;
-    opts->prepad_paragraph = false;
-
-    /* random_window in range before=[1, before], after=[1, after] */
-    opts->random_windows = true;
-
-    switch(model) {
-        case NLK_PVDM_CONCAT:
-            /* fixed size windows */
-            opts->random_windows = false;
-            /* prepad/postpad if smaller */
-            opts->prepad = true;
-            opts->postpad = true;
-            /* FALL THROUGH: all other options are common to PVDM */
-        case NLK_PVDM:
-            /* predict the next word => after = 0 */
-            opts->b_equals_a = false;
-            opts->after = 0;
-            opts->paragraph = true;
-            break;
-        case NLK_PVDBOW:
-            opts->paragraph = true;
-            opts->prepad_paragraph = true;
-            break;
-        case NLK_CBOW:
-        case NLK_SKIPGRAM:
-            opts->paragraph = false;
-            /* options for CBOW/SKIPGRAM are already set */
-            break;
-        case NLK_MODEL_NULL:
-        default:
-            NLK_ERROR_VOID("Invalid model for context generation", NLK_EINVAL);
-            /*unreachable */
-    }
-    opts->start = nlk_vocab_get_start_symbol(vocab)->index;
 
 }

@@ -34,7 +34,6 @@
 #include <stdbool.h>
 
 #include "nlk_vocabulary.h"
-#include "nlk_neuralnet.h"
 
 
 #undef __BEGIN_DECLS
@@ -64,6 +63,7 @@ typedef struct nlk_context_t NLK_CONTEXT;
  * The model specific context options
  */
 struct nlk_context_opts_t {
+    unsigned int  max_size;        /**< maximum context size */
     bool          random_windows;  /**< word2vec style random windows */
     unsigned int  before;          /**< window before center */
     unsigned int  after;           /**< window after center */
@@ -73,7 +73,6 @@ struct nlk_context_opts_t {
     bool          prepad;          /**< fixed size window: prepad */
     bool          postpad;         /**< fixed size window: postpad */
     size_t        start;           /**< index of the start symbol */
-    NLK_LM        model;           /**< the model */
 };
 typedef struct nlk_context_opts_t NLK_CONTEXT_OPTS;
 
@@ -83,14 +82,11 @@ size_t  nlk_context_window(struct nlk_vocab_t **, const size_t, const size_t,
                            struct nlk_context_opts_t *,
                            struct nlk_context_t **);
 
-void    nlk_context_model_opts(NLK_LM, unsigned int, struct nlk_vocab_t **,
-                               struct nlk_context_opts_t *);
-
 
 struct nlk_context_t  *nlk_context_create(const size_t); 
-struct nlk_context_t **nlk_context_create_array(const size_t, const size_t);
+struct nlk_context_t **nlk_context_create_array(const size_t);
 void nlk_context_free(struct nlk_context_t *);
-void nlk_context_free_array(struct nlk_context_t **, const size_t);
+void nlk_context_free_array(struct nlk_context_t **);
 
 void nlk_context_print(struct nlk_context_t *, struct nlk_vocab_t **);
 

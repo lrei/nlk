@@ -35,6 +35,7 @@
 #include "nlk_layer_lookup.h"
 #include "nlk_corpus.h"
 #include "nlk_window.h"
+#include "nlk_neuralnet.h"
 
 
 #undef __BEGIN_DECLS
@@ -48,10 +49,28 @@
 #endif
 __BEGIN_DECLS
 
+
+/** @struct nlk_w2v_mem_t
+ * Memory for a w2v thread
+ */
+struct nlk_w2v_mem_t {
+    struct nlk_line_t        *line_sample;  /**< line after undersampling */
+    struct nlk_context_t    **contexts;     /**< generated from the sample */
+    NLK_ARRAY                *layer1_out;   /**< layer 1 output */
+    NLK_ARRAY                *grad_acc;     /**< gradient accumulator */
+};
+typedef struct nlk_w2v_train_t NLK_W2V_TRAIN;
+
+
 /* create */
 struct nlk_neuralnet_t *nlk_w2v_create(struct nlk_nn_train_t, 
                                        const bool, struct nlk_vocab_t *, 
                                        const size_t, const bool);
+
+struct nlk_w2v_mem_t *nlk_w2v_mem_create(const unsigned int, 
+                                         const unsigned int);
+void nlk_w2v_mem_free(struct nlk_w2v_mem_t *);
+
 
 /* train */
 void nlk_w2v(struct nlk_neuralnet_t *, const struct nlk_corpus_t *, 

@@ -3,6 +3,7 @@
 #include "../src/nlk_text.h"
 #include "../src/nlk_vocabulary.h"
 #include "../src/nlk_window.h"
+#include "../src/nlk_neuralnet.h"
  
 int tests_run = 0;
 int tests_passed = 0;
@@ -53,7 +54,7 @@ test_context_pvdbow()
 
     /* context opts */
     struct nlk_context_opts_t ctx_opts;
-    nlk_context_model_opts(NLK_PVDBOW, window, &vocab, &ctx_opts);
+    nlk_lm_context_opts(NLK_PVDBOW, window, &vocab, &ctx_opts);
     ctx_opts.random_windows = false;
 
 
@@ -148,7 +149,7 @@ test_context_pvdm()
 
     /* context opts */
     struct nlk_context_opts_t ctx_opts;
-    nlk_context_model_opts(NLK_PVDM, window, &vocab, &ctx_opts);
+    nlk_lm_context_opts(NLK_PVDM, window, &vocab, &ctx_opts);
     ctx_opts.random_windows = false;
 
 

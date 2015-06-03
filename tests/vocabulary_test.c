@@ -85,18 +85,14 @@ test_vocab_create_large()
     FILE *vf;
     vf = fopen("tmp/imdb.vocab.created.full.txt", "wb");
     mu_assert("unable to open file for saving", vf != NULL);
-    nlk_vocab_save(&created, 100, 50000, vf);
+    nlk_vocab_save(&created, vf);
     fclose(vf);
 
     /* load binary */
-    size_t max_word_size = 0;
-    size_t max_line_size = 0;
     vf = fopen("tmp/imdb.vocab.created.full.txt", "rb");
     mu_assert("unable to open file", vf != NULL);
-    loaded = nlk_vocab_load(vf, &max_word_size, &max_line_size);
+    loaded = nlk_vocab_load(vf);
     fclose(vf);
-    mu_assert("bad word size", max_word_size == 100);
-    mu_assert("bad line size", max_line_size == 50000);
     
     /* compare */
     ret = compare_vocab(created, loaded);

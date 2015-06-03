@@ -32,6 +32,7 @@
 
 
 #include "nlk_layer_linear.h"
+#include "nlk_window.h"
 
 
 #undef __BEGIN_DECLS
@@ -100,6 +101,7 @@ typedef union nlk_layer_t NLK_LAYER;
  * A Neural Net
  */
 struct nlk_neuralnet_t {
+    struct nlk_context_opts_t    context_opts;  /**< context generation opts */
     struct nlk_nn_train_t        train_opts;    /**< model training options */
     struct nlk_vocab_t          *vocab;         /**< the vocabulary */
     /**< language specific layers deserve their own shortcuts */
@@ -144,8 +146,10 @@ struct nlk_neuralnet_t *nlk_neuralnet_load(FILE *, bool);
 struct nlk_neuralnet_t *nlk_neuralnet_load_path(char *, bool);
 
 /* misc */
-NLK_LM nlk_lm_model(const char *, const bool);
+NLK_LM   nlk_lm_model(const char *, const bool);
 nlk_real nlk_lm_learn_rate(NLK_LM);
+void     nlk_lm_context_opts(NLK_LM, unsigned int, struct nlk_vocab_t **,
+                            struct nlk_context_opts_t *);
 
 __END_DECLS
 #endif /* __NLK_NEURALNET_H__ */

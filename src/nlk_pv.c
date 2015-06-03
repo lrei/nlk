@@ -74,7 +74,7 @@ nlk_pv_display(const size_t generated, const size_t total)
 
 
 
-
+/*
 void
 nlk_pv_gen(struct nlk_neuralnet_t *nn, struct nlk_corpus_t *corpus)
 {
@@ -83,7 +83,7 @@ nlk_pv_gen(struct nlk_neuralnet_t *nn, struct nlk_corpus_t *corpus)
 
 
 }
-
+*/
 
 unsigned int *
 nlk_pv_classify(struct nlk_neuralnet_t *nn, 
