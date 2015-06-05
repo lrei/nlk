@@ -58,7 +58,7 @@
  *
  * @param generated number of PVs generated so far
  * @param total     total number of PVs to generate
- *
+ */
 static void
 nlk_pv_display(const size_t generated, const size_t total)
 {
@@ -70,24 +70,216 @@ nlk_pv_display(const size_t generated, const size_t total)
             progress, generated, total, omp_get_num_threads());
     nlk_tic(display_str, false);
 }
-*/
 
 
 
-/*
 void
-nlk_pv_gen(struct nlk_neuralnet_t *nn, struct nlk_corpus_t *corpus)
+nlk_pv_freeze_nn(struct nlk_neuralnet_t *nn)
 {
+    /* Prevent Layer Weights From Changing: Words & HS/Neg */
+    nn->words->update = false;
+    if(nn->train_opts.hs) {
+        nn->hs->update = false;
+    }
+    if(nn->train_opts.negative) {
+        nn->neg->update = false;
+    }
+}
+
+
+void
+nlk_pv_unfreeze_nn(struct nlk_neuralnet_t *nn)
+{
+    /* Allow Layer Weights to Change: Words & HS/Neg */
+    nn->words->update = true;
+    if(nn->train_opts.hs) {
+        nn->hs->update = true;
+    }
+    if(nn->train_opts.negative) {
+        nn->neg->update = true;
+    }
+}
+
+
+
+struct nlk_layer_lookup_t *
+nlk_pv_gen(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus, 
+           const unsigned int epochs, const bool verbose)
+{
+    if(verbose) {
+        nlk_tic("Generating paragraph vectors", false);
+        printf(" (%u iterations)\n", epochs);
+    }
+
+    /* create new paragraph table */
     struct nlk_layer_lookup_t *par_table;
     par_table = nlk_layer_lookup_create(corpus->len, nn->words->weights->cols);
+    nlk_layer_lookup_init(par_table);
+
+    /* unpack options */
+    NLK_LM model_type = nn->train_opts.model_type;
+    const nlk_real learn_rate_start = nn->train_opts.learn_rate;
+    uint64_t train_words = nn->train_opts.word_count;
+    const float sample_rate = nn->train_opts.sample; 
+    unsigned int ctx_size = nn->context_opts.max_size;
+    unsigned int layer_size2 = 0;
+
+    if(nn->train_opts.hs) {
+        layer_size2 = nn->hs->weights->cols;
+    } else if(nn->train_opts.negative) {
+        layer_size2 = nn->neg->weights->cols;
+    }
+
+    struct nlk_line_t *lines = corpus->lines;
+
+    /* prevent weights from changing for words and hs/neg */
+    nlk_pv_freeze_nn(nn);
+
+    /* progress */
+    size_t generated = 0;
+    const size_t total = corpus->len;
 
 
+    /** @section Parallel Generation of PVs
+     */
+#pragma omp parallel shared(generated)
+{
+    unsigned int local_epoch;
+    struct nlk_line_t *line = NULL;
+
+    /* for converting a sentence to a series of training contexts */
+    struct nlk_context_t **contexts = NULL;
+    contexts = nlk_context_create_array(ctx_size);
+
+    /* for undersampling words in a line */
+    struct nlk_line_t *line_sample = nlk_line_create(NLK_LM_MAX_LINE_SIZE);
+
+    /* output of the first layer */
+    NLK_ARRAY *layer1_out = nlk_array_create(layer_size2, 1);
+
+    /* for storing gradients */
+    NLK_ARRAY *grad_acc = nlk_array_create(1, layer_size2);
+
+    /* split */
+    int num_threads = omp_get_num_threads();
+    size_t line_cur;
+    size_t end_line;
+
+
+#pragma omp for
+    for(int thread_id = 0; thread_id < num_threads; thread_id++) {
+
+        line_cur = nlk_text_get_split_start_line(total, num_threads, 
+                                                 thread_id);
+        end_line = nlk_text_get_split_end_line(total, num_threads, 
+                                               thread_id);
+
+
+        while(line_cur < end_line) {
+            /* Generate PV for this line */
+            nlk_real learn_rate = learn_rate_start;
+            unsigned int n_examples;
+            unsigned int ex;
+            uint64_t line_words;
+            uint64_t word_count_actual = 0;
+
+            line = &lines[line_cur];
+            line_words = line->len;
+
+            /** @section Generate Contexts Update Vector Loop
+             */
+            local_epoch = 0;
+            for(local_epoch = 0; local_epoch < epochs; local_epoch++) {
+                word_count_actual += line_words;
+
+                 /* subsample  line */
+                nlk_vocab_line_subsample(line, train_words, sample_rate, 
+                                         line_sample);
+
+                /* single word, nothing to do ... */
+                if(line_sample->len < 2) {
+                    continue;
+                }
+
+                /* generate context  */
+                n_examples = nlk_context_window(line_sample->varray, 
+                                                line_sample->len, 
+                                                line_sample->line_id, 
+                                                &nn->context_opts, 
+                                                contexts);
+
+
+                /** @subsection update vector with this context
+                 */
+                switch(model_type) {
+                    case NLK_PVDBOW:
+                        for(ex = 0; ex < n_examples; ex++) {
+                            nlk_pvdbow(nn, par_table, learn_rate, 
+                                       contexts[ex], grad_acc, layer1_out);
+                        }
+                        break;
+
+                    case NLK_PVDM:
+                        for(ex = 0; ex < n_examples; ex++) {
+                            nlk_pvdm(nn, par_table, learn_rate, contexts[ex], 
+                                     grad_acc, layer1_out);
+                        }
+                        break;
+
+                    case NLK_PVDM_CONCAT:
+                        for(ex = 0; ex < n_examples; ex++) {
+                            nlk_pvdm_cc(nn, par_table, learn_rate, contexts[ex], 
+                                        grad_acc, layer1_out);
+                        }
+                        break;
+                    case NLK_MODEL_NULL:
+                    case NLK_CBOW:
+                    case NLK_CBOW_SUM:
+                    case NLK_SKIPGRAM:
+                    default:
+                        NLK_ERROR_ABORT("invalid model type", NLK_EINVAL);
+                        /* unreachable */
+                } /* end of model switch */
+                learn_rate = nlk_learn_rate_w2v(learn_rate, learn_rate_start,
+                                                epochs, word_count_actual, 
+                                                line_words);
+            } /* end of contexts: pv has been generated */ 
+
+            /* go to next line, display */
+            line_cur++;
+            generated++;
+
+            if(verbose) {
+                nlk_pv_display(generated, total);
+            }
+        } /* end of PV */
+    } /* end of all PVs (thread loop) */
+
+    if(verbose) {
+            nlk_pv_display(generated, total);
+    }
+
+    /* free thread memory */
+    nlk_context_free_array(contexts);
+    nlk_line_free(line_sample);
+    nlk_array_free(layer1_out);
+    nlk_array_free(grad_acc);
+
+} /* end of parallel section */
+
+    if(verbose) {
+        printf("\n");
+    }
+
+    nlk_pv_unfreeze_nn(nn);
+    return par_table;
 }
-*/
+
 
 unsigned int *
 nlk_pv_classify(struct nlk_neuralnet_t *nn, 
-                struct nlk_layer_lookup_t *par_table, size_t *ids, size_t n)
+                struct nlk_layer_lookup_t *par_table, size_t *ids, size_t n,
+                const bool verbose)
 {
     /** @section Init
      */
@@ -97,6 +289,11 @@ nlk_pv_classify(struct nlk_neuralnet_t *nn,
         n = par_table->weights->rows;
         ids = nlk_range(n);
         ids_mine = true;
+    }
+
+    if(verbose) {
+        nlk_tic("Classifying ", false);
+        printf("%zu\n", n);
     }
 
     unsigned int *pred = NULL;
@@ -313,7 +510,7 @@ nlk_pv_classifier(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset,
     /* test */
     unsigned int *pred = NULL;
     pred = nlk_pv_classify(nn, nn->paragraphs, dset->ids, 
-                           dset->size);
+                           dset->size, verbose);
     accuracy = nlk_class_score_accuracy(pred, dset->classes, 
                                         dset->size);
     free(pred);
@@ -329,7 +526,6 @@ nlk_pv_classifier(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset,
 
 /**
  * Convenience function
- * @warning this function should probably be moved to eval or something
  */
 float
 nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path, 
@@ -344,7 +540,8 @@ nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path,
         /* unreachable */
     }
 
-    pred = nlk_pv_classify(nn, nn->paragraphs, test_set->ids, test_set->size);
+    pred = nlk_pv_classify(nn, nn->paragraphs, test_set->ids, test_set->size,
+                           verbose);
     ac = nlk_class_score_accuracy(pred, test_set->classes, test_set->size);
     if(verbose) {
         printf("\nTEST SCORE = %f\n", ac);
@@ -353,5 +550,4 @@ nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path,
     nlk_dataset_free(test_set);
 
     return ac;
-
 }

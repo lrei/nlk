@@ -7,6 +7,8 @@
 #include <locale.h>
 #include <getopt.h>
 
+#include <omp.h>
+
 #include "nlk.h"
 #include "nlk_err.h"
 #include "nlk_math.h"
@@ -24,8 +26,8 @@
 #include "nlk_w2v.h"
 #include "nlk_pv.h"
 #include "nlk_class.h"
+#include "nlk_util.h"
 
-#include "nlk_random.h"
 
 
 /* program info */
@@ -39,8 +41,10 @@
 
 /* command line options */
 enum cmd_opts_t { 
+    /* general options */
+    CMD_OPTS_THREADS = 1,   /**< specify language model */
     /* unsupervised train/nn options */
-    CMD_OPTS_MODEL = 1,     /**< specify language model */
+    CMD_OPTS_MODEL,         /**< specify language model */
     CMD_OPTS_TRAIN,         /**< train from file */
     CMD_OPTS_EPOCHS,        /**< number of epochs */
     CMD_OPTS_LEARN_RATE,    /**< starting learning rate */
@@ -52,6 +56,7 @@ enum cmd_opts_t {
     /* supervised train options */
     CMD_OPTS_CLASS,         /**< file specifying an id-class mapping */
     CMD_OPTS_CLASS_TEST,    /**< first id used as test */
+    CMD_OPTS_CLASS_FILE,    /**< first id used as test */
     CMD_OPTS_OUT_CLASS,     /**< output classification to this file */
     /* vocabulary */
     CMD_OPTS_SAVE_VOCAB,    /**< save vocab to file */
@@ -65,7 +70,6 @@ enum cmd_opts_t {
     CMD_OPTS_PREFIX_PVS,    /**< prefix paragraph ids with string in export */
     /* PV generation (inference/test) */
     CMD_OPTS_GEN_PVS,       /**< generate paragraph vectors for file */
-    CMD_OPTS_GEN_ITER,      /**< number of iterations for PV generation */
     CMD_OPTS_GEN_SAVE,      /**< save generated PVs according to FORMAT */
     /* evaluation */
     CMD_OPTS_EVAL_QUESTIONS,    /**< eval model on question answering */
@@ -95,12 +99,15 @@ static void print_help()
     fputs("\
 Neural Network Language Tool.\n\
 \n\
-Model/Training:\n\
+General Options:\n\
+  --threads [INT]       number of threads to use (default: 0 - all procs)\n\
+\n\
+Training/Classification:\n\
   --model [STRING]          language model: CBOW, SG, PVDM, PVDBOW\n\
   --concat                  use concatenate variant (valid if --model PVDM)\n\
   --corpus [FILE]           train model with this (text) file\n\
   --train                   train unsupervised model (--model)\n\
-  --iter [INT]              number of train epochs\n\
+  --iter [INT]              number of train epochs (default: 20)\n\
   --alpha [FLOAT]           the initial learning rate\n\
   --decay [FLOAT]           the learning rate decay\n\
   --hs                      use hierarchical softmax\n\
@@ -112,7 +119,9 @@ Model/Training:\n\
 Supervised Options:\n\
   --classes [FILE]          train classifier with this id-class map file\n\
   --test [INT]              test classifier with this id-class map file\n\
+  --classify [FILE]         classify this file\n\
   --output-class [FILE]     output classification results to this file\n\
+\n\
 Vocabulary:\n\
   --min-count  [INT]    minimum word count\n\
   --save-vocab [FILE]   save the vocabulary to file\n\
@@ -128,7 +137,6 @@ Serialization/Export:\n\
 \n\
 Paragraph Vector Inference:\n\
   --gen-pvs [FILE]      generate paragraph vectors for this file\n\
-  --gen-iter [FILE]     number of iterations to generate paragraph vectors\n\
   --gen-output [FILE]   output generated paragraph vectors\n\
 \n\
 Evaluation:\n\
@@ -185,68 +193,72 @@ main(int argc, char **argv)
     /** @section Variable Declaration and Initialization
      */
 
+    /** @subsection General Options
+     */
+    int num_threads             = 0;    /**< number of threads to use */
+
     /** @subsection Vocabulary Options
      */
-    struct nlk_vocab_t *vocab;          /* the vocabulary structure */
-    char *vocab_save_file       = NULL; /* save vocab to this file */
-    struct nlk_corpus_t *corpus = NULL; /* vocabularized train file */
+    struct nlk_vocab_t *vocab;          /**< the vocabulary structure */
+    char *vocab_save_file       = NULL; /**< save vocab to this file */
+    struct nlk_corpus_t *corpus = NULL; /**< vocabularized train file */
 
     /** @subsection Model Options
      */
     NLK_LM lm_type              = NLK_MODEL_NULL; /* the model type */
-    char *model_name            = NULL; /* model type (string) - name (opt) */
-    static int concat           = 0;    /* concatenate (e.g. PVDM_CONCAT) */
+    char *model_name            = NULL; /**< model type (string)  */
+    static int concat           = 0;    /***< concatenate (e.g. PVDM_CONCAT) */
 
     /** @subsection Training Options
      */
-    char *corpus_file           = NULL; /* train model on this file */
-    static int hs               = 0;    /* use hierarchical softmax */
-    static int train            = 0;    /* unsupervised train */
-    size_t vector_size          = 100;  /* word vector size */    
-    int window                  = 8;    /* window, words before and after */    
-    int negative                = 0;    /* number of negative examples */
-    int iter                    = 5;    /* number of iterations/epochs */
-    int min_count               = 0;    /* minimum word frequency (count) */
-    nlk_real learn_rate         = 0;    /* learning rate (start) */
-    nlk_real learn_rate_decay   = 0;    /* learning rate decay */
-    float sample_rate           = 1e-3; /* random undersample of freq words */
+    char *corpus_file           = NULL; /**< train model on this file */
+    static int hs               = 0;    /**< use hierarchical softmax */
+    static int train            = 0;    /**< unsupervised train */
+    size_t vector_size          = 100;  /**< word vector size */    
+    int window                  = 8;    /**< window, words before and after */    
+    int negative                = 0;    /**< number of negative examples */
+    int iter                    = 20;   /**< number of iterations/epochs */
+    int min_count               = 0;    /**< minimum word frequency (count) */
+    nlk_real learn_rate         = 0;    /**< learning rate (start) */
+    nlk_real learn_rate_decay   = 0;    /**< learning rate decay */
+    float sample_rate           = 1e-3; /**< random undersample of freq words */
 
     /** @subsection classification
      */
-    char *class_train_file      = NULL; /* train class map file */
-    char *class_test_file       = NULL; /* fest class map file */
-    char *class_out_file        = NULL; /* classification output file */
+    char *class_train_file      = NULL; /**< train class map file */
+    char *class_test_file       = NULL; /**< test class map file */
+    char *classify_file         = NULL; /**< a file to classify */
+    char *class_out_file        = NULL; /**< classification output file */
 
     /** @subsection Serialization &  Export
      */
-    static int remove_pvs       = 0;    /* save NN without sentence vectors */
-    char *nn_load_file          = NULL; /* load neuralnet from this file */
-    char *nn_save_file          = NULL; /* save neuralnet to this file */
-    char *output_words_file     = NULL; /* export word vectors to this file */
-    char *output_pvs_file       = NULL; /* save PVs to this file */
-    char *format_name           = NULL; /* format option as a string */
+    static int remove_pvs       = 0;    /**< save NN without paragraphs */
+    char *nn_load_file          = NULL; /**< load neuralnet from this file */
+    char *nn_save_file          = NULL; /**< save neuralnet to this file */
+    char *output_words_file     = NULL; /**< export word vectors to file */
+    char *output_pvs_file       = NULL; /**< save PVs to this file */
+    char *format_name           = NULL; /**< format option as a string */
     NLK_FILE_FORMAT format      = NLK_FILE_BIN;
     
     /** @subsection Paragraph Vector Generation (Inferance/Test) Variables
      */
-    char *gen_paragraphs_file   = NULL; /* Line delimited paragraphs file */
-    char *pvs_save_file         = NULL; /* save generated PVs to this file */
-    unsigned int gen_iter       = 100;  /* PV inference iterations (steps) */
+    char *gen_paragraphs_file   = NULL; /**< generate PVs from this file */
+    char *pvs_save_file         = NULL; /**< save generated PVs to this file */
 
     /** @subsection Evaluation
      */
-    char *questions_file        = NULL; /* word2vec word-analogy tests */
-    char *paraphrases_file      = NULL; /* MSR paraphrases style file */
-    char *pvs_input_file        = NULL; /* read PVs from this file (eval) */
-    size_t eval_limit           = 0;    /* limit eval to first n elements */
+    char *questions_file        = NULL; /**< word2vec word-analogy tests */
+    char *paraphrases_file      = NULL; /**< paraphrases file */
+    char *pvs_input_file        = NULL; /**< read PVs from this file (eval) */
+    size_t eval_limit           = 0;    /**< limit eval to first n elements */
 
     /** @subsection Miscellaneous
      */
-    static int show_help        = 0;    /* show help */
-    static int show_version     = 0;    /* show version information */
-    static int verbose          = 0;    /* print status during execution */
-    int c                       = 0;    /* used by getop */
-    int option_index            = 0;    /* getopt option index */
+    static int show_help        = 0;    /**< show help */
+    static int show_version     = 0;    /**< show version information */
+    static int verbose          = 0;    /**< print status during execution */
+    int c                       = 0;    /**< used by getop */
+    int option_index            = 0;    /**< getopt option index */
 
 
 
@@ -265,6 +277,8 @@ main(int argc, char **argv)
             /* 
              * These options don’t set a flag 
              */
+            /* general options */
+            {"threads",         required_argument, 0, CMD_OPTS_THREADS       },
             /* train/nn/context options */
             {"model",           required_argument, 0, CMD_OPTS_MODEL         },
             {"corpus",          required_argument, 0, CMD_OPTS_TRAIN         },
@@ -278,6 +292,7 @@ main(int argc, char **argv)
             {"classes",         required_argument, 0, CMD_OPTS_CLASS         },
             {"test",            required_argument, 0, CMD_OPTS_CLASS_TEST    },
             {"output-classes",  required_argument, 0, CMD_OPTS_OUT_CLASS     },
+            {"classify",        required_argument, 0, CMD_OPTS_CLASS_FILE    },
             {"decay",           required_argument, 0, CMD_OPTS_LEARN_DECAY   },
             /* vocabulary */
             {"save-vocab",      required_argument, 0, CMD_OPTS_SAVE_VOCAB    },
@@ -291,7 +306,6 @@ main(int argc, char **argv)
             {"par-prefix",      required_argument, 0, CMD_OPTS_PREFIX_PVS    },
             /* PV generation (inferance/test) */
             {"gen-pvs",         required_argument, 0, CMD_OPTS_GEN_PVS       },
-            {"gen-iter",        required_argument, 0, CMD_OPTS_GEN_ITER      },
             {"gen-output",      required_argument, 0, CMD_OPTS_GEN_SAVE      },
             /* evaluation */
             {"questions",  required_argument, 0, CMD_OPTS_EVAL_QUESTIONS     },
@@ -315,6 +329,10 @@ main(int argc, char **argv)
                 if(long_options[option_index].flag != 0) {
                     break;
                 }
+                break;
+            /* general options */
+            case CMD_OPTS_THREADS:
+                num_threads = atoi(optarg);
                 break;
             /* train/nn options */
             case CMD_OPTS_MODEL:
@@ -351,6 +369,9 @@ main(int argc, char **argv)
             case CMD_OPTS_CLASS_TEST:
                 class_test_file = optarg;
                 break;
+            case CMD_OPTS_CLASS_FILE:
+                classify_file = optarg;
+                break;
             case CMD_OPTS_OUT_CLASS:
                 class_out_file = optarg;
                 break;
@@ -381,9 +402,6 @@ main(int argc, char **argv)
             case CMD_OPTS_GEN_PVS:
                 gen_paragraphs_file = optarg;
                 break;
-            case CMD_OPTS_GEN_ITER:
-                gen_iter = (unsigned int) atoi(optarg);
-                break;
             case CMD_OPTS_GEN_SAVE:
                 pvs_save_file = optarg;
                 break;
@@ -404,13 +422,13 @@ main(int argc, char **argv)
             default:
                 print_usage();
                 exit(1);
-        }
-    }
+        } /* end of getopt switch */
+    } /* end of getopt loop */
 
     /* check for no options */
     if(optind == 0) {
         print_usage();
-        exit(1);
+        exit(0);
     }
 
     /* show help and quit */
@@ -420,13 +438,14 @@ main(int argc, char **argv)
     }
 
     /* show version and quit */
-    if(show_help) {
+    if(show_version) {
         print_version();
         exit(0);
     }
 
 
-    /** @subsection Process some options */
+    /** @subsection Debug Info
+     */
 #ifndef NCHECKS
     if(verbose) {
         printf("CHECKS enabled!\n");
@@ -446,13 +465,17 @@ main(int argc, char **argv)
 #endif
 
 
-    /**
-     * Init and general defaults
+    /** @section Init and general defaults
      */
     /* Global Init */
     nlk_init(); /* initializes random number generator and sigmoid table */
+    if(num_threads > 0) {
+        omp_set_num_threads(num_threads);
+    } else {
+        omp_set_num_threads(omp_get_num_procs());
+    }
 
-    /* @section Model Type */
+    /* Model Type */
     if(model_name == NULL) {
         /* do nothing */
     } else {
@@ -475,26 +498,40 @@ main(int argc, char **argv)
     /** @subsection Load the neural network
      */
     if(nn_load_file != NULL) {
-        printf("Loading Neural Network from %s\n", nn_load_file);
+        nlk_tic("Loading Neural Network from ", false);
+        printf("%s\n", nn_load_file);
+
         /* load */
         nn = nlk_neuralnet_load_path(nn_load_file, verbose);
         if(verbose) {
-            printf("Neural Network loaded from %s\n", nn_load_file);
+            nlk_tic("Neural Network loaded from ", false);
+            printf("%s\n", nn_load_file);
         }
 
         /* load corpus */
         if(corpus_file) {
-            corpus = nlk_corpus_read(corpus_file, &nn->vocab);
+            corpus = nlk_corpus_read(corpus_file, &nn->vocab, verbose);
         }
     } 
      /** @subsection Create the neural network
      */
     else if(corpus_file != NULL && train) {
         /* create the vocabulary */
+        if(verbose) {
+            nlk_tic("creating vocabulary", true);
+        }
         vocab = nlk_vocab_create(corpus_file, min_count, verbose);
 
         /* vocabularize the corpus */
-        corpus = nlk_corpus_read(corpus_file, &vocab);
+        if(verbose) {
+            nlk_tic("reading corpus", true);
+        }
+
+        corpus = nlk_corpus_read(corpus_file, &vocab, verbose);
+
+        if(verbose) {
+            nlk_tic("done reading corpus", true);
+        }
 
         /* training options */
         struct nlk_nn_train_t train_opts;
@@ -519,7 +556,7 @@ main(int argc, char **argv)
 
     /**@section Unsupervised Train 
      */
-    if(train && nn != NULL) {
+    if(train && nn != NULL && corpus_file != NULL) {
         if(verbose) {
             printf("training %s with\nlearning rate = %f\nsample_rate=%f\n"
                    "window=%d\n", model_name, nn->train_opts.learn_rate, 
@@ -536,33 +573,68 @@ main(int argc, char **argv)
 
     /** @section Supervised Classification
      */
-    /* train */
+    /**@subsection Train Classifier
+     */
     if(class_train_file != NULL && nn != NULL) {
+        /* load training set */
         struct nlk_dataset_t *train_set = NULL;
         train_set = nlk_dataset_load_path(class_train_file);
         if(train_set == NULL) {
             NLK_ERROR_ABORT("unable to read class file", NLK_EINVAL);
             /* unreachable */
         }
+
+        /* do train classifier */
         nlk_pv_classifier(nn, train_set, iter,  learn_rate, learn_rate_decay, 
                           verbose);
         
         nlk_dataset_free(train_set);
     }
 
-    /* test */
-    if(class_test_file != NULL) {
+    /**@subsection Test Classifier
+     */
+    if(class_test_file != NULL && classify_file == NULL) {
         nlk_pv_classify_test(nn, class_test_file, true);
     }
 
-    /* classify */
-    if(class_out_file != NULL) {
-        NLK_ERROR_ABORT("unimplemented", NLK_FAILURE);
+    /**@subsection Classify a file
+     */
+    if(classify_file != NULL && nn != NULL) {
+        size_t *ids = NULL;
+        unsigned int *pred = NULL;
 
+        /* create corpus */
+        struct nlk_corpus_t *corpus_classify;
+        corpus_classify = nlk_corpus_read(classify_file, &nn->vocab, verbose);
+        /* gen pvs */
+        struct nlk_layer_lookup_t *par_table;
+        par_table = nlk_pv_gen(nn, corpus_classify, iter, verbose);
+
+        /* classify */
+        pred = nlk_pv_classify(nn, par_table, NULL, 0, verbose);
+
+        /* save classification results */
+        if(class_out_file != NULL && pred != NULL) {
+            ids = nlk_range(corpus_classify->len);
+            nlk_dataset_save_map_path(class_out_file, ids, 
+                                      pred, corpus_classify->len);
+        }
+
+        if(class_test_file != NULL) {
+            struct nlk_dataset_t *tset = NULL;
+            tset = nlk_dataset_load_path(class_test_file);
+            float acc = 0;
+            acc = nlk_class_score_accuracy(pred, tset->classes, tset->size);
+            if(verbose) {
+                printf("Test Accuracy: %f (/%zu)\n", acc, tset->size);
+            }
+        }
+        if(pred != NULL) { free(pred); }
+        if(ids != NULL) { free(ids); }
     }
 
 
-     /** @section Save & Export Vectors
+    /** @section Save & Export Vectors
      */
     if(nn != NULL) {
         /* save paragraph vectors */
@@ -609,53 +681,72 @@ main(int argc, char **argv)
      */
     if(gen_paragraphs_file != NULL) {
         if(nn == NULL) {
-            NLK_ERROR_ABORT("no neural network loaded.", NLK_EINVAL);
-        }
-        if(verbose) {
-            printf("Generating paragraph vectors\n");
+            NLK_ERROR_ABORT("no neural network loaded.", NLK_FAILURE);
         }
 
+
+        /**@subsection Generate Paragraph Vectors
+         */
+        /* read file */
+        struct nlk_corpus_t *corpus_pvs = nlk_corpus_read(gen_paragraphs_file, 
+                                                          &nn->vocab, verbose);
+        
         /* generate (infer) paragraph vectors */
-        /*
-        NLK_ARRAY *par_vectors = nlk_pv(nn, gen_paragraphs_file, numbered,
-                                        &vocab, gen_iter, verbose);
-        */
-        NLK_ARRAY *par_vectors;
-        NLK_ERROR_ABORT("unimplemented", 1);
-        if(verbose) {
-            printf("\n");
-        }
+        NLK_LAYER_LOOKUP *par_table = NULL;
+        NLK_ARRAY *pvs = NULL;
 
-        if(pvs_save_file != NULL) {
+        if(corpus_pvs != NULL) {
+            if(verbose) { printf("Generating paragraph vectors\n"); }
+
+            /* do generate */
+            par_table = nlk_pv_gen(nn, corpus_pvs, iter, verbose);
+
+        }
+        if(par_table != NULL) { pvs = par_table->weights; }
+        if(verbose) { printf("\n"); }
+
+
+        /**@subsection Export Generated Paragraph Vectors
+         */
+        if(pvs_save_file != NULL && pvs != NULL) {
+            FILE *fp_pv = NULL;
+
             if(verbose) {
-                printf("Saving geberated paragraph vectors to %s\n", 
+                printf("Saving generated paragraph vectors to %s\n", 
                         pvs_save_file);
             }
-            if(format == NLK_FILE_W2V_BIN || format == NLK_FILE_W2V_TXT) {
-                nlk_w2v_export_paragraph_vectors(par_vectors, format,
-                                                 pvs_save_file);
-            } else {
-                FILE *fp_pv = fopen(pvs_save_file, "wb");
-                if(fp_pv == NULL) {
-                    NLK_ERROR_ABORT("unable to open file.", NLK_FAILURE);
-                    /* unreachable */
-                }
-                nlk_array_save(par_vectors, fp_pv);
-                fclose(fp_pv);
-                fp_pv = NULL;
-            }
-        }
-        nlk_array_free(par_vectors);
+            
+            /* use specified format */
+            switch(format) {
+                case NLK_FILE_W2V_BIN:
+                    /* fall through */
+                case NLK_FILE_W2V_TXT:
+                    nlk_w2v_export_paragraph_vectors(pvs, format,
+                                                     pvs_save_file);
+                    break;
+                default:
+                    fp_pv = fopen(pvs_save_file, "wb");
+                    if(fp_pv == NULL) {
+                        NLK_ERROR_ABORT("unable to open file.", NLK_FAILURE);
+                        /* unreachable */
+                    }
+                    nlk_array_save(pvs, fp_pv);
+                    fclose(fp_pv);
+                    fp_pv = NULL;
+                    break;
+            } /* end of format switch */
+        } /* end of save */
+
+        if(pvs != NULL) { nlk_array_free(pvs); }
+        if(corpus_pvs != NULL) { nlk_corpus_free(corpus_pvs); }
     }
+
 
     /** @section Evaluation  (Intrinsic)
      */
-
     nlk_real accuracy = 0;
 
     if(questions_file != NULL && nn != NULL) {
-        nlk_tic_reset();
-        nlk_tic(NULL, false);
         nlk_tic("evaluating word-analogy", true);
         nlk_eval_on_questions(questions_file, &vocab, nn->words->weights, 
                               eval_limit, true, &accuracy);
@@ -691,13 +782,15 @@ main(int argc, char **argv)
 
     accuracy = 0;
     if(paraphrases_file != NULL && nn != NULL) {
-        nlk_tic_reset();
-        nlk_tic(NULL, false);
         nlk_tic("evaluating paraphrases", true);
-        nlk_eval_on_paraphrases(nn, gen_iter, paraphrases_file, 
-                                &vocab, verbose, &accuracy);
-        printf("accuracy = %f%%\n", accuracy * 100);
-        
+
+        /* read file */
+        struct nlk_corpus_t *corpus_paraphrase = NULL;
+        corpus_paraphrase = nlk_corpus_read(paraphrases_file, &nn->vocab, 
+                                            verbose);
+
+        nlk_eval_on_paraphrases(nn, corpus_paraphrase, iter, verbose);
+        nlk_corpus_free(corpus_paraphrase);
     }
 
        

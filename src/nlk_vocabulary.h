@@ -56,6 +56,7 @@ __BEGIN_DECLS
 #define NLK_VOCAB_MAX_THREADS 512             /**< maximum number of threads */
 #define NLK_VOCAB_MIN_SIZE_THREADED (long)1e4 /**< min lines to use threads */
 #define NLK_NEG_TABLE_SIZE (size_t)1e8
+#define NLK_NEG_TABLE_POW (double)0.75
 
 
 /** @enum NLK_VOCAB_TYPE

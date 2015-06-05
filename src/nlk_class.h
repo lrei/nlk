@@ -70,8 +70,14 @@ void nlk_dataset_swap(struct nlk_dataset_t *, struct nlk_dataset_t *);
 
 /* load */
 void                     nlk_dataset_free(struct nlk_dataset_t *);
-struct nlk_dataset_t    *nlk_dataset_load(FILE *);
+struct nlk_dataset_t    *nlk_dataset_load(FILE *, const size_t);
 struct nlk_dataset_t    *nlk_dataset_load_path(const char *);
+
+/* save */
+void nlk_dataset_save_map(FILE *, const size_t *, const unsigned int *,
+                          const size_t);
+void nlk_dataset_save_map_path(const char *, const size_t *, 
+                               const unsigned int *, const size_t);
 
 /* misc */
 void                     nlk_dataset_shuffle(struct nlk_dataset_t *);

@@ -48,8 +48,13 @@
 __BEGIN_DECLS
 
 
+struct nlk_layer_lookup_t *
+nlk_pv_gen(struct nlk_neuralnet_t *, const struct nlk_corpus_t *, 
+           const unsigned int iter, const bool);
+
 unsigned int *nlk_pv_classify(struct nlk_neuralnet_t *, 
-                              struct nlk_layer_lookup_t *, size_t *, size_t);
+                              struct nlk_layer_lookup_t *, size_t *, size_t,
+                              const bool);
 
 float nlk_pv_classifier(struct nlk_neuralnet_t *, struct nlk_dataset_t *,
                         const unsigned int, nlk_real, 

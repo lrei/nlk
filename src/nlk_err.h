@@ -168,7 +168,6 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
     }
 #endif
 
-
 /* same as nlk_assert() but without printing */
 #define nlk_assert_silent(A) \
     if(!(A)) { \
@@ -182,6 +181,7 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
     #define omp_get_thread_num() 0
     #define omp_get_num_threads() 1
     #define omp_get_num_procs() 1
+    #define omp_set_num_threads(n)
 #endif
 
 __END_DECLS

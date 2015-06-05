@@ -4,6 +4,7 @@
 #include "nlk_err.h"
 #include "nlk_math.h"
 #include "nlk_random.h"
+#include "nlk_tic.h"
 
 
 #include "nlk.h"
@@ -47,4 +48,6 @@ nlk_init()
 {
     nlk_random_init_xs1024(nlk_random_seed());
     nlk_table_sigmoid_create();
+    nlk_tic_reset();
+    nlk_tic(NULL, false);
 }

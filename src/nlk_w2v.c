@@ -441,15 +441,20 @@ nlk_pvdm(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
          const nlk_real learn_rate, const struct nlk_context_t *context, 
          NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
+
+    /* position of paragraph id */
+    const size_t ppos = context->size - 1; /* = number of words */
+
 #ifndef NCHECKS
     if(context->size == 0) {
         NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
     }
     /* check that the last context is a paragraph */
-    if(!context->is_paragraph[context->size - 1]) {
+    if( ! context->is_paragraph[ppos]) {
         NLK_ERROR_VOID("last context element is not a paragraph", NLK_EINVAL);
     }
 #endif
+
 
     nlk_array_zero(grad_acc);
 
@@ -458,14 +463,14 @@ nlk_pvdm(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
      * The window[-1] is the paragraph id and should be ignored 
      */
     nlk_layer_lookup_forward_lookup_one(par_table, 
-                                        context->window[context->size - 1],
+                                        context->window[ppos],
                                         lk1_out);
 
     /* The context words get forwarded through the first lookup layer
      * and their vectors are averaged together with the PV.
      */
     nlk_layer_lookup_forward_lookup_avg_p(nn->words, context->window, 
-                                          context->size - 1, lk1_out);
+                                          ppos, lk1_out);
 
     /* Hierarchical Softmax */
     if(nn->train_opts.hs) {
@@ -478,12 +483,12 @@ nlk_pvdm(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
     }
 
     /* Backprop into the word vectors: Learn using the accumulated gradient */
-    nlk_layer_lookup_backprop_lookup(nn->words, &context->window[1], 
-                                     context->size - 1, grad_acc);
+    nlk_layer_lookup_backprop_lookup(nn->words, context->window, 
+                                     ppos, grad_acc);
 
     /* Backprop into the PV: Learn PV weights using the accumulated gradient */
     nlk_layer_lookup_backprop_lookup_one(par_table, 
-                                         context->window[context->size - 1], 
+                                         context->window[ppos], 
                                          grad_acc);
 }
 
@@ -498,11 +503,12 @@ nlk_pvdm_cc(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
             const nlk_real learn_rate, const struct nlk_context_t *context,
             NLK_ARRAY *grad_acc, NLK_ARRAY *lk1_out)
 {
+    /* position of paragraph id */
     const size_t ppos = context->size - 1; /* = number of words */
 
 #ifndef NCHECKS
     if(context->size == 0) {
-        NLK_ERROR_ABORT("Context size must be > 0", NLK_EBADLEN);
+        NLK_ERROR_ABORT("Context size must be >= 2", NLK_EBADLEN);
     }
     /* check that this (last context) is a paragraph */
     if(!context->is_paragraph[ppos]) {
@@ -600,141 +606,6 @@ nlk_pvdbow(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
     } /* end of context words */
 }
 
-/**
- * Create memory for a Word2Vec thread
- */
-struct nlk_w2v_mem_t *
-nlk_w2v_mem_create(const unsigned int layer_size2, const unsigned int ctx_size)
-{
-    struct nlk_w2v_mem_t *mem = NULL;
-
-    mem = (struct nlk_w2v_mem_t *) malloc(sizeof(struct nlk_w2v_mem_t));
-    if(mem == NULL) {
-        goto mem_err;
-    }
-
-    /* output of the first layer */
-    mem->layer1_out = nlk_array_create(layer_size2, 1);
-    if(mem->layer1_out == NULL) {
-        goto mem_err;
-    }
-
-    /* for storing gradients */
-    mem->grad_acc = nlk_array_create(1, layer_size2);
-    if(mem->grad_acc == NULL) {
-        goto mem_err;
-    }
-
-    /* for converting a sentence to a series of training contexts */
-    mem->contexts = nlk_context_create_array(ctx_size);
-    if(mem->contexts == NULL) {
-        goto mem_err;
-    }
-
-    /* for undersampling words in a line */
-    mem->line_sample = nlk_line_create(NLK_LM_MAX_LINE_SIZE);
-    if(mem->line_sample == NULL) {
-        goto mem_err;
-    }
-
-    return mem;
-
-mem_err:
-    NLK_ERROR_NULL("Unable to allocate memory for thread", NLK_ENOMEM);
-    /* unreachable */
-}
-
-
-/**
- * Free memory of a Word2Vec thread
- */
-void
-nlk_w2v_mem_free(struct nlk_w2v_mem_t *mem)
-{
-    if(mem == NULL) {
-        return;
-    }
-
-    nlk_context_free_array(mem->contexts);
-    nlk_line_free(mem->line_sample);
-    nlk_array_free(mem->layer1_out);
-    nlk_array_free(mem->grad_acc);
-
-    free(mem);
-    mem = NULL;
-}
-
-
-/**
- * Update a Word2Vec model for a single line
- */
-unsigned int
-nlk_w2v_line(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
-             const nlk_real learn_rate, const struct nlk_line_t *line, 
-             struct nlk_w2v_mem_t *mem)
-{
-    unsigned int n_examples;
-    unsigned int ex;
-
-    /* subsample: use NN word count instead of corpus->count */
-    nlk_vocab_line_subsample(line, nn->train_opts.word_count, 
-                             nn->train_opts.sample, mem->line_sample);
-
-    /* single word, nothing to do ... */
-    if(mem->line_sample->len < 2) {
-        return 0;
-    }
-
-    /* Context Window
-     * paragraph id (index in weight matrix) = line number + vocab_size
-     */
-    n_examples = nlk_context_window(mem->line_sample->varray, 
-                                    mem->line_sample->len, 
-                                    mem->line_sample->line_id, 
-                                    &nn->context_opts, mem->contexts);
-
-    /** @subsection Algorithm Parallel Loop Over Contexts
-     */
-    switch(nn->train_opts.model_type) {
-        case NLK_SKIPGRAM:
-            for(ex = 0; ex < n_examples; ex++) {
-                nlk_skipgram(nn, learn_rate, mem->contexts[ex], mem->grad_acc, 
-                             mem->layer1_out);
-            }
-            break;
-        case NLK_CBOW:
-            for(ex = 0; ex < n_examples; ex++) {
-                nlk_cbow(nn, learn_rate, mem->contexts[ex], mem->grad_acc, 
-                         mem->layer1_out);
-            }
-            break;
-        case NLK_PVDBOW:
-            for(ex = 0; ex < n_examples; ex++) {
-                nlk_pvdbow(nn, par_table, learn_rate, 
-                           mem->contexts[ex], mem->grad_acc, mem->layer1_out);
-            }
-            break;
-        case NLK_PVDM:
-            for(ex = 0; ex < n_examples; ex++) {
-                nlk_pvdm(nn, par_table, learn_rate, mem->contexts[ex], 
-                        mem->grad_acc, mem->layer1_out);
-            }
-            break;
-        case NLK_PVDM_CONCAT:
-            for(ex = 0; ex < n_examples; ex++) {
-                nlk_pvdm_cc(nn, par_table, learn_rate, mem->contexts[ex], 
-                            mem->grad_acc, mem->layer1_out);
-            }
-            break;
-        default:
-            NLK_ERROR_ABORT("invalid model type", NLK_EINVAL);
-            /* unreachable */
-    }
-
-
-    return n_examples;
-}
-
 
 /**
  * Train or update a word2vec model
@@ -754,8 +625,13 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     /*goto_set_num_threads(1);*/
 
     /* unpack training options */
+    NLK_LM model_type = nn->train_opts.model_type;
     nlk_real learn_rate = nn->train_opts.learn_rate;
     unsigned int epochs = nn->train_opts.iter;
+    struct nlk_context_opts_t context_opts = nn->context_opts;
+    unsigned int ctx_size = context_opts.max_size;
+    float sample_rate = nn->train_opts.sample;
+    const size_t train_words = corpus->count;
 
     /* shortcuts */
     struct nlk_vocab_t **vocab = &nn->vocab;
@@ -767,8 +643,10 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
         layer_size2 = nn->neg->weights->cols;
     }
 
+    struct nlk_layer_lookup_t *par_table = nn->paragraphs;
+    struct nlk_line_t *lines = corpus->lines;
+
     /* for vocabularize we need the real total number of words in our corpus */
-    const size_t train_words = corpus->count;
     
 
     /** @section Shared Initializations
@@ -791,7 +669,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     /* neg table for negative sampling */
     if(nn->train_opts.negative && nn->neg_table == NULL) {
         nn->neg_table = nlk_vocab_neg_table_create(vocab, NLK_NEG_TABLE_SIZE, 
-                                                   0.75);
+                                                   NLK_NEG_TABLE_POW);
     }
 
     /* time keeping */
@@ -800,7 +678,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     nlk_tic(NULL, false);
 
     /* threads */
-    int num_threads = omp_get_num_procs();
+    int num_threads = omp_get_num_threads();
 
 
     /** @section Thread Private initializations 
@@ -809,15 +687,33 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
      */
 #pragma omp parallel shared(word_count_actual)
 {
-    struct nlk_w2v_mem_t *mem = nlk_w2v_mem_create(layer_size2, 
-                                                   nn->context_opts.max_size);
-
     /** @subsection Progress
      */
     size_t word_count = 0;
     size_t last_word_count = 0;
     unsigned int local_epoch = 0;   /* current epoch (thread local) */
-  
+
+    /** @subsection Neural Network Forward/Backward
+     */
+    /* output of the first layer */
+    NLK_ARRAY *layer1_out = nlk_array_create(layer_size2, 1);
+
+    /* for storing gradients */
+    NLK_ARRAY *grad_acc = nlk_array_create(1, layer_size2);
+    
+
+    /** @subsection Context
+     */
+    unsigned int n_examples;
+    unsigned int ex;
+
+
+    /* for converting a sentence to a series of training contexts */
+    struct nlk_context_t **contexts = nlk_context_create_array(ctx_size);
+
+    /* for undersampling words in a line */
+    struct nlk_line_t *line_sample = nlk_line_create(NLK_LM_MAX_LINE_SIZE);
+     
 
     /** @subsection File Reading
      * The train file is divided into parts, one part for each thread.
@@ -853,6 +749,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
                 word_count = 0;
                 last_word_count = 0;
                 line_cur = line_start;
+                continue;
             }
 
             /** @subsection Update Counts and Learning Rate, Display
@@ -878,17 +775,69 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
              * The actual difference between the word models and the paragraph
              * models is in the context that gets generated here.
              */
-            line = &corpus->lines[line_cur];
+            line = &lines[line_cur];
             if(line->len == 0) {
                 line_cur++;
                 continue;
             }
 
 
-            /* update parameters from processing a line */
-            nlk_w2v_line(nn, nn->paragraphs, learn_rate, line, mem); 
-            
-            
+            /* subsample  */
+            nlk_vocab_line_subsample(line, train_words, sample_rate, 
+                                     line_sample);
+
+            /* single word, nothing to do ... */
+            if(line_sample->len < 2) {
+                line_cur++;
+                continue;
+            }
+
+            /* Context Window
+             */
+            n_examples = nlk_context_window(line_sample->varray, 
+                                            line_sample->len, 
+                                            line_sample->line_id, 
+                                            &context_opts, contexts);
+
+            /** @subsection Algorithm Parallel Loop Over Contexts
+             */
+            switch(model_type) {
+                case NLK_SKIPGRAM:
+                    for(ex = 0; ex < n_examples; ex++) {
+                        nlk_skipgram(nn, learn_rate, contexts[ex], grad_acc, 
+                                     layer1_out);
+                    }
+                    break;
+                case NLK_CBOW:
+                    for(ex = 0; ex < n_examples; ex++) {
+                        nlk_cbow(nn, learn_rate, contexts[ex], grad_acc, 
+                                 layer1_out);
+                    }
+                    break;
+                case NLK_PVDBOW:
+                    for(ex = 0; ex < n_examples; ex++) {
+                        nlk_pvdbow(nn, par_table, learn_rate, 
+                                   contexts[ex], grad_acc, layer1_out);
+                    }
+                    break;
+                case NLK_PVDM:
+                    for(ex = 0; ex < n_examples; ex++) {
+                        nlk_pvdm(nn, par_table, learn_rate, contexts[ex], 
+                                 grad_acc, layer1_out);
+                    }
+                    break;
+                case NLK_PVDM_CONCAT:
+                    for(ex = 0; ex < n_examples; ex++) {
+                        nlk_pvdm_cc(nn, par_table, learn_rate, contexts[ex], 
+                                    grad_acc, layer1_out);
+                    }
+                    break;
+                default:
+                    NLK_ERROR_ABORT("invalid model type", NLK_EINVAL);
+                    /* unreachable */
+            }
+
+                
             /* update count/location */
             word_count += line->len;
             line_cur++;
@@ -898,7 +847,11 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
 
     /** @subsection Free Thread Private Memory and Close Files
      */
-    nlk_w2v_mem_free(mem);
+    nlk_context_free_array(contexts);
+    nlk_line_free(line_sample);
+    nlk_array_free(layer1_out);
+    nlk_array_free(grad_acc);
+
 
     } /* *** End of Paralell Region *** */
     /** @section End

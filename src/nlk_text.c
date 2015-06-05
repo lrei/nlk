@@ -301,12 +301,18 @@ nlk_read_number_line(FILE *file, char **line, size_t *number)
     /* read words */
     while(!feof(file)) {
         term = nlk_read_word(file, line[word_idx], NLK_LM_MAX_WORD_SIZE);
+        /*
+        if(term == NLK_ETRUNC) {
+            nlk_debug("very large word truncated: %s", line[word_idx]);
+        } */
+
         word_idx++;
 
         if(term == '\n' || term == EOF) {
             *line[word_idx] = '\0';
             return term;
         }
+        
 
         if(word_idx == NLK_LM_MAX_LINE_SIZE - 1) {
             NLK_ERROR("Line length > max_line_size", NLK_ETRUNC);
@@ -316,6 +322,7 @@ nlk_read_number_line(FILE *file, char **line, size_t *number)
 
     return EOF;
 }
+
 
 /**
  * Determine the number of words in a line read with nlk_read_line
@@ -336,39 +343,67 @@ nlk_text_line_size(char **line)
 }
 
 /**
- * Counts lines remaining in a file. Does not change position of file.
- * "Lines" are terminated by NEWLINE or TAB characters
- *
- * @param fp the FILE pointer
+ * Counts lines in a file
+ * Lines are terminated by NEWLINE
+ * Code heavily inpired by GNU coreutils/wc
  *
  * @return number of lines in file
  */
 size_t
-nlk_text_count_lines(FILE *fp)
+nlk_text_count_lines(const char *filepath)
 {
+    int fd;
     size_t lines = 0;
-    int buf = 0;
-    int last = 0;
-    fpos_t pos;
+    char buf[BUFFER_SIZE];
+    ssize_t bytes_read = 0;
+    ssize_t lines_read;
+    bool long_lines = false;
 
-    /* determine current position */
-    fgetpos(fp, &pos);
+    /* open file */
+    if((fd = open(filepath, O_RDONLY)) < 0) {
+        nlk_log_err("%s", filepath);
+        NLK_ERROR(strerror(errno), errno);
+        /* unreachable */
+    }
 
-    /* count lines until the end */
-    while((buf = fgetc(fp)) != EOF) {
-        if(buf == '\n') {
-            lines++;
+    /* access will be sequential */
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    /* read file loop */
+    while((bytes_read = read(fd, buf, BUFFER_SIZE)) > 0) {
+        char *p = buf;
+        char *end = p + bytes_read;
+        uint64_t plines = lines;
+
+        /* count newlines */
+        if(long_lines == false) {
+            /* Avoid function call overhead for shorter lines.  */
+            while(p != end) {
+                lines += *p++ == '\n';
+            }
+        } else {
+            /* memchr is more efficient with longer lines.  */
+            while((p = memchr(p, '\n', end - p))) {
+                ++p;
+                ++lines;
+            }
         }
-        last = buf;
-    }
-    /* handle files that do not terminate in newline */
-    if(last != '\n') {
-        lines++;
+        lines_read = lines - plines;
+
+        /* determine which line counting mode to use */
+        if(lines_read <= bytes_read / 15) {
+            long_lines = true;
+        } else {
+            long_lines = false;
+        }
     }
 
-    /* rewind file pointer so it can be used by caller */
-    fsetpos(fp, &pos);
+    if(bytes_read < 0) {
+        lines = 0;
+        NLK_ERROR(strerror(errno), errno);
+    } 
 
+    close(fd);
     return lines;
 }
 

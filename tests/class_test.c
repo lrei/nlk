@@ -19,12 +19,7 @@ test_read_classes()
 
 
     /* read file */
-    FILE *fp = fopen("data/classes_small.txt", "r");
-    if(fp == NULL) {
-        mu_assert("read classes: unable to open file classes_small.txt", 0);
-    }
-    dset = nlk_dataset_load(fp);
-    fclose(fp);
+    dset = nlk_dataset_load_path("data/classes_small.txt");
     mu_assert("read classes: error reading file", dset != NULL);
 
     /* summary */
@@ -59,12 +54,7 @@ test_shuffle()
 {
     const unsigned int t[7] = {1, 1, 1, 0, 2, 2, 2};
     struct nlk_dataset_t *dset;
-    FILE *fp = fopen("data/classes_small.txt", "r");
-    if(fp == NULL) {
-        mu_assert("unable to open file classes_small.txt", 0);
-    }
-    dset = nlk_dataset_load(fp);
-    fclose(fp);
+    dset = nlk_dataset_load_path("data/classes_small.txt");
 
     /* before */
     const unsigned int n_classes = dset->n_classes;

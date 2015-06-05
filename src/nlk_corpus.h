@@ -54,7 +54,10 @@ struct nlk_corpus_t {
 };
 
 
-struct nlk_corpus_t *nlk_corpus_read(char *, struct nlk_vocab_t **);
+struct nlk_corpus_t *nlk_corpus_read(char *, struct nlk_vocab_t **, 
+                                     const bool);
+void nlk_corpus_free(struct nlk_corpus_t *);
+
 
 uint64_t nlk_corpus_subset_count(const struct nlk_corpus_t *, const size_t *,
                                  const size_t);

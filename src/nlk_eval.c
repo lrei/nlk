@@ -42,6 +42,8 @@
 #include "nlk_text.h"
 #include "nlk_vocabulary.h"
 #include "nlk_window.h"
+#include "nlk_corpus.h"
+#include "nlk_pv.h"
 
 #include "nlk_eval.h"
 
@@ -119,7 +121,7 @@ struct nlk_analogy_test_t *
 nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
                              const bool lower_words, size_t *total_tests)
 {
-    char line[NLK_WORD_REL_MAX_LINE_SIZE];
+    char line[NLK_LM_MAX_LINE_SIZE];
     char *fr;
     struct nlk_analogy_test_t *tests;    /* array that will contain all test cases */
     void *re_tests;
@@ -149,7 +151,7 @@ nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
     test_number = 0;
     while(!feof(in)) {
         /* read line */
-        fr = fgets(line, NLK_WORD_REL_MAX_LINE_SIZE, in);
+        fr = fgets(line, NLK_LM_MAX_LINE_SIZE, in);
         if(fr == NULL) {
             break;
         }
@@ -323,39 +325,24 @@ nlk_eval_on_questions(const char *filepath, struct nlk_vocab_t **vocab,
 
 /**
  */
-int
-nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn, const unsigned int steps, 
-                        const char *test_file_path, 
-                        struct nlk_vocab_t **vocab, const int verbose, 
-                        nlk_real *accuracy)
+float
+nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn,
+                        const struct nlk_corpus_t *corpus, 
+                        unsigned int epochs,
+                        const bool verbose)
 {
     /** @section Allocation and Initialization
      */
-    *accuracy = 0;
+    float accuracy = 0;
     int correct = 0;
     int total = 0;
 
-    FILE *fin = fopen(test_file_path, "rb");
-    if(fin == NULL) {
-        NLK_ERROR(strerror(errno), errno);
-    }
-    size_t num_lines = nlk_text_count_lines(fin);
-    fclose(fin);
-
-    /* generate paragraph vectors */
-    if(verbose) {
-        nlk_tic("generating paragraph vectors", true);
-    }
-    /*
-    NLK_ARRAY *par_vectors = nlk_pv(nn, test_file_path, numbered, vocab, 
-                                    steps, verbose);
-    */
-    (void) nn;
-    (void) steps;
-    (void) vocab;
-    NLK_ARRAY *par_vectors;
-    NLK_ERROR_ABORT("unimplemented", 1);
-
+    /* generate paragraph vectors */   
+    struct nlk_layer_lookup_t *par_table = nlk_pv_gen(nn, corpus, 
+                                                      epochs,
+                                                      verbose);
+    NLK_ARRAY *par_vectors = par_table->weights;
+   
     /* normalize weights to make distance calculations easier */
     if(verbose) {
         nlk_tic("normalizing paragraph vectors", true);
@@ -363,16 +350,15 @@ nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn, const unsigned int steps,
     nlk_array_normalize_row_vectors(par_vectors);
     size_t limit = par_vectors->rows;
 
+
     /** @section Eval Loop
      */
     if(verbose) {
         nlk_tic("evaluating", true);
     }
 
-#pragma omp parallel reduction(+ : correct) reduction(+ : total)
-{
-#pragma omp for
-    for(size_t tt = 0; tt < num_lines / 2; tt++) {
+#pragma omp parallel for reduction(+ : correct) reduction(+ : total)
+    for(size_t tt = 0; tt < corpus->len / 2; tt++) {
         nlk_real best_similarity = 0;
         size_t most_similar = 0;
         nlk_real sim = 0;
@@ -388,25 +374,28 @@ nlk_eval_on_paraphrases(struct nlk_neuralnet_t *nn, const unsigned int steps,
             }
         }
 
+        /*
+        nlk_debug("%zu -sim-> %zu (%f)\n", tt, most_similar, best_similarity);
+        */
+
         /* is result correct? */
-#ifdef DEBUGPRINT
-        printf("%zu -sim-> %zu (%f)\n", tt, most_similar, best_similarity);
-#endif
         if(tt % 2 == 0 && most_similar == tt + 1) {
             correct++;
         } else if(tt % 2 == 1 && most_similar == tt - 1) { 
             correct++;
         }
         total += 1;
-    }
+    } /* end of parallel for */
     
-} /* end of parallel for */
-    *accuracy = (nlk_real) correct / (nlk_real) total;
-    printf("correct = %d\n", correct);
+    accuracy = (nlk_real) correct / (nlk_real) total;
 
-    nlk_array_free(par_vectors);
+    if(verbose) {
+        printf("accuracy %f (%d/%d)\n", accuracy, correct, total);
+    }
+
+    nlk_layer_lookup_free(par_table);
  
-    return NLK_SUCCESS;
+    return accuracy;
 }
 
 int

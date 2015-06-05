@@ -455,7 +455,7 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
         goto nlk_neuralnet_load_err_head;
     }
     /* 9 - vector size */
-    ret = fscanf(fp, "%u\n", &opts.iter); 
+    ret = fscanf(fp, "%u\n", &opts.vector_size); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
@@ -530,6 +530,9 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     /* read negative sampling layer */
     if(nn->train_opts.negative) {
        nn->neg = nlk_layer_lookup_load(fp);
+       nn->neg_table = nlk_vocab_neg_table_create(&nn->vocab, 
+                                                  NLK_NEG_TABLE_SIZE, 
+                                                  NLK_NEG_TABLE_POW);
         if(verbose) {
             printf("Loaded NEG Layer\n");
         }

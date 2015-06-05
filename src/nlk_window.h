@@ -84,7 +84,10 @@ size_t  nlk_context_window(struct nlk_vocab_t **, const size_t, const size_t,
 
 
 struct nlk_context_t  *nlk_context_create(const size_t); 
+struct nlk_context_t **nlk_context_create_array_lines(const size_t, 
+                                                      const size_t);
 struct nlk_context_t **nlk_context_create_array(const size_t);
+
 void nlk_context_free(struct nlk_context_t *);
 void nlk_context_free_array(struct nlk_context_t **);
 

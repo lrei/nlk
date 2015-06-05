@@ -31,8 +31,10 @@
 #define __NLK_EVAL_H__
 
 
-#define NLK_WORD_REL_MAX_LINE_SIZE 512      /**< max number of chars in test */
 #define NLK_WORD_REL_DEFAULT_SIZE 19558     /**< default tests array size */
+
+
+#include "nlk_corpus.h"
 
 
 #undef __BEGIN_DECLS
@@ -64,9 +66,9 @@ int nlk_eval_on_questions(const char *, struct nlk_vocab_t **,
 void nlk_analogy_test_free(struct nlk_analogy_test_t *);
 
 /* paraphrases */
-int nlk_eval_on_paraphrases(struct nlk_neuralnet_t *, const unsigned int, 
-                            const char *, struct nlk_vocab_t **, 
-                            const int, nlk_real *);
+float nlk_eval_on_paraphrases(struct nlk_neuralnet_t *, 
+                              const struct nlk_corpus_t *, 
+                              unsigned int epochs, const bool);
 
 int nlk_eval_on_paraphrases_pre_gen(const NLK_ARRAY *, size_t, const int, 
                                     nlk_real *);

@@ -52,8 +52,6 @@
 /**
  * Displays the progress stats while building a vocabulary from a file
  *
- * @param count_actual  the number of bytes read so far
- * @param total         the total size in bytes of the file
  * @param start         the clocks used just before starting to read the file
  */
 static void
@@ -66,12 +64,12 @@ nlk_vocab_display_progress(const size_t line_counter, const size_t total_lines,
 
     clock_t now = clock();
 
-    progress = line_counter / (double) total_lines * 100;
-    speed = line_counter / 1000.0 / ((double)(now - start + 1) / 
+    progress = (line_counter / (double) total_lines) * 100;
+    speed = line_counter / ((double)(now - start + 1) / 
             (double)CLOCKS_PER_SEC * 1000),
 
     snprintf(display_str, 256, 
-            "Vocabulary Progress: %.2f%% MBytes/s: %.2f Threads: %d", 
+            "Vocabulary Progress: %.2f%% Lines/s: %.2f Threads: %d", 
             progress, speed, omp_get_num_threads());
 
     nlk_tic(display_str, false);
@@ -151,17 +149,10 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
     clock_t start = clock();
 
     /* open file */
-    FILE *in = fopen(filepath, "rb");
-    if(in == NULL) {
-        NLK_ERROR(strerror(errno), errno);
-        /* unreachable */
-    }
-    total_lines = nlk_text_count_lines(in);
-    fclose(in);
-    in = NULL;
+    total_lines = nlk_text_count_lines(filepath);
     
     /* Limit the number of threads */
-    int num_threads = omp_get_num_procs();
+    int num_threads = omp_get_num_threads();
     if(num_threads > NLK_VOCAB_MAX_THREADS) {
         num_threads = NLK_VOCAB_MAX_THREADS;
     }
@@ -276,7 +267,12 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
                 break;
             }
         } /* file is over (end of while) */
-    } /* end of for thread */
+    } /* end of for() thread */
+
+    if(verbose) {
+        nlk_vocab_display_progress(line_counter, total_lines, start);
+    }
+
 
     /** @section Free Memory and Close File
      */
@@ -303,6 +299,10 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
     if(num_threads > 1) {
         nlk_vocab_add_vocab(vocabulary, &vocabs[1]);
         nlk_vocab_free(&vocabs[0]);
+    }
+
+    if(verbose) {
+        printf("\n");
     }
 
     return NLK_SUCCESS;
@@ -1446,10 +1446,12 @@ nlk_vocab_read_vocabularize(FILE *fp, struct nlk_vocab_t **vocab,
     /* vocabularize */
     v->len = nlk_vocab_vocabularize(vocab, text_line, NULL, v->varray); 
 
-    /* ignore lines with a single word */
-    if(v->len <= 1) {
-        v->len = 0; 
+
+#ifndef NCHECKS 
+    if(v->len > NLK_LM_MAX_LINE_SIZE) {
+        NLK_ERROR_VOID("Bad line length", NLK_EINVAL);
     }
+#endif
 }
 
 /**

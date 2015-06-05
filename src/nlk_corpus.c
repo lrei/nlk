@@ -28,76 +28,45 @@
  * Create and use corpus structures
  */
 
+#include <time.h>
+#include <inttypes.h>
+
 #include <omp.h>
 
 #include "nlk_text.h"
 #include "nlk_vocabulary.h"
 #include "nlk_util.h"
+#include "nlk_tic.h"
 
 #include "nlk_corpus.h"
 
+
 /**
+ * Displays the progress stats while building a corpus from a file
  *
+ * @param start         the clocks used just before starting to read the file
  */
-uint64_t
-nlk_vocab_read_file_worker(char *file_path, const size_t total_lines, 
-                           struct nlk_vocab_t **vocab, const int thread_id, 
-                           const int num_threads, 
-                           struct nlk_line_t *lines)
+static void
+nlk_corpus_display_progress(const size_t line_counter, 
+                            const size_t total_lines, const clock_t start)
 {
-    uint64_t word_count = 0;
+    double progress;
+    double speed;
+    char display_str[256];
 
-    /* open file and get start and end positions for thread */
-    FILE *fp = fopen(file_path, "rb");
-    const size_t line_start = nlk_text_get_split_start_line(total_lines, 
-                                                            num_threads, 
-                                                            thread_id);
-    const size_t end_line = nlk_text_get_split_end_line(total_lines, 
-                                                        num_threads, 
-                                                        thread_id);
+    clock_t now = clock();
 
-    /* allocate memory for a line of text */
-    char **text_line = nlk_text_line_create();
+    progress = (line_counter / (double) total_lines) * 100;
+    speed = line_counter / ((double)(now - start + 1) / 
+            (double)CLOCKS_PER_SEC * 1000),
 
-    /* memory for vocabularizing */
-    struct nlk_vocab_t *varray[NLK_LM_MAX_LINE_SIZE];
-    struct nlk_line_t vline;
-    vline.varray = varray;
+    snprintf(display_str, 256, 
+            "Corpus Progress: %.2f%% Lines/s: %.2f Threads: %d", 
+            progress, speed, omp_get_num_threads());
 
-    /* go to start position */
-    size_t line_cur = line_start;
-    nlk_text_goto_line(fp, line_cur);
-
-    while(line_cur <= end_line) {
-        nlk_vocab_read_vocabularize(fp, vocab, text_line, &vline);
-     
-        /* create */
-        if(vline.len != 0) {
-            lines[line_cur].varray = (struct nlk_vocab_t **) 
-                                      malloc(sizeof(struct nlk_vocab_t *) * 
-                                             vline.len);
-        } else {
-            lines[line_cur].varray = NULL;
-        }
-        /* copy */
-        lines[line_cur].len = vline.len;
-        lines[line_cur].line_id = vline.line_id;
-
-        for(size_t ii = 0; ii < vline.len; ii++) {
-            lines[line_cur].varray[ii] = varray[ii];
-        }
-
-        word_count += vline.len;
-        line_cur++;
-    }
-
-    /* free memory */
-    nlk_text_line_free(text_line);
-    fclose(fp);
-    fp = NULL;
-
-    return word_count;
+    nlk_tic(display_str, false);
 }
+
 
 /**
  * Reads a corpus (in id-text line delimited format)
@@ -108,23 +77,26 @@ nlk_vocab_read_file_worker(char *file_path, const size_t total_lines,
  * @return a corpus structure
  */
 struct nlk_corpus_t *
-nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab)
+nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab, 
+                const bool verbose)
 {
     struct nlk_corpus_t *corpus;
     size_t total_lines;
-    uint64_t total_words = 0;
 
-    const int num_threads = omp_get_num_procs();
+    const int num_threads = omp_get_num_threads();
 
     /* count lines */
-    FILE *lc = fopen(file_path, "rb");
-    if(lc == NULL) {
-        NLK_ERROR_ABORT(strerror(errno), errno);
-        /* unreachable */
+    if(verbose) {
+        printf("Reading Corpus: %s\n", file_path);
+        nlk_tic("counting lines...", true);
     }
-    total_lines = nlk_text_count_lines(lc);
-    fclose(lc);
-    lc = NULL;
+
+    total_lines = nlk_text_count_lines(file_path);
+
+    if(verbose) {
+        nlk_tic("done: ", false);
+        printf("%zu lines\n", total_lines);
+    }
 
     /* allocate corpus */
     corpus = (struct nlk_corpus_t *) malloc(sizeof(struct nlk_corpus_t));
@@ -137,24 +109,118 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab)
 
     /* allocate memory for the file (the line array) */
     corpus->lines = (struct nlk_line_t *) 
-                     malloc(total_lines * sizeof(struct nlk_line_t));
+                     calloc(total_lines, sizeof(struct nlk_line_t));
 
     if(corpus->lines == NULL) {
         NLK_ERROR_NULL("unable to allocate memory for the vocabularized file", 
                         NLK_ENOMEM);
         /* unreachable */
     }
+    struct nlk_line_t *lines = corpus->lines;
+
+    uint64_t word_count = 0;
+    size_t line_counter = 0; 
+    size_t updated = 0;
+    clock_t start = clock();
 
     /* thread it */
-#pragma omp parallel for reduction(+ : total_words)
+#pragma omp parallel reduction(+ : word_count) shared(line_counter, updated) 
+{
+    /* allocate memory for a line of text */
+    char **text_line = nlk_text_line_create();
+
+    /* memory for vocabularizing */
+    struct nlk_vocab_t *varray[NLK_LM_MAX_LINE_SIZE];
+    struct nlk_line_t vline;
+    vline.varray = varray;
+
+
+#pragma omp for
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
-        total_words = nlk_vocab_read_file_worker(file_path,  total_lines, 
-                                                 vocab, thread_id, 
-                                                 num_threads, corpus->lines);
+        /** @subsection File Reading Position
+         * open file and get start and end positions for thread 
+         */
+        FILE *fp = fopen(file_path, "rb");
+        const size_t line_start = nlk_text_get_split_start_line(total_lines, 
+                                                                num_threads, 
+                                                                thread_id);
+        const size_t end_line = nlk_text_get_split_end_line(total_lines, 
+                                                            num_threads, 
+                                                            thread_id);
+        /* go to start position */
+        size_t line_cur = line_start;
+        nlk_text_goto_line(fp, line_cur);
 
-    } /* end of parallel for */
 
-    corpus->count = total_words;
+        /** @subsection Read lines
+         */
+        while(line_cur <= end_line) {
+            /* display */
+            if(verbose) {
+                if(line_counter - updated > 1000) {
+                    updated = line_counter;
+                    nlk_corpus_display_progress(line_counter, total_lines, 
+                                                start);
+                }
+            } /* end of display */
+
+            /* read */
+            nlk_vocab_read_vocabularize(fp, vocab, text_line, &vline);
+         
+            /* check for errors */
+            if(vline.len == 0) {
+                lines[line_cur].varray = NULL;
+                lines[line_cur].len = 0;
+                lines[line_cur].line_id = (size_t)-1;
+                /* nlk_debug("\nBad line: %zu\n", line_cur); */
+                line_cur++;
+                line_counter++;
+                continue;
+            }
+
+            /* create */
+            lines[line_cur].varray = (struct nlk_vocab_t **) 
+                                        malloc(sizeof(struct nlk_vocab_t *) * 
+                                               vline.len);
+            if(lines[line_cur].varray == NULL) {
+                NLK_ERROR_ABORT("unable to allocate memory for line", 
+                                NLK_ENOMEM);
+                /* unreachable */
+            }
+
+            /* copy */
+            lines[line_cur].len = vline.len;
+            lines[line_cur].line_id = vline.line_id;
+
+            for(size_t ii = 0; ii < vline.len; ii++) {
+                lines[line_cur].varray[ii] = varray[ii];
+            }
+
+            word_count += vline.len;
+            line_cur++;
+            line_counter++;
+
+        } /* end of lines for thread */
+        fclose(fp);
+        fp = NULL;
+    } /* end of for() threads */
+
+    if(verbose) {
+        nlk_corpus_display_progress(line_counter, total_lines, start);
+    }
+
+    /* free memory */
+    nlk_text_line_free(text_line);
+    
+} /* end of parallel region */
+
+    corpus->count = word_count;
+
+    if(verbose) {
+        printf("\n");
+        nlk_tic("done reading corpus: ", false);
+        printf("%"PRIu64" words\n", word_count);
+    }
 
     return corpus;
 }

@@ -38,6 +38,9 @@
 
 #define NLK_LM_MAX_WORD_SIZE    128
 #define NLK_LM_MAX_LINE_SIZE    100000
+#define NLK_LM_MAX_CHARS (NLK_LM_MAX_LINE_SIZE * (NLK_LM_MAX_WORD_SIZE + 1))
+
+#define BUFFER_SIZE (16 * 1024)
 
 
 #undef __BEGIN_DECLS
@@ -67,7 +70,7 @@ int     nlk_read_number_line(FILE *,  char **, size_t *);
 size_t  nlk_text_line_size(char **line);
 size_t  nlk_text_get_line(FILE *);
 size_t  nlk_text_count_words(FILE *);
-size_t  nlk_text_count_lines(FILE *);
+size_t  nlk_text_count_lines(const char *);
 
 /* go to line, splits */
 void    nlk_text_goto_line(FILE *, long);

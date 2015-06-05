@@ -234,18 +234,16 @@ nlk_dataset_free(struct nlk_dataset_t *dset)
  *
  */
 struct nlk_dataset_t *
-nlk_dataset_load(FILE *file)
+nlk_dataset_load(FILE *file, const size_t n)
 {
     struct nlk_dataset_t *dset;
     int ret = 0;            /* the return from fscanf */
     size_t counter = 0;     /* line counter */
     size_t index = 0;       /* the id read in the current line */
     int class = 0;          /* the class read in the current line */
-    size_t n = 0;           /* the number of lines / classes */
 
 
     /* get the number of lines = number of values = class array size */
-    n = nlk_text_count_lines(file);
     if(n == 0) {
         NLK_ERROR_NULL("file is empty", NLK_EINVAL);
     }
@@ -292,6 +290,9 @@ nlk_dataset_load_path(const char *file_path)
 {
     struct nlk_dataset_t *dset;
     
+
+    const size_t n_lines = nlk_text_count_lines(file_path);
+
     /* open file */
     errno = 0;
     FILE *tfp = fopen(file_path, "r");
@@ -300,7 +301,7 @@ nlk_dataset_load_path(const char *file_path)
         /* unreachable */
     }
     /* load */
-    dset = nlk_dataset_load(tfp);
+    dset = nlk_dataset_load(tfp, n_lines);
 
     if(dset == NULL) {
         NLK_ERROR_ABORT("unable to read class file", NLK_EINVAL);
@@ -310,6 +311,40 @@ nlk_dataset_load_path(const char *file_path)
     tfp = NULL;
 
     return dset;
+}
+
+
+/**
+ * Save a dataset to a file by passing just the ids & classes
+ */
+void
+nlk_dataset_save_map(FILE *fp, const size_t *ids, 
+                     const unsigned int *classes,
+                     const size_t size)
+{
+    /* write to file cycle */
+    for(size_t ii = 0; ii < size; ii++) {
+        fprintf(fp, "%zu %u\n", ids[ii], classes[ii]);
+    }
+}
+
+
+void
+nlk_dataset_save_map_path(const char *filepath, const size_t *ids, 
+                          const unsigned int *classes, const size_t size)
+{
+    /* open file */
+    FILE *fp = fopen(filepath, "w");
+    if(fp == NULL) {
+        NLK_ERROR_VOID(strerror(errno), errno);
+        /* unreachable */
+    }
+
+    /* write */
+    nlk_dataset_save_map(fp, ids, classes, size);
+
+    /* close */
+    fclose(fp);
 }
 
 
