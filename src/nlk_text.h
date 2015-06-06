@@ -36,11 +36,13 @@
 #include <stdlib.h>
 
 
-#define NLK_LM_MAX_WORD_SIZE    128
-#define NLK_LM_MAX_LINE_SIZE    100000
-#define NLK_LM_MAX_CHARS (NLK_LM_MAX_LINE_SIZE * (NLK_LM_MAX_WORD_SIZE + 1))
+#define NLK_MAX_WORD_SIZE    256
+#define NLK_MAX_LINE_SIZE    100000
+#define NLK_MAX_CHARS   (NLK_MAX_LINE_SIZE * NLK_MAX_WORD_SIZE)
 
 #define BUFFER_SIZE (16 * 1024)
+#define NLK_BUFFER_SIZE (NLK_MAX_CHARS + BUFFER_SIZE)
+
 
 
 #undef __BEGIN_DECLS
@@ -55,32 +57,34 @@
 __BEGIN_DECLS
 
 
-/* create/free */
+/* create/free/size char **line */
 char    **nlk_text_line_create();
 void    nlk_text_line_free(char **);
+size_t  nlk_text_line_size(char **line);
 
 /* lower */
-void    nlk_text_lower(char *, wchar_t *);
 void    nlk_text_ascii_lower(char *st);
 
 /* read */
+int nlk_open(const char *);
+int     nlk_read_line(int, char **, size_t *, char *);
 int     nlk_read_word(FILE *, char *, const size_t);
-int     nlk_read_line(FILE *, char **, const size_t, const size_t);
-int     nlk_read_number_line(FILE *,  char **, size_t *);
-size_t  nlk_text_line_size(char **line);
-size_t  nlk_text_get_line(FILE *);
-size_t  nlk_text_count_words(FILE *);
-size_t  nlk_text_count_lines(const char *);
 
-/* go to line, splits */
-void    nlk_text_goto_line(FILE *, long);
+
+/* lines */
+size_t  nlk_text_count_lines(const char *);
+void    nlk_text_goto_line(int, const size_t);
+/** @TODO: move to util: */
 size_t  nlk_text_get_split_start_line(size_t, unsigned int, unsigned int);
 size_t  nlk_text_get_split_end_line(size_t,  unsigned int, unsigned int);
-size_t  nlk_set_file_pos(FILE *, bool, size_t, int, int);
+
+/* util */
+size_t  nlk_text_line_size(char **line);
 
 /* print */
 void    nlk_text_print_line(char **);
 void    nlk_text_print_numbered_line(char **, size_t, int);
+
 
 
 __END_DECLS

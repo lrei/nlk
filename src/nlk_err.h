@@ -55,13 +55,13 @@ __BEGIN_DECLS
 enum { 
     NLK_SUCCESS  = 0, 
     NLK_FAILURE  = -1,
-    NLK_ETRUNC   = -10, /* truncated */  
-    NLK_EDOM     = 1,   /* input domain error, e.g sqrt(-1), including OOB */
-    NLK_ERANGE   = 2,   /* output range error, e.g. exp(1e100) */
-    NLK_EINVAL   = 4,   /* invalid argument supplied by user */
-    NLK_ENOMEM   = 8,   /* alloc failed */
-    NLK_EBADLEN  = 19,  /* matrix, vector lengths are not conformant */
-    NLK_ENAN     = 20   /* NaN in data */
+    NLK_ETRUNC   = -10, /**< truncated */  
+    NLK_EDOM     = -11, /**< input domain error, e.g sqrt(-1), including OOB */
+    NLK_ERANGE   = -12, /**< output range error, e.g. exp(1e100) */
+    NLK_EINVAL   = -13, /**< invalid argument supplied by user */
+    NLK_ENOMEM   = -18, /**< alloc failed */
+    NLK_EBADLEN  = -19, /**< matrix, vector lengths are not conformant */
+    NLK_ENAN     = -20  /**< NaN in data */
 };
 
 /* All NLK error handlers have the type nlk_error_handler_t */

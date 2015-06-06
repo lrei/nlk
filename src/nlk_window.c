@@ -292,7 +292,7 @@ struct nlk_context_t **
 nlk_context_create_array_lines(const size_t max_context_size, 
                                const size_t n_lines)
 {
-    const size_t n = NLK_LM_MAX_LINE_SIZE * n_lines;
+    const size_t n = NLK_MAX_LINE_SIZE * n_lines;
     struct nlk_context_t **contexts = (struct nlk_context_t **) 
         malloc(n * sizeof(struct nlk_context_t *));
     if(contexts == NULL) {
@@ -330,7 +330,7 @@ nlk_context_free_array(struct nlk_context_t **contexts)
         return;
     }
 
-    for(size_t zz = 0; zz < NLK_LM_MAX_LINE_SIZE; zz++) {
+    for(size_t zz = 0; zz < NLK_MAX_LINE_SIZE; zz++) {
         if(contexts[zz] != NULL) {
             nlk_context_free(contexts[zz]);
             contexts[zz] = NULL;

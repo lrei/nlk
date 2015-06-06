@@ -1,5 +1,6 @@
 
 #include <stdbool.h>
+#include <omp.h>
 
 #include "nlk_err.h"
 #include "nlk_math.h"
@@ -8,6 +9,10 @@
 
 
 #include "nlk.h"
+
+
+
+int __nlk_num_threads = 0;  /**< global number of threads */
 
 
 /**
@@ -43,6 +48,7 @@ nlk_format(const char *format_name)
     return format;
 }
 
+
 void
 nlk_init()
 {
@@ -50,4 +56,27 @@ nlk_init()
     nlk_table_sigmoid_create();
     nlk_tic_reset();
     nlk_tic(NULL, false);
+    nlk_set_num_threads(0);
+}
+
+
+int
+nlk_set_num_threads(int num_threads)
+{
+    if(num_threads <= 0) {
+        num_threads = omp_get_num_procs();
+    }
+
+    __nlk_num_threads = num_threads;
+
+    omp_set_num_threads(num_threads);
+    return num_threads;
+}
+
+int
+nlk_get_num_threads() {
+    if(__nlk_num_threads <= 0) {
+        __nlk_num_threads = omp_get_num_procs();
+    }
+    return __nlk_num_threads;
 }

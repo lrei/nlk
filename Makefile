@@ -71,7 +71,7 @@ REL_FLAGS = -O3 -fno-strict-aliasing -ffast-math -pthread -funroll-loops \
 
 # Debug Flags
 # add -DCHECK_NANS=1,2 to check for NaNs
-DEB_FLAGS = -g -static-libgcc -DDEBUG 
+DEB_FLAGS = -ggdb3 -static-libgcc -DDEBUG
 
 # LDFlags
 LDFLAGS += $(foreach librarydir,$(LIBRARY_DIRS),-L$(librarydir)) \

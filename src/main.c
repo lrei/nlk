@@ -459,8 +459,8 @@ main(int argc, char **argv)
 #ifdef DEBUG
     if(verbose) {
         printf("Running in DEBUG mode!\n");
-        printf("MAX WORD SIZE = %d chars\n", NLK_LM_MAX_WORD_SIZE);
-        printf("MAX LINE SIZE = %d words\n", NLK_LM_MAX_LINE_SIZE);
+        printf("MAX WORD SIZE = %d chars\n", NLK_MAX_WORD_SIZE);
+        printf("MAX LINE SIZE = %d words\n", NLK_MAX_LINE_SIZE);
     }
 #endif
 
@@ -469,10 +469,9 @@ main(int argc, char **argv)
      */
     /* Global Init */
     nlk_init(); /* initializes random number generator and sigmoid table */
-    if(num_threads > 0) {
-        omp_set_num_threads(num_threads);
-    } else {
-        omp_set_num_threads(omp_get_num_procs());
+    nlk_set_num_threads(num_threads);
+    if(verbose) {
+        printf("num threads: %d\n", nlk_get_num_threads());
     }
 
     /* Model Type */
@@ -518,7 +517,8 @@ main(int argc, char **argv)
     else if(corpus_file != NULL && train) {
         /* create the vocabulary */
         if(verbose) {
-            nlk_tic("creating vocabulary", true);
+            nlk_tic("creating vocabulary for ", false);
+            printf("%s\n", corpus_file);
         }
         vocab = nlk_vocab_create(corpus_file, min_count, verbose);
 

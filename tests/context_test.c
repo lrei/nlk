@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <unistd.h>
 #include "minunit.h"
 #include "../src/nlk_text.h"
 #include "../src/nlk_vocabulary.h"
@@ -15,8 +16,8 @@ int tests_passed = 0;
 static char *
 test_context_pvdbow()
 {
-    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
+    size_t max_word_size = NLK_MAX_WORD_SIZE;
+    size_t max_line_size = NLK_MAX_LINE_SIZE;
     size_t zz;
     size_t par_id;
     size_t window = 10;
@@ -48,7 +49,7 @@ test_context_pvdbow()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_import("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 
@@ -59,10 +60,11 @@ test_context_pvdbow()
 
 
     /* open */
-    FILE *train = fopen("data/cat.txt", "rb");
+    int fd = nlk_open("data/cat.txt");
 
     /* read line */
-    nlk_read_number_line(train, text_line, &par_id);
+    char buffer[NLK_MAX_LINE_SIZE];
+    nlk_read_line(fd, text_line, &par_id, buffer);
 
 
     /* vectorize */
@@ -99,7 +101,8 @@ test_context_pvdbow()
    
 
     /* close shop */
-    fclose(train);
+    close(fd);
+    fd = 0;
 
     return 0;
 }
@@ -110,8 +113,8 @@ test_context_pvdbow()
 static char *
 test_context_pvdm()
 {
-    size_t max_word_size = NLK_LM_MAX_WORD_SIZE;
-    size_t max_line_size = NLK_LM_MAX_LINE_SIZE;
+    size_t max_word_size = NLK_MAX_WORD_SIZE;
+    size_t max_line_size = NLK_MAX_LINE_SIZE;
     size_t zz;
     size_t par_id;
     size_t window = 10;
@@ -143,7 +146,7 @@ test_context_pvdm()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_import("data/cat.vocab", NLK_LM_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 
@@ -154,10 +157,11 @@ test_context_pvdm()
 
 
     /* open */
-    FILE *train = fopen("data/cat.txt", "rb");
+    int fd = nlk_open("data/cat.txt");
 
     /* read line */
-    nlk_read_number_line(train, text_line, &par_id);
+    char buffer[NLK_MAX_LINE_SIZE];
+    nlk_read_line(fd, text_line, &par_id, buffer);
 
 
     /* vectorize */
@@ -178,7 +182,8 @@ test_context_pvdm()
    
 
     /* close shop */
-    fclose(train);
+    close(fd);
+    fd = 0;
 
     return 0;
 }

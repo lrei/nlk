@@ -85,7 +85,7 @@ __nlk_read_question_line(struct nlk_vocab_t **vocab, bool lower_words,
         
         /* to lower case if necessary */
         if(lower_words) {
-            nlk_text_lower(word, NULL); 
+            nlk_text_ascii_lower(word); 
         }
         
         /* find word in voculary */
@@ -121,7 +121,7 @@ struct nlk_analogy_test_t *
 nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
                              const bool lower_words, size_t *total_tests)
 {
-    char line[NLK_LM_MAX_LINE_SIZE];
+    char line[NLK_MAX_LINE_SIZE];
     char *fr;
     struct nlk_analogy_test_t *tests;    /* array that will contain all test cases */
     void *re_tests;
@@ -151,7 +151,7 @@ nlk_read_analogy_test_file(const char *filepath, struct nlk_vocab_t **vocab,
     test_number = 0;
     while(!feof(in)) {
         /* read line */
-        fr = fgets(line, NLK_LM_MAX_LINE_SIZE, in);
+        fr = fgets(line, NLK_MAX_LINE_SIZE, in);
         if(fr == NULL) {
             break;
         }

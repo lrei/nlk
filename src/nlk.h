@@ -30,9 +30,9 @@
 #ifndef __NLK_H__
 #define __NLK_H__
 
+
 #include <stdbool.h>
 
-#include "nlk_layer_lookup.h"
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS
@@ -58,6 +58,8 @@ typedef enum nlk_file_format_t NLK_FILE_FORMAT;
 
 NLK_FILE_FORMAT nlk_format(const char *);
 void nlk_init();
+int nlk_set_num_threads(int);
+int nlk_get_num_threads();
 
 
 __END_DECLS

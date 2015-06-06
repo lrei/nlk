@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -52,13 +53,13 @@
 char **
 nlk_text_line_create()
 {
-    char **text_line = (char **) calloc(NLK_LM_MAX_LINE_SIZE, sizeof(char *));
+    char **text_line = (char **) calloc(NLK_MAX_LINE_SIZE, sizeof(char *));
     if(text_line == NULL) {
         NLK_ERROR_ABORT("unable to allocate memory for text", NLK_ENOMEM);
         /* unreachable */
     }
-    for(size_t zz = 0; zz < NLK_LM_MAX_LINE_SIZE; zz++) {
-        text_line[zz] = calloc(NLK_LM_MAX_WORD_SIZE, sizeof(char));
+    for(size_t zz = 0; zz < NLK_MAX_LINE_SIZE; zz++) {
+        text_line[zz] = calloc(NLK_MAX_WORD_SIZE, sizeof(char));
         if(text_line[zz] == NULL) {
             NLK_ERROR_NULL("unable to allocate memory for text", NLK_ENOMEM);
             /* unreachable */
@@ -75,7 +76,7 @@ nlk_text_line_free(char **text_line)
         return;
     }
     /* free array elements (words) */
-    for(size_t zz = 0; zz < NLK_LM_MAX_LINE_SIZE; zz++) {
+    for(size_t zz = 0; zz < NLK_MAX_LINE_SIZE; zz++) {
         free(text_line[zz]);
         text_line[zz] = NULL;
     }
@@ -87,57 +88,14 @@ nlk_text_line_free(char **text_line)
 
 
 /**
- * @brief Convert string to lowercase in-place
- * 
- * @param word      the word to convert to lowercase
- * @param tmp       temporary memory for widechar conversion
- */
-void
-nlk_text_lower(char *word, wchar_t *tmp) {
-    size_t ii;
-    size_t len;
-    wchar_t *low_tmp;
-
-    len = strlen(word) + 1;
-
-    if(tmp == NULL) {
-        low_tmp = malloc(len * sizeof(wchar_t));
-    } else {
-        low_tmp = tmp;
-    }
-
-    /* convert to wide representation */
-    len = mbstowcs(low_tmp, word, len);
-    if(len == (size_t) - 1) {
-        NLK_ERROR_VOID("Invalid char conversion.", NLK_FAILURE);
-        /* unreachable */
-    }
-
-    for(ii = 0; ii < len; ii++) {
-        low_tmp[ii] = towlower(low_tmp[ii]);
-    }
-
-    /* convert back to multibyte representation */
-    len = wcstombs(word, low_tmp, len + 1);
-    if(len == (size_t) - 1) {
-        NLK_ERROR_VOID("Invalid char conversion.", NLK_FAILURE);
-        /* unreachable */
-    }
-
-    if(tmp == NULL) {
-        free(low_tmp);
-    }
-}
-
-/**
  * @brief ASCII in-place convertion to lower case
  *
  * @param st    the string (overwritten with lower case version) 
  */
 void
-nlk_text_ascii_lower(char *st)
+nlk_text_ascii_lower(register char *st)
 {
-    for(char *p = st; *p != '\0'; p++) {
+    for(register char *p = st; *p != '\0'; p++) {
         *p = tolower(*p);
     }
 }
@@ -206,147 +164,212 @@ nlk_read_word(FILE *file, char *word, const size_t max_word_size)
     return ch;
 }
 
-/** 
- * @brief Read a line from a file
+
+/**
+ * Open file for reading
  *
- * @param file            FILE object to read from
- * @param line            array  where the words+1 will be stored
- *                        null terminator)
- * @param max_word_size   maximum size of a word (including null terminator)
- * @param max_line_size   maximum size of a line in number of words (including 
+ * @param filepath  the path to the file to be opened
  *
- * @return integer of the sentence separator '\n', EOF or NLK_ETRUNC
- *
- * @note
- * Lines are assumed to be separated by the NEWLINE character. 
- *
- * This function is made for reading already pre-processed files.
- *
- * The purpose is is to read files where each line is a sentence 
- * (or similar, e.g. a tweet or a "paragraph").
- *
- * Calls read_word. Each word in a line is a char array and the line is a NULL 
- * terminated array of pointers to the individual words. Obviously, memory for
- * this should be allocated before calling the function.
- *
- * The line terminator is a null-word (a char array beggining with a NULL)
- * 
- * If necessary to truncate the sentence, it will be truncated at a word
- * boundary and thus NLK_ETRUNC does not guarantee that the array is of size
- * max_line_size.
- *
- * @endnote
+ * @return the file descriptor
  */
 int
-nlk_read_line(FILE *file, char **line, const size_t max_word_size, 
-              const size_t max_line_size)
+nlk_open(const char *filepath)
 {
-    int term;                   /* word terminator */
-    size_t word_idx = 0;        /* word in line index */
+    int fd;
 
-    while(!feof(file)) {
-        term = nlk_read_word(file, line[word_idx], max_word_size);
-        word_idx++;
-
-        if(term == '\n' || term == EOF) {
-            *line[word_idx] = '\0';
-            return term;
-        }
-
-        if(word_idx == max_line_size - 1) {
-            *line[word_idx] = '\0';
-            return NLK_ETRUNC;
-        }
+    /* open file */
+    if((fd = open(filepath, O_RDONLY)) < 0) {
+        nlk_log_err("%s", filepath);
+        NLK_ERROR(strerror(errno), NLK_FAILURE);
+        /* unreachable */
     }
 
-    return EOF;
+    /* access will be sequential */
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    return fd;
+}
+
+
+/**
+ * Copies a buffer into a char ** with tokenized words
+ * Called only from nlk_read_line
+ */
+inline static int
+nlk_text_make_words(char *buf, const ssize_t len, char **line, size_t *number)
+{
+    register int idx = 0;
+    register char *dest = &line[0][0];
+    register char *s = buf;
+    register char *p = buf;
+    const char *end = &buf[len];
+
+    /* ignore whitespaces before the line id (number) - i am a merciful god */
+    while(p != end && isspace(*p)) { p++; }
+    s = p;
+
+    /** @section Buffered Read From File 
+     * idx = 0 is the line number, hence the = in <= 
+     * our index is offset by +1 from the word_index i.e. 
+     * line[word_idx] = line[idx-1]
+     * dest will point line[idx-1] after the first "word"
+     * and thus point to the right array in **line
+     */
+    while(p != end && idx <= NLK_MAX_LINE_SIZE) {
+
+        while( ! isspace(*p) && p != end) { 
+            p++; 
+        } /* p points to the token end, s to the token start */
+
+        
+        if(p - s > NLK_MAX_WORD_SIZE) { /* ignore large words */
+            s = p;
+            continue;
+        }
+
+        /* copy without the terminator (whitespace or null) */
+        while(s != p) { 
+            *dest = *s;  
+            dest++;
+            s++;
+        }
+        /* NULL terminate word */
+        *dest = '\0'; 
+
+        /* move forward skipping whitespaces */
+        while(p != end && isspace(*p)) { p++; }
+        s = p;
+
+        /** @subsection Handle The Line Number (id)
+         * first "word" => the line number 
+         */
+        if(idx == 0) { 
+            char *endptr;
+            errno = 0;
+            unsigned long long int val = strtoull(line[0], &endptr, 10);
+
+            /* error handling */
+            if ((errno == ERANGE && (val == ULLONG_MAX))
+                || (errno != 0 && val == 0)) {
+
+                NLK_ERROR(strerror(errno), NLK_FAILURE);
+               /* unreachable */
+            }
+            if(endptr == line[0]) {
+               NLK_ERROR("No Line Number (id) Found", NLK_FAILURE);
+               /* unreachable */
+            } else if (*endptr != '\0') { 
+                nlk_log_err("number parsed: %llu\ncharacters after number: %s", 
+                            val, endptr);
+                NLK_ERROR("file parsing issue", NLK_FAILURE);
+               /* unreachable */
+            }
+
+            /**! SUCCESS: we have our number
+             */
+            *number = val;
+        }
+
+
+        /**@subsection Go to next word
+         */
+        idx++;
+        dest = &line[idx-1][0];
+        *dest = '\0';   /* null terminate it in case it is the last */ 
+
+    } /* end of buffer */
+
+    if(idx < NLK_MAX_LINE_SIZE) {
+        return 0;
+    }
+
+    return NLK_ETRUNC;
 }
 
 
 /**
  * Reads a number-line pair (separated by a whitespace).
- * Does not consider tabs as valid line separators.
- * See also nlk_read_line() for additional information
  *
- * @param file            FILE object to read from
- * @param line            array  where the words+1 will be stored - 
- *                        null terminated)
+ * @param fd    the file descriptor to read from
+ * @param line  array where the words will be stored - will be null terminated)
  * @param number          variable where line number will be stored
  *
  * @return integer of the sentence separator '\n' or EOF
  */
 int
-nlk_read_number_line(FILE *file, char **line, size_t *number)
+nlk_read_line(int fd, char **line, size_t *number, char *buf)
 {
-    int term = -1;              /* word terminator */
-    size_t word_idx = 0;        /* word in line index */
-    int ret;
-
+    ssize_t  bytes_read = 0;            /**< bytes read by read(2) */
+    ssize_t  len        = 0;            /**< current length of buffer */
+    char    *b          = buf;          /**< current pos in buf */  
+    int      term       = NLK_FAILURE;
 
     /* inititialize some vars to hadle empty lines */
     *number = (size_t) -1;
     line[0][0] = '\0';
 
-    /* read line number */
-    if(!feof(file)) {
-        ret = fscanf(file, "%zu", number);
-        if(ret == EOF) {
-            return EOF;
-        } else if(ret <= 0) {
-            NLK_ERROR("invalid line id", NLK_EINVAL);
-            /* unreachable */
-        }
-    }
 
-    /* read words */
-    while(!feof(file)) {
-        term = nlk_read_word(file, line[word_idx], NLK_LM_MAX_WORD_SIZE);
-        /*
-        if(term == NLK_ETRUNC) {
-            nlk_debug("very large word truncated: %s", line[word_idx]);
-        } */
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 
-        word_idx++;
 
-        if(term == '\n' || term == EOF) {
-            *line[word_idx] = '\0';
-            return term;
-        }
-        
+    /* read */
+    while( (bytes_read = read(fd, b, BUFFER_SIZE)) > 0 ) {
+        len += bytes_read;
+        /* find first newline */
+        char *end = memchr(b, '\n', bytes_read);
 
-        if(word_idx == NLK_LM_MAX_LINE_SIZE - 1) {
+        /* end: newline found */
+        if(end != NULL) { /* found */
+            term = '\n';
+            /* return fd to rightful place: cur_pos - bytes_read - bytes_used */
+            end++; /* move over the newline */
+            off_t loc = lseek(fd, 0, SEEK_CUR) - (bytes_read - (end - b));
+            lseek(fd, loc, SEEK_SET);
+            len = end - buf;
+            break;
+
+        /* end: EOF */
+        } else if(bytes_read < BUFFER_SIZE) { 
+            len += bytes_read;
+            term = EOF;
+            break;
+    
+        /* continue reading file */
+        } else if((len + bytes_read) < NLK_MAX_CHARS) {
+            /* if we've haven't exceeded our buffer */
+            b += bytes_read;    /* increment b and go for another read() */
+            continue;
+
+        /* buffer size exceeded */
+        } else { /* line is too big, puppy is sad */
+            nlk_log_err("line_len = %zu", (len + bytes_read));
             NLK_ERROR("Line length > max_line_size", NLK_ETRUNC);
             /* unreachable */
         }
     }
 
-    return EOF;
-}
-
-
-/**
- * Determine the number of words in a line read with nlk_read_line
- *
- * @param line  the line
- * 
- * @return number of words in line
- */
-size_t
-nlk_text_line_size(char **line)
-{
-    size_t count = 0;
-
-    while(*line[count] != '\0') {
-        count++;
+    /* if(len == 1) => empty newline */
+    if(len > 1) {
+        nlk_text_make_words(buf, len, line, number);
     }
-    return count;
+
+    if(bytes_read == 0) {
+        return EOF;
+    } else if(bytes_read < 0) {
+        NLK_ERROR(strerror(errno), NLK_FAILURE);
+            /* unreachable */
+    }
+
+    return term;
 }
+
 
 /**
  * Counts lines in a file
  * Lines are terminated by NEWLINE
  * Code heavily inpired by GNU coreutils/wc
  *
+ * @param filepath  path of the file to count lines for
  * @return number of lines in file
  */
 size_t
@@ -360,13 +383,10 @@ nlk_text_count_lines(const char *filepath)
     bool long_lines = false;
 
     /* open file */
-    if((fd = open(filepath, O_RDONLY)) < 0) {
-        nlk_log_err("%s", filepath);
-        NLK_ERROR(strerror(errno), errno);
-        /* unreachable */
+    if((fd = nlk_open(filepath)) < 0) {
+        return fd;
     }
 
-    /* access will be sequential */
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 
     /* read file loop */
@@ -398,87 +418,16 @@ nlk_text_count_lines(const char *filepath)
         }
     }
 
+    /* handle error */ 
     if(bytes_read < 0) {
         lines = 0;
-        NLK_ERROR(strerror(errno), errno);
+        NLK_ERROR(strerror(errno), NLK_FAILURE);
     } 
 
     close(fd);
     return lines;
 }
 
-/**
- * Get current line number 
- *
- * @param fp    file pointer
- *
- * @return current line number
- */
-size_t
-nlk_text_get_line(FILE *fp)
-{
-    size_t line = 0;
-    int buf = 0;
-    long pos = 0;
-    long pos_origin;
-
-    /* save current position */
-    pos_origin = ftell(fp);
-
-    /* go to start */
-    fseek(fp, 0, SEEK_SET);
-
-    /* count until current */
-    while(pos <= pos_origin) {
-        buf = fgetc(fp);
-
-        if(buf == '\n') {
-            line++;
-        }
-        pos = ftell(fp);
-    }
-
-    /* restore position */
-    fseek(fp, pos_origin, SEEK_SET);
-
-    return line;
-}
-
-
-/**
- * Counts words remaining in a file. Does not change position of file.
- *
- * @param fp the FILE pointer
- *
- * @return number of words in file
- */
-size_t
-nlk_text_count_words(FILE *fp)
-{
-    size_t words = 0;
-    int buf = 0;
-    int last = 0;
-    fpos_t pos;
-
-    /* determine current position */
-    fgetpos(fp, &pos);
-
-    /* count words until the end */
-    while((buf = fgetc(fp)) != EOF) {
-        if(isspace(buf)) {
-            words++;
-        }
-        last = buf;
-    }
-    if(!isspace(last)) {
-        words++;
-    }
-
-    /* rewind file pointer so it can be used by caller */
-    fsetpos(fp, &pos);
-
-    return words;
-}
 
 /**
  * Set file position to the beginning of a given line
@@ -488,137 +437,92 @@ nlk_text_count_words(FILE *fp)
  *
  */
 void
-nlk_text_goto_line(FILE *fp, long line)
+nlk_text_goto_line(int fd, const size_t line)
 {
-    int buf;
-    long pos = 0;
+    size_t lines = 0;
+    char buf[BUFFER_SIZE];
+    ssize_t bytes_read = 0;
+    ssize_t lines_read = 0;
+    size_t line_cur = 0;
+    bool long_lines = false;
+    off_t loc = 0;
+    char *p = 0;
+    char *end = 0;
 
-    rewind(fp);
-    
-    while(pos < line) {
-        while((buf = fgetc(fp)) != EOF) {
-            if(buf == '\n') {
-                break;
+    /* goto start */
+    lseek(fd, 0, SEEK_SET);
+
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    /* handle trivial case line = 0 */
+    if(line == 0) {
+        return;
+    }
+
+    /**@section Read File Loop: count newlines 
+     */
+    while((bytes_read = read(fd, buf, BUFFER_SIZE)) > 0) {
+        p = buf;
+        end = p + bytes_read;
+        uint64_t plines = lines;
+
+
+        /**@subsection Short Lines
+         * Avoid function call overhead for shorter lines
+         */
+        if(long_lines == false) {
+            while(p != end) {
+                if(*p++ == '\n') {
+                    ++lines;
+                    ++line_cur;
+                    if(line_cur == line) { 
+                        /**! FOUND IT */
+                        goto line_found;
+                    }
+                }
             }
+        } else {
+            /** @subsection Long Lines
+             * memchr is more efficient with longer lines
+             */
+            while((p = memchr(p, '\n', end - p))) {
+                ++p;
+                ++lines;
+                ++line_cur;
+                if(line_cur == line) { 
+                    /**! FOUND IT */
+                    goto line_found;
+                }
+            }
+        } /* end of long lines */
+
+        lines_read = lines - plines;
+
+        /* determine which line counting mode to use */
+        if(lines_read <= bytes_read / 15) {
+            long_lines = true;
+        } else {
+            long_lines = false;
         }
-        pos++;
-    }
-}
-
-/**
-* Set file position to the start of the line
-*
-* @param fp    the file pointer
-*
-*/
-static void
-nlk_text_goto_line_start(FILE *fp)
-{
-    int buf;
-
-    buf = fgetc(fp); 
-    while(buf != '\n') {
-        if(ftell(fp) < 2) {
-            fseek(fp, 0, SEEK_SET);
-            return;
-        }
-        fseek(fp, -2, SEEK_CUR);
-        buf = fgetc(fp);
-    }
-}
-
-/**
-* Set file position to the start of the word
-*
-* @param fp    the file pointer
-*
-*/
-static void
-nlk_text_goto_word_start(FILE *fp)
-{
-    int buf;
-
-    buf = fgetc(fp); 
-    while(!isspace(buf)) {
-        if(ftell(fp) < 2) {
-            fseek(fp, 0, SEEK_SET);
-            return;
-        }
-        fseek(fp, -2, SEEK_CUR);
-        buf = fgetc(fp);
-    }
-}
-
-
-/**
- * @brief Used to get the start position in a file for a given worker thread
- *
- * @param fp        the file where the position will be set
- * @param use_lines if true, goes to the start of a line instead of a byte
- * @param total     total number of bytes or lines in file
- * @param thread_id the "worker thread" id
- *
- * @return end position
- */
-static inline size_t
-nlk_get_file_pos(FILE *fp, bool use_lines, size_t total, size_t num_threads,
-                 int thread_id)
-{
-    size_t start_pos;
-
-    start_pos = (total / (double)num_threads) * (size_t)thread_id;
-    fseek(fp, start_pos, SEEK_SET);  
-
-    if(use_lines) {
-        nlk_text_goto_line_start(fp);
-    } else {
-        nlk_text_goto_word_start(fp);
     }
 
-    start_pos = ftell(fp);
-    rewind(fp);
+    if(bytes_read < 0) {
+        lines = 0;
+        NLK_ERROR_VOID(strerror(errno), NLK_FAILURE);
+        /* unreachable */
+    } 
 
-    return start_pos;
+    /* end of file: line not found */
+    NLK_ERROR_VOID("line not in file", NLK_EBADLEN);
+    /* unreachable */
+
+line_found:
+    /* (end - p) represents the bytes read after the line */
+    loc = lseek(fd, 0, SEEK_CUR) - (end - p);
+    lseek(fd, loc, SEEK_SET);
+    return;
 }
 
-
-/**
- * @brief Used to set the start position in a file for a given worker thread
- *
- * @param fp        the file where the position will be set
- * @param use_lines if true, goes to the start of a line instead of a byte
- * @param total     total number of bytes or lines in file
- * @param thread_id the "worker thread" id
- *
- * @return end position
- */
-size_t
-nlk_set_file_pos(FILE *fp, bool use_lines, size_t total, int num_threads,
-                 int thread_id)
-{
-    size_t start_pos;
-    size_t end_pos;
-    int next_thread;
-    
-    /* determine start position */
-    start_pos = nlk_get_file_pos(fp, use_lines, total, num_threads, thread_id);
-
-    /* determine end position i.e. start pos of next thread */
-    next_thread = thread_id + 1;
-    if(next_thread == num_threads) {
-        /* this is the last thread */
-        fseek(fp, 0, SEEK_END); 
-        end_pos = ftell(fp);
-    } else {
-        end_pos = nlk_get_file_pos(fp, use_lines, total, num_threads,
-                                   next_thread);
-    }
-
-    /* set position */
-    fseek(fp, start_pos, SEEK_SET);
-
-    return end_pos;
-}
 
 
 size_t
@@ -644,6 +548,25 @@ nlk_text_get_split_end_line(size_t total_lines, unsigned int splits,
 
 
 /**
+ * Determine the number of words in a line read with nlk_read_line
+ *
+ * @param line  the line
+ * 
+ * @return number of words in line
+ */
+size_t
+nlk_text_line_size(char **line)
+{
+    size_t count = 0;
+
+    while(*line[count] != '\0') {
+        count++;
+    }
+    return count;
+}
+
+
+/**
  * @brief Print an NLK "line".
  *
  * @param line      the NLK line (array of (strings) array's of chars
@@ -651,7 +574,7 @@ nlk_text_get_split_end_line(size_t total_lines, unsigned int splits,
 void
 nlk_text_print_line(char **line)
 {
-    char buf[NLK_LM_MAX_LINE_SIZE * NLK_LM_MAX_WORD_SIZE];
+    char buf[NLK_MAX_LINE_SIZE * NLK_MAX_WORD_SIZE];
     unsigned int num_chars = 0;
     size_t ii = 0;
 
@@ -680,7 +603,7 @@ nlk_text_print_line(char **line)
 void
 nlk_text_debug_numbered_line(char **line, size_t line_num, int thread_id)
 {
-    char buf[NLK_LM_MAX_LINE_SIZE * NLK_LM_MAX_WORD_SIZE];
+    char buf[NLK_MAX_LINE_SIZE * NLK_MAX_WORD_SIZE];
     unsigned int num_chars = 0;
     size_t ii = 0;
 

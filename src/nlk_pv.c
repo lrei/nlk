@@ -152,7 +152,7 @@ nlk_pv_gen(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     contexts = nlk_context_create_array(ctx_size);
 
     /* for undersampling words in a line */
-    struct nlk_line_t *line_sample = nlk_line_create(NLK_LM_MAX_LINE_SIZE);
+    struct nlk_line_t *line_sample = nlk_line_create(NLK_MAX_LINE_SIZE);
 
     /* output of the first layer */
     NLK_ARRAY *layer1_out = nlk_array_create(layer_size2, 1);

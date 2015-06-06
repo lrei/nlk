@@ -49,6 +49,7 @@
 #include "nlk_criterion.h"
 #include "nlk_learn_rate.h"
 #include "nlk_util.h"
+#include "nlk.h"
 
 #include "nlk_w2v.h"
 
@@ -83,7 +84,7 @@ nlk_w2v_display(nlk_real learn_rate, size_t word_count_actual,
     /* create string */
     snprintf(display_str, 256,
             "Alpha: %f  Progress: %.2f%% (%03d/%03d) "
-            "Words/Thread/sec: %.2fk Threads: %d/%d", 
+            "Words/Thread/sec: %.2fK Threads: %d/%d", 
             learn_rate, progress, epoch + 1, epochs, speed, 
             omp_get_num_threads(), omp_get_num_procs());
 
@@ -678,7 +679,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     nlk_tic(NULL, false);
 
     /* threads */
-    int num_threads = omp_get_num_threads();
+    int num_threads = nlk_get_num_threads();
 
 
     /** @section Thread Private initializations 
@@ -712,7 +713,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     struct nlk_context_t **contexts = nlk_context_create_array(ctx_size);
 
     /* for undersampling words in a line */
-    struct nlk_line_t *line_sample = nlk_line_create(NLK_LM_MAX_LINE_SIZE);
+    struct nlk_line_t *line_sample = nlk_line_create(NLK_MAX_LINE_SIZE);
      
 
     /** @subsection File Reading

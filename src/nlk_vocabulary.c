@@ -45,6 +45,7 @@
 #include "nlk_random.h"
 #include "nlk_tic.h"
 #include "nlk_util.h"
+#include "nlk.h"
 
 #include "nlk_vocabulary.h"
 
@@ -69,7 +70,7 @@ nlk_vocab_display_progress(const size_t line_counter, const size_t total_lines,
             (double)CLOCKS_PER_SEC * 1000),
 
     snprintf(display_str, 256, 
-            "Vocabulary Progress: %.2f%% Lines/s: %.2f Threads: %d", 
+            "Vocabulary Progress: %.2f%% Lines/Thread/sec: %.2fK Threads: %d", 
             progress, speed, omp_get_num_threads());
 
     nlk_tic(display_str, false);
@@ -133,6 +134,7 @@ nlk_vocab_init()
                                                           0, NLK_VOCAB_SPECIAL);
     if(start_symbol == NULL) {
         NLK_ERROR_NULL("unable to add to vocabulary", NLK_EINVAL);
+        /* unreachable */
     }
     return vocab;
 }
@@ -149,10 +151,13 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
     clock_t start = clock();
 
     /* open file */
+    if(verbose) {
+        nlk_tic("vocabulary: counting lines\n", true);
+    }
     total_lines = nlk_text_count_lines(filepath);
     
     /* Limit the number of threads */
-    int num_threads = omp_get_num_threads();
+    int num_threads = nlk_get_num_threads();
     if(num_threads > NLK_VOCAB_MAX_THREADS) {
         num_threads = NLK_VOCAB_MAX_THREADS;
     }
@@ -188,14 +193,21 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
     int ret = 0;
 
     /* open file */
-    FILE *file = fopen(filepath, "rb");
-    if(file == NULL) {
+    int fd = nlk_open(filepath);
+    if(fd < 0) {
         NLK_ERROR_ABORT(strerror(errno), errno);
         /* unreachable */
     }
 
     /* allocate memory for reading from the input file */
     char **text_line = nlk_text_line_create();
+    char *buffer = (char *) malloc(sizeof(char) * NLK_BUFFER_SIZE);
+    if(buffer == NULL) {
+        NLK_ERROR_ABORT("failed to  allocate buffer for reading", NLK_ENOMEM);
+        /* unreachable */
+    }
+
+
     /** @section Parallel Creation of Vocabularies (Map)
      * Each thread reads from a different part of the file.
      */
@@ -205,7 +217,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
 
         cur_line = nlk_text_get_split_start_line(total_lines, num_threads, 
                                                   thread_id);
-        nlk_text_goto_line(file, cur_line);
+        nlk_text_goto_line(fd, cur_line);
         end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
                                                   thread_id);
         
@@ -226,7 +238,7 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
             }
 
             /* read from file */
-            ret = nlk_read_number_line(file, text_line, &par_id);
+            ret = nlk_read_line(fd, text_line, &par_id, buffer);
            
             line_counter++;
             cur_line++;
@@ -276,8 +288,11 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
 
     /** @section Free Memory and Close File
      */
-    fclose(file);
-    file = NULL;
+    nlk_text_line_free(text_line);
+    free(buffer); 
+    buffer = NULL;
+    close(fd); 
+    fd = 0;
 
 } /* end of pragma omp parallel */
 
@@ -1010,7 +1025,7 @@ nlk_vocab_load(FILE *file)
     nlk_assert(ret > 0, "invalid header");
 
     /* allocate space for words */
-    word = (char *) malloc(NLK_LM_MAX_WORD_SIZE * sizeof(char));
+    word = (char *) malloc(NLK_MAX_WORD_SIZE * sizeof(char));
     if(word == NULL) {
         NLK_ERROR_NULL("not enough memory for a word", NLK_ENOMEM);
         /* unreachable */
@@ -1349,14 +1364,15 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
      */
     /* allocate memory for reading from the input file */
     char **text_line = nlk_text_line_create();
+    char buffer[NLK_BUFFER_SIZE];
 
     /* for converting to a vocabularized representation of text */
-    struct nlk_vocab_t *vectorized[NLK_LM_MAX_LINE_SIZE];
+    struct nlk_vocab_t *vectorized[NLK_MAX_LINE_SIZE];
 
     /* open file */
     errno = 0;
-    FILE *ft = fopen(file_path, "r");
-    if(ft == NULL) {
+    int fd = nlk_open(file_path);
+    if(fd < 0) {
         NLK_ERROR_ABORT(strerror(errno), errno);
         /* unreachable */
     }
@@ -1364,7 +1380,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
     /* set train file part position */
     cur_line = nlk_text_get_split_start_line(total_lines, num_threads, 
                                               thread_id);
-    nlk_text_goto_line(ft, cur_line);
+    nlk_text_goto_line(fd, cur_line);
     end_line = nlk_text_get_split_end_line(total_lines, num_threads, 
                                               thread_id);
 
@@ -1372,7 +1388,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
      */
     while(ret != EOF && cur_line < end_line) {
         /* read line */
-        ret = nlk_read_number_line(ft, text_line, &par_id);
+        ret = nlk_read_line(fd, text_line, &par_id, buffer);
         if(n_ids > 0 && ret != EOF) {
             if(nlk_in(par_id, ids, n_ids) == false) {
                 cur_line++;
@@ -1390,8 +1406,8 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
     }
 
     /* end of file */
-    fclose(ft);
-    ft = NULL;
+    close(fd);
+    fd = 0;
     nlk_text_line_free(text_line);
 
     return total_words;
@@ -1429,13 +1445,13 @@ nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
  * @param v         vocalularized line
  */
 void
-nlk_vocab_read_vocabularize(FILE *fp, struct nlk_vocab_t **vocab, 
-                            char **text_line, struct nlk_line_t *v)
+nlk_vocab_read_vocabularize(int fd, struct nlk_vocab_t **vocab, 
+                            char **text_line, struct nlk_line_t *v, char *buf)
 {
     int ret;
 
     /* read text line */
-    ret = nlk_read_number_line(fp, text_line, &v->line_id);
+    ret = nlk_read_line(fd, text_line, &v->line_id, buf);
 
     /* unexpected end of file (empty line) */
     if(ret == EOF && text_line[0][0] == '\0' ) {
@@ -1448,7 +1464,7 @@ nlk_vocab_read_vocabularize(FILE *fp, struct nlk_vocab_t **vocab,
 
 
 #ifndef NCHECKS 
-    if(v->len > NLK_LM_MAX_LINE_SIZE) {
+    if(v->len > NLK_MAX_LINE_SIZE) {
         NLK_ERROR_VOID("Bad line length", NLK_EINVAL);
     }
 #endif

@@ -138,8 +138,8 @@ void nlk_vocab_line_subsample(const struct nlk_line_t *,
 
 size_t  nlk_vocab_vocabularize(struct nlk_vocab_t **, char **,
                                struct nlk_vocab_t *, struct nlk_vocab_t **);
-void    nlk_vocab_read_vocabularize(FILE *, struct nlk_vocab_t **, 
-                                    char **, struct nlk_line_t *);
+void    nlk_vocab_read_vocabularize(int, struct nlk_vocab_t **, 
+                                    char **, struct nlk_line_t *, char *);
 
 void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t, bool);
 
