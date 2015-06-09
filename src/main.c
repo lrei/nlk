@@ -25,7 +25,8 @@
 #include "nlk_eval.h"
 #include "nlk_w2v.h"
 #include "nlk_pv.h"
-#include "nlk_class.h"
+#include "nlk_pv_class.h"
+#include "nlk_dataset.h"
 #include "nlk_util.h"
 
 
@@ -578,6 +579,9 @@ main(int argc, char **argv)
     if(class_train_file != NULL && nn != NULL) {
         /* load training set */
         struct nlk_dataset_t *train_set = NULL;
+        if(verbose) {
+            printf("Loading dataset from %s\n", class_train_file);
+        }
         train_set = nlk_dataset_load_path(class_train_file);
         if(train_set == NULL) {
             NLK_ERROR_ABORT("unable to read class file", NLK_EINVAL);

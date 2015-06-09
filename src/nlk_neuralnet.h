@@ -98,7 +98,7 @@ union nlk_layer_t {
 typedef union nlk_layer_t NLK_LAYER;
 
 /** @struct nlk_neuralnet_t
- * A Neural Net
+ * A Neural Net structure
  */
 struct nlk_neuralnet_t {
     struct nlk_context_opts_t    context_opts;  /**< context generation opts */

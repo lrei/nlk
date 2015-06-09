@@ -388,7 +388,7 @@ nlk_vocab_create(const char *filepath, const uint64_t min_count,
 
     if(verbose) {
         nlk_tic_reset();
-        printf("\nVocabulary words: %zu (total count: %zu)\n", 
+        printf("\nVocabulary words: %zu (total count: %"PRIu64")\n", 
                 nlk_vocab_size(&vocab), nlk_vocab_total(&vocab));
     }
 

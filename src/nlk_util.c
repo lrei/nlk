@@ -47,9 +47,15 @@
 size_t
 nlk_count_unique(const unsigned int *array, const size_t length)
 {
-    unsigned int seen[length];
     size_t unique = 0;
     bool is_unique = false;
+    unsigned int *seen = NULL;
+
+    seen = (unsigned int *) malloc(sizeof(unsigned int) * length);
+    if(seen == NULL) {
+        NLK_ERROR("unable to allocate memory for count unique", NLK_ENOMEM);
+        /* unreachable */
+    }
 
 
     /* for each element in the array */
@@ -69,8 +75,10 @@ nlk_count_unique(const unsigned int *array, const size_t length)
         }
     }   /* end of array */
 
+    free(seen);
     return unique;
 }
+
 
 /**
  * Is value in the array?

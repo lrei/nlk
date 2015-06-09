@@ -1,7 +1,7 @@
 /******************************************************************************
  * NLK - Neural Language Kit
  *
- * Copyright (c) 2014 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
+ * Copyright (c) 2015 Luis Rei <me@luisrei.com> http://luisrei.com @lmrei
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to 
@@ -23,17 +23,13 @@
  *****************************************************************************/
 
 
-/** @file nlk_pv.h
- * Paragraph Vector specific definitions
+/** @file nlk_class.h
+ * Dataset definitions
  */
 
 
-#ifndef __NLK_PV_H__
-#define __NLK_PV_H__
-
-
-#include "nlk_corpus.h"
-#include "nlk_dataset.h"
+#ifndef __NLK_PV_CLASS_H__
+#define __NLK_PV_CLASS_H__
 
 
 #undef __BEGIN_DECLS
@@ -48,12 +44,17 @@
 __BEGIN_DECLS
 
 
-struct nlk_layer_lookup_t *nlk_pv_gen(struct nlk_neuralnet_t *, 
-                                      const struct nlk_corpus_t *, 
-                                      const unsigned int, const bool);
-struct nlk_layer_lookup_t *nlk_pv_gen_string(struct nlk_neuralnet_t *, char *,
-                                             const unsigned int);
+unsigned int *nlk_pv_classify(struct nlk_neuralnet_t *, 
+                              struct nlk_layer_lookup_t *, size_t *, size_t,
+                              const bool);
+
+float nlk_pv_classifier(struct nlk_neuralnet_t *, struct nlk_dataset_t *,
+                        const unsigned int, nlk_real, 
+                        const nlk_real, const bool);
+
+
+float nlk_pv_classify_test(struct nlk_neuralnet_t *, const char *, const bool);
 
 
 __END_DECLS
-#endif /* __NLK_PV_H__ */
+#endif /* __NLK_PV_CLASS_H__ */

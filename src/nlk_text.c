@@ -365,6 +365,56 @@ nlk_read_line(int fd, char **line, size_t *number, char *buf)
 
 
 /**
+ * Create text_line from string
+ */
+void 
+nlk_text_line_read(char *str, const ssize_t len, char **line) 
+{
+    register int idx = 0;
+    register char *p = str;
+    register char *dest = &line[0][0];
+    register char *s;
+    const char *end = &str[len];
+
+    /* skip starting whitespaces whitespaces */
+    while(p != end && isspace(*p)) { p++; }
+    s = p;
+
+    /* read word loop */
+    while(p != end && idx <= NLK_MAX_LINE_SIZE) {
+
+        while( ! isspace(*p) && p != end) { 
+            p++; 
+        } /* p points to the token end, s to the token start */
+
+        
+        if(p - s > NLK_MAX_WORD_SIZE) { /* ignore large words */
+            s = p;
+            continue;
+        }
+
+        /* copy without the terminator (whitespace or null) */
+        while(s != p) { 
+            *dest = *s;  
+            dest++;
+            s++;
+        }
+        /* NULL terminate word */
+        *dest = '\0'; 
+
+        /* skip whitespaces at the end */
+        while(p != end && isspace(*p)) { p++; }
+        s = p;
+
+        /** go to next word */
+        idx++;
+        dest = &line[idx-1][0];
+        *dest = '\0';   /* null terminate it in case it is the last */
+    }
+}
+
+
+/**
  * Counts lines in a file
  * Lines are terminated by NEWLINE
  * Code heavily inpired by GNU coreutils/wc

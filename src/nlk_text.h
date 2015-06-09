@@ -68,6 +68,7 @@ void    nlk_text_ascii_lower(char *st);
 /* read */
 int nlk_open(const char *);
 int     nlk_read_line(int, char **, size_t *, char *);
+void    nlk_text_line_read(char *, const ssize_t, char **);
 int     nlk_read_word(FILE *, char *, const size_t);
 
 

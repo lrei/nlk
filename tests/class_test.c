@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "minunit.h"
-#include "../src/nlk_class.h"
+#include "../src/nlk_dataset.h"
  
 int tests_run = 0;
 int tests_passed = 0;
