@@ -28,6 +28,7 @@
  */
 
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "nlk_err.h"
 #include "nlk_text.h"
@@ -379,13 +380,124 @@ nlk_dataset_shuffle(struct nlk_dataset_t *dset)
 }
 
 /**
- * Calculate supervised classification accuracy
+ * Print dataset stats (examples per class
  */
-double
+int
+nlk_dataset_print_class_dist(struct nlk_dataset_t *dset)
+{
+    size_t ii;
+    size_t *examples_per_class;
+    examples_per_class = (size_t *) calloc(dset->n_classes, sizeof(size_t));
+    nlk_assert_silent(examples_per_class != NULL);
+
+    /* count examples per class */
+    for(ii = 0; ii < dset->size; ii++) {
+        examples_per_class[dset->classes[ii]] += 1;
+    }
+
+
+    printf("class\texamples\n");
+    for(ii = 0; ii < dset->n_classes; ii++) {
+        printf("%zu\t%zu\n", ii, examples_per_class[ii]);
+    }
+
+    return 0;
+error:
+    NLK_ERROR("unable to allocate memory", NLK_ENOMEM);
+    /* unreachable */
+}
+
+/**
+ * Undersample a Dataset in order to balance it
+ * @param dset the dataset to balance
+ *
+ * @return a new dataset that is balanced (must be freed)
+ */
+struct nlk_dataset_t *
+nlk_dataset_undersample(struct nlk_dataset_t *dset, bool verbose)
+{
+    struct nlk_dataset_t *balanced;
+    size_t *examples_per_class;
+    size_t ii;
+    size_t min_examples = 0;
+    unsigned int min_class = 0;
+    size_t new_size = 0;
+
+    /**
+     * @section Determine the smallest class 
+     */
+    examples_per_class = (size_t *) calloc(dset->n_classes, sizeof(size_t));
+    nlk_assert_silent(examples_per_class != NULL);
+
+    /* count examples per class */
+    for(ii = 0; ii < dset->size; ii++) {
+        examples_per_class[dset->classes[ii]] += 1;
+    }
+
+    /* determine the minimum count */
+    min_examples = dset->size;
+    for(ii = 0; ii < dset->n_classes; ii++) {
+        if(examples_per_class[ii] < min_examples) {
+            min_examples = examples_per_class[ii];
+            min_class = ii;
+        }
+    }
+
+    /**
+     * @section Create balanced (undersampled) dataset
+     */
+    /* allocate memory for new dataset struct */
+    new_size = min_examples * dset->n_classes;
+    balanced = nlk_dataset_create(new_size);
+    nlk_assert_silent(balanced != NULL);
+
+    balanced->n_classes = dset->n_classes;
+    balanced->size = 0; /* we'll use this to break the cycle */
+
+    /* re-use examples_per_class to keep track of count of examples added */
+    memset(examples_per_class, 0, dset->n_classes * sizeof(size_t));
+
+    /* copy data to new balanced dataset */
+    for(ii = 0; ii < dset->size; ii++) {
+        if(examples_per_class[dset->classes[ii]] < min_examples) {
+            examples_per_class[dset->classes[ii]] += 1;
+            balanced->classes[balanced->size] = dset->classes[ii];
+            balanced->ids[balanced->size] = dset->ids[ii];
+            balanced->size = balanced->size + 1;
+            if(balanced->size == new_size) {
+                break;
+            }
+        }
+    }
+
+    if(verbose) {
+        printf("Undersample: min class is %u with %zu examples (ntotal=%zu)\n",
+                min_class, min_examples, balanced->size);
+    }
+
+    free(examples_per_class);
+
+    return balanced;
+
+error:
+    NLK_ERROR_NULL("unable to allocate memory for undersampling", NLK_ENOMEM);
+    /* unreachable */
+}
+
+/**
+ * Calculate supervised classification accuracy
+ * @param pred  array of predictions
+ * @param truth array containing the ground truth
+ * @param n     the number of test cases (size of pred/truth arrays)
+ *
+ * @return the accuracy
+ */
+float
 nlk_class_score_accuracy(const unsigned int *pred, const unsigned int *truth, 
                          const size_t n)
 {
     size_t correct = 0;
+    float accuracy = 0;
 
     for(size_t ii = 0; ii < n; ii++) {
         if(pred[ii] == truth[ii]) {
@@ -393,5 +505,188 @@ nlk_class_score_accuracy(const unsigned int *pred, const unsigned int *truth,
         }
     }
 
-    return (double) correct / (double) n;
+    accuracy = correct;
+    accuracy /= (double) n;
+
+    return (float) accuracy;
+}
+
+/**
+ * Calculates f1, precision, recall for a given class
+ * where f1 = 2 * (precion + recall) / (precision * recall)
+ *
+ * @param pred        array of predictions
+ * @param truth       array containing the ground truth
+ * @param n           the number of test cases (size of pred/truth arrays)
+ * @param class_val   the value of the class to calculate for
+ * @param precion     the calculated precision (result)
+ * @param recall      the calculated recall (result)
+ *
+ * @return the f1 score
+ */
+float
+nlk_class_score_f1pr_class(const unsigned int *pred, 
+                           const unsigned int *truth, 
+                           const size_t n, const unsigned int class_val,
+                           float *precision, float *recall)
+{
+    size_t truth_class = 0; /* # of class in truth array */
+    size_t pred_class = 0;  /* # of class in pred array */
+    size_t tp = 0;          /* # of true class in pred (true positives) */
+    size_t ii;
+
+    /** @section Calculate Precision, Recall, F1
+     */
+    for(ii = 0; ii < n; ii++) {
+        if(truth[ii] == class_val) {
+            truth_class++;
+            if(truth[ii] == pred[ii]) {
+                tp++;
+                pred_class++;
+                continue;
+            }
+        }
+        if(pred[ii] == class_val) {
+            pred_class++;
+        }
+    }
+
+    *precision = tp / (double) pred_class;
+    *recall = tp / (double) truth_class;
+
+    return (2.0 * *precision * *recall) / (*precision + *recall);
+}
+
+/**
+ * Calculate semeval sentiment f1 score
+ * This is the SEMEVAL TASK 9 scoreing function. Described in 
+ *
+ *      SemEval-2014 Task 9: Sentiment Analysis in Twitter
+ *      Rosenhal et al
+ *      http://www.aclweb.org/anthology/S/S14/S14-2009.pdf
+ *
+ * @param pred  array of prediction
+ * @param truth array containing the ground truth
+ * @param n     the number of test cases (size of pred/truth arrays)
+ * @param pos   the positive class
+ * @param neg   the negative class
+ *
+ * @return the accuracy
+ */
+float
+nlk_class_score_semeval_senti_f1(const unsigned int *pred, 
+                                 const unsigned int *truth, 
+                                 const size_t n, const unsigned int pos,
+                                 const unsigned int neg)
+{
+    float precision_pos = 0;    /* precision of positive class */
+    float recall_pos = 0;       /* recall of positive class */
+    float f1_pos = 0;           /* f1 of the positive class */
+    float precision_neg = 0;    /* precision of negative class */
+    float recall_neg = 0;       /* recall of negative class */
+    float f1_neg = 0;           /* f1 of the negative class */
+
+    f1_pos = nlk_class_score_f1pr_class(pred, truth, n, pos, 
+                                        &precision_pos, &recall_pos);
+    f1_neg = nlk_class_score_f1pr_class(pred, truth, n, neg, 
+                                        &precision_neg, &recall_neg);
+
+    return (f1_pos + f1_neg) / 2.0;
+}
+
+/**
+ * Create a Confusion Matrix
+ */
+static uint64_t **
+nlk_cm_create(const size_t n_classes)
+{
+    uint64_t **cm;
+    cm = (uint64_t **) calloc(n_classes, sizeof(uint64_t *));
+    for(unsigned int ii = 0; ii < n_classes; ii++) {
+        cm[ii] = (uint64_t *) calloc(n_classes, sizeof(uint64_t));
+    }
+
+    return cm;
+}
+
+/**
+ * Free a Confusion Matrix
+ */
+static void
+nlk_cm_free(uint64_t **cm, const unsigned int n_classes)
+{
+    for(unsigned int ii = 0; ii < n_classes; ii++) {
+        free(cm[ii]);
+        cm[ii] = NULL;
+    }
+
+    free(cm);
+    cm = NULL;
+}
+
+/**
+ * Create and Print a Confusion Matrix
+ * Row = Truth
+ * Col = Predicted
+ */
+void
+nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth, 
+                         const size_t n)
+{
+    unsigned int n_classes = nlk_count_unique(truth, n);
+    uint64_t **cm = nlk_cm_create(n_classes);
+    size_t total = 0;
+    size_t errors = 0;
+    size_t total_fp = 0;
+    size_t total_fn = 0;
+
+    /* set values */
+    for(unsigned int ii = 0; ii < n; ii++) {
+        cm[truth[ii]][pred[ii]]++;
+    }
+
+    /* header */
+    printf("\nT\\P:\t");
+    for(unsigned int ii = 0; ii < n_classes; ii++) {
+        printf("%u:\t", ii); /* col index */
+    }
+    printf("\t|Total:\tE(FN):"); /* col index */
+    printf("\n");
+
+    /* rows/cells */
+    for(unsigned int ii = 0; ii < n_classes; ii++) {
+        /* row ii */
+        total = 0;
+        errors = 0;
+        printf("%u:\t", ii); /* row index */
+        for(unsigned int jj = 0; jj < n_classes; jj++) {
+            printf("%"PRIu64"\t", cm[ii][jj]); /* cell value */
+            total += cm[ii][jj];
+            if(ii != jj) {
+                errors += cm[ii][jj];
+            }
+        }
+        total_fn += errors;
+        printf("\t|%"PRIu64"\t%"PRIu64"", total, errors); /* cell value */
+        printf("\n");
+    }
+
+    /* Print error row */
+    printf("-\n");
+    printf("E(FP):\t");
+    for(unsigned int jj = 0; jj < n_classes; jj++) {
+        errors = 0;
+        for(unsigned int ii = 0; ii < n_classes; ii++) {
+            if(ii != jj) {
+                errors += cm[ii][jj];
+            }
+        }
+        total_fp += errors;
+        printf("%"PRIu64"\t", errors); /* cell value */
+    }
+    printf("\t|%"PRIu64"\t\\%"PRIu64"", total_fp, total_fn);
+    printf("\n");
+
+
+    nlk_cm_free(cm, n_classes);
 }

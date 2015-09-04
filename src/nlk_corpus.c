@@ -82,7 +82,7 @@ struct nlk_corpus_t *
 nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab, 
                 const bool verbose)
 {
-    struct nlk_corpus_t *corpus;
+    struct nlk_corpus_t *corpus = NULL;
     size_t total_lines;
 
     const int num_threads = nlk_get_num_threads();
@@ -106,7 +106,6 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
                      NLK_ENOMEM);
 
     }
-    corpus->len = total_lines;
 
     /* allocate memory for the file (the line array) */
     corpus->lines = (struct nlk_line_t *) 
@@ -117,6 +116,8 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
                         NLK_ENOMEM);
         /* unreachable */
     }
+
+    corpus->len = total_lines;
     struct nlk_line_t *lines = corpus->lines;
 
     uint64_t word_count = 0;
@@ -124,7 +125,10 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
     size_t updated = 0;
     clock_t start = clock();
 
-    /* thread it */
+
+    /**
+     * Start of Parallel Region
+     */
 #pragma omp parallel reduction(+ : word_count) shared(line_counter, updated) 
 {
     /* allocate memory for a line of text */

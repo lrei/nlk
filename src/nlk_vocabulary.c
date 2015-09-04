@@ -1502,6 +1502,22 @@ nlk_line_create(const size_t size) {
     return line;
 }
 
+
+/**
+ * Gets the id (index) of the words in the line
+ *
+ * @param line  the line
+ * @param ids   an array overwritten with the indices of the words in the line
+ */
+void
+nlk_line_ids(struct nlk_line_t *line, size_t *ids)
+{
+    for(size_t ii = 0; ii < line->len; ii++) {
+        ids[ii] = line->varray[ii]->index;
+    }
+}
+
+
 /**
  * Free a line
  *

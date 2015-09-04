@@ -27,22 +27,17 @@ endif
 
 # OSX
 ifeq ($(OSNAME),Darwin)
-# Currently not using Accelerate
-#EXTRALIB += -framework Accelerate
-#CFLAGS += -DACCELERATE=1
-
-# Using homebrew
-# brew install gcc --without-multilib
-# brew install homebrew/science/openblas
-# brew reinstall openblas --build
-CC = /usr/local/bin/gcc-5
+CFLAGS += -D__MACH__
+CC = /usr/local/Cellar/gcc/5.2.0/bin/gcc-5
 EXTRALIB += -lm 
-EXTRALIB += -lopenblas
-BLAS_INCLUDE = /usr/local/opt/openblas/include/
-BLAS_LIB = /usr/local/opt/openblas/lib/
-INCLUDE_DIRS += $(BLAS_INCLUDE)
-LIBRARY_DIRS += $(BLAS_LIB)
-CFLAGS += -msse4.2
+CFLAGS += -msse4.2 -flax-vector-conversions
+#EXTRALIB += -lopenblas
+#BLAS_LIB  = /usr/local/opt/openblas/lib
+#BLAS_INCLUDE = /usr/local/opt/openblas/include
+#INCLUDE_DIRS += $(BLAS_INCLUDE)
+#LIBRARY_DIRS += $(BLAS_LIB)
+EXTRALIB += -framework Accelerate
+CFLAGS += -DACCELERATE=1
 endif
 
 
@@ -65,15 +60,27 @@ CFLAGS += -Wall -Wextra -Wno-unused-result
 CFLAGS += $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir))
 CFLAGS += -std=gnu11 -mtune=native
 
-# Flags for relase w/o omp
-REL_FLAGS = -O3 -fno-strict-aliasing -ffast-math -pthread -funroll-loops \
-			-DNCHECKS -Werror
+# 
+# Flags for relase
+#
+REL_FLAGS = -O3 -fno-strict-aliasing  -pthread -funroll-loops \
+			-funsafe-loop-optimizations \
+# REL MATH OPTION
+REL_FLAGS += -fno-math-errno -ffast-math -funsafe-math-optimizations \
+			 -ffinite-math-only -fno-signed-zeros
+# ERRORS
+REL_FLAGS += -DNCHECKS -Werror
 
+
+#
 # Debug Flags
+#
 # add -DCHECK_NANS=1,2 to check for NaNs
 DEB_FLAGS = -ggdb3 -static-libgcc -DDEBUG
 
+#
 # LDFlags
+#
 LDFLAGS += $(foreach librarydir,$(LIBRARY_DIRS),-L$(librarydir)) \
 $(foreach library,$(LIBRARIES),-l$(library))
 LDFLAGS += $(EXTRALIB)

@@ -136,6 +136,10 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
 #define nlk_log_info(M, ...) fprintf(stderr, "[INFO] (%s:%d) " M "\n",\
                                      __FILE__, __LINE__, ##__VA_ARGS__)
 
+/* message e.g. user forgot parameters in call to tool */
+#define nlk_log_message(M, ...) fprintf(stderr, "" M "\n", ##__VA_ARGS__)
+
+
 /* if condition fails: display message and goto error
  *  example: check(a==1, "a is not 1 but %d", a) 
  *  @warn requires a error label

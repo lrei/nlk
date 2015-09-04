@@ -27,6 +27,8 @@
  * Dataset definitions
  */
 
+#include <stdbool.h>
+
 
 #ifndef __NLK_DATASET_H__
 #define __NLK_DATASET_H__
@@ -79,12 +81,28 @@ void nlk_dataset_save_map(FILE *, const size_t *, const unsigned int *,
 void nlk_dataset_save_map_path(const char *, const size_t *, 
                                const unsigned int *, const size_t);
 
-/* misc */
-void                     nlk_dataset_shuffle(struct nlk_dataset_t *);
-double                   nlk_class_score_accuracy(const unsigned int *, 
+/* scoring */
+float                    nlk_class_score_accuracy(const unsigned int *, 
                                                   const unsigned int *, 
                                                   const size_t);
+float                    nlk_class_score_f1pr_class(const unsigned int *, 
+                                                    const unsigned int *, 
+                                                    const size_t, 
+                                                    const unsigned int,
+                                                    float *, float *);
+float                    nlk_class_score_semeval_senti_f1(const unsigned int *, 
+                                                          const unsigned int *, 
+                                                          const size_t,
+                                                          const unsigned int,
+                                                          const unsigned int);
 
+void                     nlk_class_score_cm_print(const unsigned int *, 
+                                                  const unsigned int *, 
+                                                  const size_t);
+/* misc */
+void                     nlk_dataset_shuffle(struct nlk_dataset_t *);
+struct nlk_dataset_t    *nlk_dataset_undersample(struct nlk_dataset_t *, bool);
+int                      nlk_dataset_print_class_dist(struct nlk_dataset_t *);
 
 __END_DECLS
 #endif /* __NLK_DATASET_H__ */

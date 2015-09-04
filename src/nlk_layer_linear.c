@@ -103,7 +103,7 @@ nlk_layer_linear_create_from_arrays(NLK_ARRAY *weights, NLK_ARRAY *bias)
 }
 
 /** 
- * Initializes the linear layer weights 
+ * Initializes the linear layer weights using the "Xavier Initialization"
  *
  * This assumes the transfer function that follows is the sigmoid
  * Initializations is done by drawing from a uniform distribution in the range

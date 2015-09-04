@@ -33,8 +33,8 @@
 #include <float.h>
 
 #include <omp.h>
-#include <cblas.h>
 
+#include "nlk.h"
 #include "nlk_err.h"
 #include "nlk_array.h"
 #include "nlk_random.h"
@@ -183,8 +183,6 @@ nlk_w2v_create(struct nlk_nn_train_t train_opts, const bool concat,
 
     nn->neg_table = NULL;
 
-    /* others */
- 
     return nn;
 }
 
@@ -642,6 +640,10 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
         layer_size2 = nn->hs->weights->cols;
     } else if(nn->train_opts.negative) {
         layer_size2 = nn->neg->weights->cols;
+    } else {
+        NLK_ERROR_ABORT("Hierarchical Softmax or Negative Sampling required",
+                        NLK_EINVAL);
+        /* unreachable */
     }
 
     struct nlk_layer_lookup_t *par_table = nn->paragraphs;

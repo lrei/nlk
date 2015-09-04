@@ -33,6 +33,26 @@
 
 #include <stdbool.h>
 
+/**
+ * Workarounds for OSX
+ */
+#ifdef __MACH__
+    #define posix_fadvise(...) 
+    #define POSIX_FADV_SEQUENTIAL 0
+    /* For including Accelerate */
+    #ifndef __has_extension
+        #define __has_extension(x) 0
+    #endif
+    #define vImage_Utilities_h
+    #define vImage_CVUtilities_h
+#endif
+
+#ifdef __MACH__
+    #include <Accelerate/Accelerate.h>
+#else
+    #include <cblas.h>
+#endif
+
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS
@@ -44,6 +64,7 @@
 # define __END_DECLS /* empty */
 #endif
 __BEGIN_DECLS
+
 
 /** @enum NLK_FORMAT
  * File formats for saving weights

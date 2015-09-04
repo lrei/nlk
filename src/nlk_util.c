@@ -80,6 +80,33 @@ nlk_count_unique(const unsigned int *array, const size_t length)
 }
 
 
+size_t
+nlk_unique(const size_t *array, const size_t len, size_t *unique)
+{
+    size_t unique_len = 0;
+    bool is_unique = false;
+
+   /* for each element in the array */
+    for(size_t ii = 0; ii < len; ii++) {
+        /* assume it's unique unless the value in found in seen */
+        is_unique = true;
+        for(size_t jj = 0; jj < unique_len; jj++) {
+            if(array[ii] == unique[jj]) {
+                is_unique = false; /* yes we've seen this */
+                break;
+            }
+        }
+        /* if it is unique, add it to the seen array */
+        if(is_unique) {
+            unique[unique_len] = array[ii];
+            unique_len++;
+        }
+    }   /* end of array */
+
+    return unique_len;
+}
+
+
 /**
  * Is value in the array?
  *

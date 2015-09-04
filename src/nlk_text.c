@@ -43,6 +43,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include "nlk.h"
 #include "nlk_err.h"
 #include "nlk_text.h"
 

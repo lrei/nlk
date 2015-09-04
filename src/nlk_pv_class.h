@@ -56,5 +56,12 @@ float nlk_pv_classifier(struct nlk_neuralnet_t *, struct nlk_dataset_t *,
 float nlk_pv_classify_test(struct nlk_neuralnet_t *, const char *, const bool);
 
 
+
+
+float nlk_pv_classifier2(struct nlk_neuralnet_t *, struct nlk_corpus_t *,
+                   struct nlk_dataset_t *, const unsigned int, nlk_real,
+                   const nlk_real, const bool);
+
+
 __END_DECLS
 #endif /* __NLK_PV_CLASS_H__ */

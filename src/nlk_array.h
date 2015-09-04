@@ -37,12 +37,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef ACCELERATE
-#include <Accelerate/Accelerate.h>
-#else
-#include <cblas.h>
-#endif
-
+#include "nlk.h"
 #include "nlk_math.h"
 
 #undef __BEGIN_DECLS
@@ -70,9 +65,10 @@ typedef enum nlk_opts_t {
  * 1D or 2D array (vector or matrix)
  */
 struct nlk_array_t {
-    size_t rows;    /* the number of rows in the matrix (size) */
-    size_t cols;    /* the number of columns in the matrix (size) */
-    nlk_real *data; /* pointer to the beginning of the matrix data */ 
+    size_t rows;    /**< the number of rows in the matrix (size) */
+    size_t cols;    /**< the number of columns in the matrix (size) */
+    size_t len;     /**< len = rows * cols */
+    nlk_real *data; /**< pointer to the beginning of the matrix data */ 
 };
 typedef struct nlk_array_t NLK_ARRAY;
 
@@ -260,6 +256,8 @@ void    nlk_array_log(const struct nlk_array_t *, struct nlk_array_t *);
 size_t      nlk_array_max_i(const NLK_ARRAY *);
 nlk_real    nlk_array_max(const NLK_ARRAY *);
 nlk_real    nlk_array_rescale_max_minus(NLK_ARRAY *array);
+
+void    nlk_array_rectify(NLK_ARRAY *);
 
 
 __END_DECLS

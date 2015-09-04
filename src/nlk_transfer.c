@@ -178,7 +178,7 @@ nlk_log_softmax_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
 
 
 /**
- * Log Softmax backprop
+ * Log Softmax Backprop
  *
  * @param output    log softmax of the input during forward step
  * @param grad_out  the gradient at the output of the log_softmax
@@ -199,4 +199,40 @@ nlk_log_softmax_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out,
 
 
     NLK_ARRAY_CHECK_NAN(grad_in, "NaN in gradient at input (result)");
+}
+
+
+/**
+ * Rectifier - Rectified Linear Unit (ReLu) -  Forward
+ */
+void
+nlk_rectifier_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
+{
+    nlk_array_copy(output, input);
+    nlk_array_rectify(output);
+}
+
+
+/**
+ * Rectifier - Rectified Linear Unit (ReLu) - Backprop
+ * @param output    log softmax of the input during forward step
+ * @param grad_out  the gradient at the output of the rectifier
+ * @param grad_in   the gradient at the input notes (result)
+ */
+void
+nlk_rectifier_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out, 
+                       NLK_ARRAY *grad_in)
+{
+    size_t idx = output->len;
+    do {
+        idx--;
+        if(output->data[idx] <= 0) {
+            grad_in->data[idx] = 0;
+        } else {
+            grad_in->data[idx] = grad_out->data[idx];
+        }
+    } while(idx > 0);
+
+
+    
 }

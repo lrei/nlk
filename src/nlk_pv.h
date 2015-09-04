@@ -54,6 +54,9 @@ struct nlk_layer_lookup_t *nlk_pv_gen(struct nlk_neuralnet_t *,
 struct nlk_layer_lookup_t *nlk_pv_gen_string(struct nlk_neuralnet_t *, char *,
                                              const unsigned int);
 
+void nlk_pv_inference_mode(struct nlk_neuralnet_t *);
+void nlk_pv_learn_mode(struct nlk_neuralnet_t *);
+
 
 __END_DECLS
 #endif /* __NLK_PV_H__ */

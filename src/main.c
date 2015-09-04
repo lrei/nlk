@@ -119,7 +119,9 @@ Training/Classification:\n\
 \n\
 Supervised Options:\n\
   --classes [FILE]          train classifier with this id-class map file\n\
-  --test [INT]              test classifier with this id-class map file\n\
+  --test [FILE]             test classifier with this id-class map file\n\
+  --test-file [FILE]        test classifier with this file [NOT]\n\
+  --test-classes [FILE]     test classifier with this id-class map file [NOT]\n\
   --classify [FILE]         classify this file\n\
   --output-class [FILE]     output classification results to this file\n\
 \n\
@@ -155,7 +157,7 @@ Miscellaneous:\n\
 \n\n\
 ", stdout);
 
-    printf("Example:\n");
+    /**@TODO printf("Example:\n"); */
 }
 
 void
@@ -490,6 +492,23 @@ main(int argc, char **argv)
         learn_rate = nlk_lm_learn_rate(lm_type);
     }
 
+    struct nlk_dataset_t *train_set = NULL;
+    /* If classifying, load and print datasets early */
+    if(class_train_file != NULL) {
+        /* load training set */
+        if(verbose) {
+            printf("Loading dataset from %s\n", class_train_file);
+        }
+        train_set = nlk_dataset_load_path(class_train_file);
+        if(train_set == NULL) {
+            NLK_ERROR_ABORT("unable to read class file", NLK_EINVAL);
+            /* unreachable */
+        }
+        if(verbose) {
+            printf("Trainset:\n");
+            nlk_dataset_print_class_dist(train_set);
+        }
+    }
 
     /** @ section Load or Create Neural Network and Corpus
      */
@@ -519,7 +538,7 @@ main(int argc, char **argv)
         /* create the vocabulary */
         if(verbose) {
             nlk_tic("creating vocabulary for ", false);
-            printf("%s\n", corpus_file);
+            printf("%s min_count = %d\n", corpus_file, min_count);
         }
         vocab = nlk_vocab_create(corpus_file, min_count, verbose);
 
@@ -551,7 +570,8 @@ main(int argc, char **argv)
         nn = nlk_w2v_create(train_opts, concat, vocab, corpus->len, verbose);
     } else {
         nn = NULL;
-        NLK_ERROR_ABORT("No neural network created or loaded", NLK_FAILURE);
+        nlk_log_message("No neural network created or loaded");
+        return NLK_FAILURE;
     }
 
 
@@ -577,20 +597,11 @@ main(int argc, char **argv)
     /**@subsection Train Classifier
      */
     if(class_train_file != NULL && nn != NULL) {
-        /* load training set */
-        struct nlk_dataset_t *train_set = NULL;
-        if(verbose) {
-            printf("Loading dataset from %s\n", class_train_file);
-        }
-        train_set = nlk_dataset_load_path(class_train_file);
-        if(train_set == NULL) {
-            NLK_ERROR_ABORT("unable to read class file", NLK_EINVAL);
-            /* unreachable */
-        }
 
         /* do train classifier */
-        nlk_pv_classifier(nn, train_set, iter,  learn_rate, learn_rate_decay, 
-                          verbose);
+        
+        nlk_pv_classifier(nn, train_set, iter,  learn_rate, 
+                          learn_rate_decay, verbose);
         
         nlk_dataset_free(train_set);
     }
@@ -627,11 +638,13 @@ main(int argc, char **argv)
         if(class_test_file != NULL) {
             struct nlk_dataset_t *tset = NULL;
             tset = nlk_dataset_load_path(class_test_file);
-            float acc = 0;
+                        float acc = 0;
             acc = nlk_class_score_accuracy(pred, tset->classes, tset->size);
             if(verbose) {
                 printf("Test Accuracy: %f (/%zu)\n", acc, tset->size);
+                nlk_class_score_cm_print(pred, tset->classes, tset->size); 
             }
+            if(tset != NULL) { nlk_dataset_free(tset); }
         }
         if(pred != NULL) { free(pred); }
         if(ids != NULL) { free(ids); }
@@ -649,7 +662,7 @@ main(int argc, char **argv)
 
         /* save word vectors */
         if(output_words_file != NULL) {
-            nlk_export_words(nn->words, &vocab, format, output_words_file, 
+            nlk_export_words(nn->words, &nn->vocab, format, output_words_file, 
                              verbose);
         }
         
@@ -685,7 +698,8 @@ main(int argc, char **argv)
      */
     if(gen_paragraphs_file != NULL) {
         if(nn == NULL) {
-            NLK_ERROR_ABORT("no neural network loaded.", NLK_FAILURE);
+            nlk_log_message("No neural network created or loaded");
+            return NLK_FAILURE;
         }
 
 

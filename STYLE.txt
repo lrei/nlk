@@ -1,10 +1,6 @@
 # C Coding Style
 Luis Rei, 2014
 
-This style style guid applies only to C source code.
-This document is written in a style similar to markdown but is not meant to be 
-interpreted as markdown (.
-
 ## Prelude
 
 K&R with 1TBS (One True Brace Style). 
@@ -192,6 +188,15 @@ functions with the same name (no overloading) in C. Since this is necessary in
 many cases, I find it preferable to always do this for functions that on 
 operate on my own structures. The added benifit is this makes (ab)using 
 auto-completion easier :) 
+
+Do not call functions with boolean parameters:
+	
+	mult(a, b, true);
+
+prefer
+
+	const bool log_domain = true;
+	mult(a, b, log_domain);
 
 
 ## Chapter 6: Comments & Documentation

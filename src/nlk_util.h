@@ -49,6 +49,7 @@ bool     nlk_in(const size_t, const size_t *, const size_t);
 size_t  *nlk_range(const size_t);
 size_t  *nlk_range_not_in(const size_t *, const size_t, const size_t, 
                           size_t *len_r);
+size_t  nlk_unique(const size_t *, const size_t, size_t *);
 
 
 __END_DECLS

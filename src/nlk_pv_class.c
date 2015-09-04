@@ -43,6 +43,12 @@
 #include "nlk_learn_rate.h"
 #include "nlk_dataset.h"
 #include "nlk_util.h"
+#include "nlk_text.h"
+#include "nlk_corpus.h"
+#include "nlk_vocabulary.h"
+#include "nlk_w2v.h"
+#include "nlk_pv.h"
+
 
 #include "nlk_pv_class.h"
 
@@ -54,15 +60,7 @@ nlk_pv_classify(struct nlk_neuralnet_t *nn,
 {
     /** @section Init
      */
-    bool ids_mine = false; /* true if function created the ids array */
-    /* if no ids are passed, classify the entire table */
-    if(n == 0) {
-        n = par_table->weights->rows;
-        ids = nlk_range(n);
-        ids_mine = true;
-    }
-
-    if(verbose) {
+   if(verbose) {
         nlk_tic("Classifying ", false);
         printf("%zu\n", n);
     }
@@ -81,6 +79,7 @@ nlk_pv_classify(struct nlk_neuralnet_t *nn,
     struct nlk_layer_linear_t *linear = nn->layers[nn->n_layers - 1].ll;
     unsigned int n_classes = linear->weights->rows;
 
+
     /** @section Classify
      */
 #pragma omp parallel
@@ -98,7 +97,7 @@ nlk_pv_classify(struct nlk_neuralnet_t *nn,
 
     /** @subsection Parallel Classify
      */
-#pragma omp parallel for
+#pragma omp for
     /* for each pv */
     for(size_t tid = 0; tid < n; tid++) {
             pid = ids[tid];
@@ -114,15 +113,13 @@ nlk_pv_classify(struct nlk_neuralnet_t *nn,
 
 } /* end of parallel region */
 
-    if(ids_mine) {
-        free(ids);
-        ids = NULL;
-    }
-
     return pred;
 }
 
 
+/**
+ * Train a PV vector softmax classifier
+ */
 float
 nlk_pv_class_train(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset, 
                    const unsigned int iter, nlk_real learn_rate, 
@@ -238,6 +235,7 @@ nlk_pv_class_train(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset,
     return accuracy;
 }
 
+
 /**
  * Creates and Trains PV classifier
  * Creates a LogSoftMax Layer and ads it to the network then trains it.
@@ -274,11 +272,10 @@ nlk_pv_classifier(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset,
     nlk_neuralnet_add_layer_linear(nn, linear);
 
    
-    /**@section Train
-     */
+    /* Train */
     nlk_pv_class_train(nn, dset, iter, learn_rate, learn_rate_decay, verbose);
 
-    /* test */
+    /* Test on Training Set */
     unsigned int *pred = NULL;
     pred = nlk_pv_classify(nn, nn->paragraphs, dset->ids, 
                            dset->size, verbose);
@@ -303,6 +300,9 @@ nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path,
                      const bool verbose)
 {
     float ac = 0;
+    float f1 = 0;
+    float prec = 0;
+    float rec = 0;
     unsigned int *pred;
     struct nlk_dataset_t *test_set = NULL;
     test_set = nlk_dataset_load_path(test_path);
@@ -313,10 +313,24 @@ nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path,
 
     pred = nlk_pv_classify(nn, nn->paragraphs, test_set->ids, test_set->size,
                            verbose);
+
     ac = nlk_class_score_accuracy(pred, test_set->classes, test_set->size);
+    f1 = nlk_class_score_semeval_senti_f1(pred, test_set->classes, 
+                                          test_set->size, 2, 0);
     if(verbose) {
-        printf("\nTEST SCORE = %f\n", ac);
+        nlk_dataset_print_class_dist(test_set);
+        printf("\nTEST SCORE (ACCURACY) = %f\n", ac);
+        printf("TEST SCORE (SEMEVAL F1) = %f\n", f1);
+        f1 = nlk_class_score_f1pr_class(pred, test_set->classes, 
+                                        test_set->size, 2, &prec, &rec);
+        printf("\tpos: prec = %.3f, rec = %.3f, f1 = %.3f\n", prec, rec, f1);
+        f1 = nlk_class_score_f1pr_class(pred, test_set->classes, 
+                                        test_set->size, 0, &prec, &rec);
+        printf("\tneg: prec = %.3f, rec = %.3f, f1 = %.3f\n", prec, rec, f1);
+
+        nlk_class_score_cm_print(pred, test_set->classes, test_set->size);
     }
+
     free(pred);
     nlk_dataset_free(test_set);
 
@@ -324,6 +338,3 @@ nlk_pv_classify_test(struct nlk_neuralnet_t *nn, const char *test_path,
 }
 
 
-/**
- *
- */

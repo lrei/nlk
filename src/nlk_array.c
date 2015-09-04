@@ -37,8 +37,7 @@
 #include <math.h>
 #include <float.h>
 
-#include <cblas.h>
-
+#include "nlk.h"
 #include "nlk_err.h"
 #include "nlk_random.h"
 #include "nlk_math.h"
@@ -161,33 +160,28 @@ nlk_array_create(const size_t rows, const size_t cols)
     int r;
 
     /* 0 dimensions are not allowed */
-    if (rows == 0 || cols == 0) {
-        NLK_ERROR_NULL("Array rows and column numbers must be non-zero "
-                       "positive integers", NLK_EINVAL);
+    nlk_assert((rows != 0 && cols != 0),
+               "Array rows and column numbers must be non-zero positive "
+               "integers not (%zu, %zu)", rows, cols);
         /* unreachable */
-    }
 
     /* allocate space for array struct */
     array = (struct nlk_array_t *) malloc(sizeof(struct nlk_array_t));
-    if(array == NULL) {
-        NLK_ERROR_NULL("failed to allocate memory for array struct", 
-                       NLK_ENOMEM);
-        /* unreachable */
-    }
+    nlk_assert(array != NULL, "failed to allocate memory for array struct");
 
     /* allocate space for data */
     r = posix_memalign((void **)&array->data, 128, 
                        rows * cols * sizeof(nlk_real));
-
-    if(r != 0) {
-        NLK_ERROR_NULL("failed to allocate memory for block data", NLK_ENOMEM);
-        /* unreachable */
-    }
+    nlk_assert(r == 0, "failed to allocate memory for block data");
 
     array->cols = cols;
     array->rows = rows;
+    array->len = rows * cols;
 
     return array;
+
+error:
+    NLK_ERROR_ABORT("", NLK_ENOMEM);
 }
 
 /**
@@ -197,14 +191,12 @@ nlk_array_create(const size_t rows, const size_t cols)
  *
  * @param matrix    the matrix
  * @param rows      the row in the matrix
- *
- * @return struct nlk_array_t or NULL on error
  */
 void
 nlk_array_row_view(const NLK_ARRAY *matrix, const size_t row, NLK_ARRAY *array)
 {
 
-    array->cols = matrix->cols;
+    array->len = array->cols = matrix->cols;
     array->rows = 1;
 
 #ifndef NCHECKS
@@ -429,8 +421,6 @@ nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim,
  * @param dest          the destination array
  * @param source        the source array
  *
- * @return NLK_SUCCESS or NLK_EBADLEN
- *
  * @note
  * Arrays must have the same dimensions
  * @endnote
@@ -439,7 +429,6 @@ nlk_array_copy_row_vector(struct nlk_array_t *dest, const unsigned int dim,
 void
 nlk_array_copy(struct nlk_array_t *dest, const struct nlk_array_t *source)
 {
-    const size_t len = dest->rows * dest->cols;
 
 #ifndef NCHECKS
     if(dest->rows != source->rows || dest->cols != source->cols) {
@@ -450,7 +439,7 @@ nlk_array_copy(struct nlk_array_t *dest, const struct nlk_array_t *source)
     }
 #endif
 
-    cblas_scopy(len, source->data, 1, dest->data, 1);
+    cblas_scopy(dest->len, source->data, 1, dest->data, 1);
 
     NLK_ARRAY_CHECK_NAN(source, "NaN in source");
 }
@@ -488,10 +477,9 @@ nlk_array_init_uniform(struct nlk_array_t *array, const nlk_real low,
                        const nlk_real high)
 {
     size_t ii;
-    const size_t length = array->rows * array->cols;
     nlk_real diff = high - low;
 
-    for(ii = 0; ii < length; ii++) {
+    for(ii = 0; ii < array->len; ii++) {
         array->data[ii] = low + diff * nlk_random_xs1024_float();
     }
 }
@@ -529,7 +517,7 @@ nlk_carray_init_uniform(nlk_real *carr, const nlk_real low,
 void
 nlk_array_zero(struct nlk_array_t *array)
 {
-    memset(array->data, 0, array->rows * array->cols * sizeof(nlk_real));
+    memset(array->data, 0, array->len * sizeof(nlk_real));
 }
 
 /**
@@ -545,8 +533,7 @@ bool
 nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr, 
                          nlk_real tolerance)
 {
-    const size_t len = arr->rows * arr->cols;
-    return nlk_carray_compare_carray(arr->data, carr, len, tolerance);
+    return nlk_carray_compare_carray(arr->data, carr, arr->len, tolerance);
 
 }
 
@@ -561,9 +548,7 @@ nlk_array_compare_carray(struct nlk_array_t *arr, nlk_real *carr,
 bool
 nlk_array_compare_exact_carray(struct nlk_array_t *arr, nlk_real *carr)
 {
-    const size_t len = arr->rows * arr->cols;
-    return nlk_carray_compare_exact_carray(arr->data, carr, len);
-
+    return nlk_carray_compare_exact_carray(arr->data, carr, arr->len);
 }
 
 /**
@@ -618,13 +603,11 @@ nlk_carray_compare_exact_carray(nlk_real *carr1, nlk_real *carr2, size_t len)
 void
 nlk_array_save(struct nlk_array_t *array, FILE *fp)
 {
-    const size_t len = array->cols * array->rows;
-
     /* write header */
     fprintf(fp, "%zu %zu\n", array->rows, array->cols);
 
     /* write data */
-    fwrite(array->data, sizeof(nlk_real), len, fp);
+    fwrite(array->data, sizeof(nlk_real), array->len, fp);
 }
 
 /**
@@ -712,7 +695,6 @@ nlk_array_load(FILE *fp)
     size_t rows;
     size_t cols;
     size_t ret;
-    size_t len;
     struct nlk_array_t *array;
 
     /* read header */
@@ -730,11 +712,10 @@ nlk_array_load(FILE *fp)
     }
 
     array = nlk_array_create(rows, cols);
-    len = array->cols * array->rows;
 
     /* read data */
-    ret = fread(array->data, sizeof(nlk_real), len, fp);
-    if(ret != len) {
+    ret = fread(array->data, sizeof(nlk_real), array->len, fp);
+    if(ret != array->len) {
         NLK_ERROR_NULL("read length does not match expected length",
                        NLK_FAILURE);
         /* unreachable */
@@ -832,9 +813,7 @@ nlk_array_free(struct nlk_array_t *array)
 void
 nlk_array_scale(const nlk_real scalar, struct nlk_array_t *array)
 {
-    size_t len = array->rows * array->cols;
-
-    cblas_sscal(len, scalar, array->data, 1);
+    cblas_sscal(array->len, scalar, array->data, 1);
 }
 
 /**
@@ -843,10 +822,8 @@ nlk_array_scale(const nlk_real scalar, struct nlk_array_t *array)
 void
 nlk_array_add_constant(const nlk_real constant, struct nlk_array_t *array)
 {
-    const size_t len = array->rows * array->cols;
-
 /* #pragma omp parallel for */
-    for(size_t ii = 0; ii < len; ii++) {
+    for(size_t ii = 0; ii < array->len; ii++) {
         array->data[ii] += constant;
     }
 }
@@ -880,9 +857,9 @@ nlk_array_normalize_row_vectors(struct nlk_array_t *m)
 void
 nlk_array_normalize_vector(struct nlk_array_t *v)
 {
-    const nlk_real len = cblas_snrm2(v->rows, v->data, 1);
+    const nlk_real norm = cblas_snrm2(v->rows, v->data, 1);
 
-    cblas_sscal(v->rows, 1.0/len, v->data, 1); 
+    cblas_sscal(v->rows, 1.0/norm, v->data, 1); 
 }
 
 /**
@@ -917,7 +894,7 @@ nlk_array_dot(const struct nlk_array_t *v1, const struct nlk_array_t *v2,
     } else if(dim == 1) {
         res = cblas_sdot(v1->cols, v1->data, 1, v2->data, 1);
     } else if(dim < 0) {
-        res = cblas_sdot(v1->cols * v1->rows, v1->data, 1, v2->data, 1);
+        res = cblas_sdot(v1->len, v1->data, 1, v2->data, 1);
     } else {
         NLK_ERROR("invalid array dimension", NLK_EINVAL);
         /* unreachable */
@@ -985,7 +962,6 @@ nlk_array_dot_carray(const struct nlk_array_t *v1, nlk_real *carr)
 void
 nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 {
-    const size_t len = a1->rows * a1->cols;
 #ifndef NCHECKS
     if(a1->cols != a2->cols || a1->rows != a2->rows) {
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
@@ -994,7 +970,7 @@ nlk_array_add(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 #endif
 
 
-    for(size_t ii = 0; ii < len; ii++) {
+    for(size_t ii = 0; ii < a1->len; ii++) {
         a2->data[ii] += a1->data[ii];
     }
 
@@ -1023,7 +999,7 @@ nlk_array_scaled_add(const nlk_real s, const struct nlk_array_t *a1,
 #endif
 
 
-    cblas_saxpy(a1->rows * a1->cols, s, a1->data, 1, a2->data, 1); 
+    cblas_saxpy(a1->len, s, a1->data, 1, a2->data, 1); 
 
 
     NLK_ARRAY_CHECK_NAN(a2, "NaN in result");
@@ -1094,6 +1070,7 @@ nlk_row_add_vector(const struct nlk_array_t *m, const size_t row,
     NLK_ARRAY_CHECK_NAN(v, "NaN in result");
 }
 
+
 /**
  * Scaled Vector-Row addition (?axpy): a2  = s * a1 + a2
  * 
@@ -1121,6 +1098,7 @@ nlk_add_scaled_vector_row(const nlk_real s, const struct nlk_array_t *v,
 
     NLK_ARRAY_CHECK_NAN_ROW(m, row, "NaN in matrix row (result)");
 }
+
 
 /**
  * Scaled Row-Vector addition (?axpy): a2  = s * a1 + a2
@@ -1160,6 +1138,7 @@ nlk_add_scaled_row_vector(const nlk_real s, const struct nlk_array_t *m,
     NLK_ARRAY_CHECK_NAN(v, "NaN in result");
 }
 
+
 /**
  * Array element-wise addition addition with a C array
  * 
@@ -1177,6 +1156,7 @@ nlk_array_add_carray(const struct nlk_array_t *arr, nlk_real *carr)
 
     NLK_CARRAY_CHECK_NAN(carr, arr->rows * arr->cols, "NaN in result");
 }
+
 
 /**
  * Array partial element-wise addition addition with a C array
@@ -1216,10 +1196,8 @@ nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
     }
 #endif
 
-    const size_t len = a1->rows * a1->cols;
-
     /*#pragma omp parallel for*/
-    for(size_t ii = 0; ii < len; ii++) {
+    for(size_t ii = 0; ii < a1->len; ii++) {
         a2->data[ii] *= a1->data[ii];
     }
 
@@ -1238,7 +1216,7 @@ nlk_array_mul(const struct nlk_array_t *a1, struct nlk_array_t *a2)
 nlk_real
 nlk_array_abs_sum(const struct nlk_array_t *arr)
 {
-    nlk_real res = cblas_sasum(arr->rows * arr->cols, arr->data, 1);
+    nlk_real res = cblas_sasum(arr->len, arr->data, 1);
 
     
     NLK_CHECK_NAN(res, "NaN in result");
@@ -1278,9 +1256,7 @@ nlk_carray_sum(const nlk_real *carr, size_t len)
 nlk_real
 nlk_array_sum(const struct nlk_array_t *arr)
 {
-    size_t len = arr->rows * arr->cols;
-   
-    return nlk_carray_sum(arr->data, len);
+    return nlk_carray_sum(arr->data, arr->len);
 }
 
 
@@ -1294,14 +1270,11 @@ nlk_array_sum(const struct nlk_array_t *arr)
 nlk_real
 nlk_array_squared_sum(const struct nlk_array_t *arr)
 {
-    size_t len = arr->rows * arr->cols;
     nlk_real res = 0;
     
-    do {
-        len--;
-        res += arr->data[len] * arr->data[len];
-    } while(len > 0);
-
+    for(size_t ii = 0; ii < arr->len; ii++) {
+        res += arr->data[ii] * arr->data[ii];
+    }
 
     NLK_CHECK_NAN(res, "NaN in result");
     return res;
@@ -1338,9 +1311,8 @@ nlk_array_non_zero(const struct nlk_array_t *arr)
 {
     size_t ii = 0;
     size_t non_zero = 0;
-    const size_t len = arr->rows * arr->cols;
 
-    for(ii = 0; ii < len; ii++) {
+    for(ii = 0; ii < arr->len; ii++) {
         if(arr->data[ii] != 0.0) {
             non_zero += 1;
         }
@@ -1497,11 +1469,8 @@ nlk_carray_init_sigmoid(nlk_real *carray) {
 int
 nlk_sigmoid_array(struct nlk_array_t *arr)
 {
-    const size_t len = arr->rows * arr->cols;
-
-
     /*#pragma omp parallel for*/
-    for(size_t ii = 0; ii < len; ii++) {
+    for(size_t ii = 0; ii < arr->len; ii++) {
         arr->data[ii] = nlk_sigmoid(arr->data[ii]);
     }
 
@@ -1521,8 +1490,6 @@ nlk_sigmoid_array(struct nlk_array_t *arr)
 void
 nlk_array_log(const struct nlk_array_t *input, struct nlk_array_t *output)
 {
-    const size_t len = input->rows * input->cols;
-
 #ifndef NCHECKS
     if(input->cols != output->cols || input->rows != output->rows) {
         NLK_ERROR_VOID("array dimensions do not match.", NLK_EBADLEN);
@@ -1531,7 +1498,7 @@ nlk_array_log(const struct nlk_array_t *input, struct nlk_array_t *output)
 #endif
 
 
-    for(size_t ii = 0; ii < len; ii++) {
+    for(size_t ii = 0; ii < input->len; ii++) {
         output->data[ii] = nlk_log_approx(input->data[ii]);
     }
 
@@ -1583,8 +1550,9 @@ nlk_array_max_i(const NLK_ARRAY *v)
 nlk_real
 nlk_array_max(const NLK_ARRAY *array)
 {
-    size_t idx = array->rows * array->cols - 1; /* index not length */
-    nlk_real max = array->data[idx];            /* initial value */
+    size_t idx = array->len - 1;        /* index not length */
+    nlk_real max = array->data[idx];    /* set initial value */
+
     do {
         idx--;
         if(array->data[idx] > max) {
@@ -1606,7 +1574,8 @@ nlk_real
 nlk_array_rescale_max_minus(NLK_ARRAY *array)
 {
     const nlk_real max = nlk_array_max(array);
-    size_t idx = array->rows * array->cols;
+    size_t idx = array->len;
+
     do {
         idx--;
         array->data[idx] = max - array->data[idx];
@@ -1615,4 +1584,23 @@ nlk_array_rescale_max_minus(NLK_ARRAY *array)
 
     NLK_CHECK_NAN(max, "max is NaN");
     return max;
+}
+
+
+/**
+ * Rectifier function: x_i = x_i if x > 0, else 0
+ *
+ * @param the array to rectify
+ */
+void
+nlk_array_rectify(NLK_ARRAY *array)
+{
+    size_t idx = array->len;
+
+    do {
+        idx--;
+        if(array->data[idx] < 0) {
+            array->data[idx] = 0;
+        }
+    } while(idx > 0);
 }

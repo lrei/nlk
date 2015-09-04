@@ -159,6 +159,7 @@ uint64_t nlk_vocab_count_words(struct nlk_vocab_t **, const char *,
 
 /* line */
 struct nlk_line_t  *nlk_line_create(const size_t);
+void                nlk_line_ids(struct nlk_line_t *, size_t *);
 void                nlk_line_free(struct nlk_line_t *);
 
 
