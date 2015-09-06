@@ -703,4 +703,13 @@ nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth,
  * s2_token_1 POS NER
  *
  * However either POS or NER can be absent
+ *
+ * @param corpus_path  the path file in conll format
+ *
+ * @return nlk_corpus_t
  */
+void
+nlk_dataset_load_conll()
+{
+
+}
