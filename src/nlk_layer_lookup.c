@@ -492,7 +492,8 @@ nlk_layer_lookup_backprop_acc(struct nlk_layer_lookup_t *layer,
 }
 
 /**
- * Lookup Layer backward pass for the first layer of the net (no need to acc)
+ * Lookup Layer backward pass wihtout accumulation 
+ * (usually for the first layer of the net)
  *
  * @param layer         the lookup layer
  * @param indices       the indices corresponing to this gradient

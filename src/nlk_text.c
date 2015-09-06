@@ -418,7 +418,7 @@ nlk_text_line_read(char *str, const ssize_t len, char **line)
 /**
  * Counts lines in a file
  * Lines are terminated by NEWLINE
- * Code heavily inpired by GNU coreutils/wc
+ * Code inpired by GNU coreutils/wc
  *
  * @param filepath  path of the file to count lines for
  * @return number of lines in file
@@ -487,7 +487,7 @@ nlk_text_count_lines(const char *filepath)
  * @param line  the line number to set the file pointer to
  *
  */
-void
+off_t
 nlk_text_goto_line(int fd, const size_t line)
 {
     size_t lines = 0;
@@ -507,7 +507,7 @@ nlk_text_goto_line(int fd, const size_t line)
 
     /* handle trivial case line = 0 */
     if(line == 0) {
-        return;
+        return 0;
     }
 
     /**@section Read File Loop: count newlines 
@@ -559,19 +559,30 @@ nlk_text_goto_line(int fd, const size_t line)
 
     if(bytes_read < 0) {
         lines = 0;
-        NLK_ERROR_VOID(strerror(errno), NLK_FAILURE);
+        NLK_ERROR(strerror(errno), NLK_FAILURE);
         /* unreachable */
     } 
 
     /* end of file: line not found */
-    NLK_ERROR_VOID("line not in file", NLK_EBADLEN);
+    NLK_ERROR("line not in file", NLK_EBADLEN);
     /* unreachable */
 
 line_found:
     /* (end - p) represents the bytes read after the line */
     loc = lseek(fd, 0, SEEK_CUR) - (end - p);
     lseek(fd, loc, SEEK_SET);
-    return;
+    return loc;
+}
+
+
+/**
+ * Set file position at a given offset from the start
+ * @note: simple wrapper for lseek
+ */
+void
+nlk_text_goto_location(int fd, const off_t location_offset)
+{
+    lseek(fd, location_offset, SEEK_SET);
 }
 
 

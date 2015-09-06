@@ -39,7 +39,6 @@
 #include "nlk_array.h"
 #include "nlk_random.h"
 #include "nlk_vocabulary.h"
-#include "nlk_corpus.h"
 #include "nlk_window.h"
 #include "nlk_neuralnet.h"
 #include "nlk_layer_lookup.h"
@@ -102,12 +101,12 @@ nlk_w2v_display(nlk_real learn_rate, size_t word_count_actual,
  */
 struct nlk_neuralnet_t *
 nlk_w2v_create(struct nlk_nn_train_t train_opts, const bool concat,
-               struct nlk_vocab_t *vocab, const size_t paragraphs, 
-               const bool verbose) 
+               struct nlk_vocab_t *vocab, const bool verbose) 
 {
     struct nlk_neuralnet_t *nn;
     struct nlk_context_opts_t ctx_opts;
     const size_t vocab_size = nlk_vocab_size(&vocab);
+    const size_t paragraph_size = train_opts.paragraph_count;
     const size_t vector_size = train_opts.vector_size;
     size_t layer2_size = vector_size;
 
@@ -148,7 +147,7 @@ nlk_w2v_create(struct nlk_nn_train_t train_opts, const bool concat,
 
     /* Paragraph Table */
     if(nn->train_opts.paragraph) {
-        nn->paragraphs = nlk_layer_lookup_create(paragraphs, vector_size);
+        nn->paragraphs = nlk_layer_lookup_create(paragraph_size, vector_size);
         if(verbose) {
             printf("Layer 1 (paragraph lookup): %zu x %zu\n", 
                    nn->paragraphs->weights->rows, 
@@ -610,16 +609,13 @@ nlk_pvdbow(struct nlk_neuralnet_t *nn, struct nlk_layer_lookup_t *par_table,
  * Train or update a word2vec model
  *
  * @param nn                the neural network
- * @param train_file_path   the path of the train file
- * @param vocab             the vocabulary
- * @param total_lines       total lines in train file (used for PVs)
+ * @param train_file        the path of the train file
  * @param verbose
  *
  * @return total error for last epoch
  */
 void
-nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus, 
-        const bool verbose)
+nlk_w2v(struct nlk_neuralnet_t *nn, const char *train_file, const bool verbose)
 {
     /*goto_set_num_threads(1);*/
 
@@ -630,10 +626,13 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     struct nlk_context_opts_t context_opts = nn->context_opts;
     unsigned int ctx_size = context_opts.max_size;
     float sample_rate = nn->train_opts.sample;
-    const size_t train_words = corpus->count;
+    const size_t train_words = nn->train_opts.word_count;
+    const size_t train_paragraphs = nn->train_opts.paragraph_count;
 
     /* shortcuts */
     struct nlk_vocab_t **vocab = &nn->vocab;
+    struct nlk_vocab_t *replacement = nlk_vocab_find(vocab, NLK_UNK_SYMBOL);
+
     size_t layer_size2 = 0;
 
     if(nn->train_opts.hs) {
@@ -647,7 +646,6 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     }
 
     struct nlk_layer_lookup_t *par_table = nn->paragraphs;
-    struct nlk_line_t *lines = corpus->lines;
 
     /* for vocabularize we need the real total number of words in our corpus */
     
@@ -690,6 +688,19 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
      */
 #pragma omp parallel shared(word_count_actual)
 {
+    /** @subsection File Reading
+     * The train file is divided into parts, one part for each thread.
+     * Open file and move to thread specific starting point
+     */
+    int train_fd = nlk_open(train_file);
+    size_t line_start = 0;      /**< first line for thread */
+    size_t line_end = 0;        /**< last line for thread */
+    size_t line_cur = 0;        /**< line being read/processed by thread */
+    off_t train_file_start = 0; /**< thread specific start */
+    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
+    char **text_line = nlk_text_line_create();
+
+
     /** @subsection Progress
      */
     size_t word_count = 0;
@@ -710,31 +721,26 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
     unsigned int n_examples;
     unsigned int ex;
 
+    /* vocabularized line */
+    struct nlk_line_t *line = nlk_line_create(NLK_MAX_LINE_SIZE);
+
+    /* for undersampling words in a line */
+    struct nlk_line_t *line_sample = nlk_line_create(NLK_MAX_LINE_SIZE);
+ 
 
     /* for converting a sentence to a series of training contexts */
     struct nlk_context_t **contexts = nlk_context_create_array(ctx_size);
 
-    /* for undersampling words in a line */
-    struct nlk_line_t *line_sample = nlk_line_create(NLK_MAX_LINE_SIZE);
-     
-
-    /** @subsection File Reading
-     * The train file is divided into parts, one part for each thread.
-     * Open file and move to thread specific starting point
-     */
-    struct nlk_line_t *line;
-    size_t line_start = 0;
-    size_t end_line = 0;
-    size_t line_cur = 0;
 
 #pragma omp for 
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
         /* set train file part position */
-        line_cur = nlk_text_get_split_start_line(corpus->len, num_threads, 
+        line_cur = nlk_text_get_split_start_line(train_paragraphs, num_threads, 
                                                  thread_id);
         line_start = line_cur;
-        end_line = nlk_text_get_split_end_line(corpus->len, num_threads, 
+        line_end = nlk_text_get_split_end_line(train_paragraphs, num_threads, 
                                                   thread_id);
+        train_file_start = nlk_text_goto_line(train_fd, line_cur);
 
         /** @section Start of Training Loop (Epoch Loop)
          */
@@ -743,7 +749,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
              * Increment thread private epoch counter if necessary
              */
             /* check for end of file part, decrement local epochs, rewind */
-            if(line_cur > end_line) {
+            if(line_cur > line_end) {
                 /* update count and epoch */
                 word_count_actual += word_count - last_word_count;
                 local_epoch++;
@@ -752,6 +758,7 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
                 word_count = 0;
                 last_word_count = 0;
                 line_cur = line_start;
+                nlk_text_goto_location(train_fd, train_file_start);
                 continue;
             }
 
@@ -778,12 +785,14 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
              * The actual difference between the word models and the paragraph
              * models is in the context that gets generated here.
              */
-            line = &lines[line_cur];
+            nlk_vocab_read_vocabularize(train_fd, vocab, replacement, 
+                                        text_line, line, buffer);
+
+            /* check for errors, empty lines, etc */
             if(line->len == 0) {
                 line_cur++;
                 continue;
             }
-
 
             /* subsample  */
             nlk_vocab_line_subsample(line, train_words, sample_rate, 
@@ -850,6 +859,8 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const struct nlk_corpus_t *corpus,
 
     /** @subsection Free Thread Private Memory and Close Files
      */
+    free(buffer);
+    nlk_text_line_free(text_line);
     nlk_context_free_array(contexts);
     nlk_line_free(line_sample);
     nlk_array_free(layer1_out);

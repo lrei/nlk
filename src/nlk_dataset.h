@@ -57,6 +57,17 @@ struct nlk_dataset_t {
 };
 typedef struct nlk_dataset_t NLK_DATASET;
 
+/** @struct nlk_supervised_corpus_t
+ * A supervised corpus mapping every word to a class
+ */
+struct nlk_supervised_corpus_t {
+    size_t                    n_sentences;      /**< number of sentences */
+    nlk_line_t               **sentences;       /**< the sencences */
+    struct nlk_dataset_t     *word_classes;     /**< classes for words */
+    char                     **class_id;        /**< class to number (id) */
+};
+typedef struct nlk_supervised_corpus_t NLK_SUPERVISED_CORPUS;
+
 
 /* create/copy */
 struct nlk_dataset_t    *nlk_dataset_create(size_t);

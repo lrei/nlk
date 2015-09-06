@@ -371,7 +371,7 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  */
 struct nlk_vocab_t *
 nlk_vocab_create(const char *filepath, const uint64_t min_count, 
-                 const bool verbose) {
+                 const bool replace, const bool verbose) {
 
     struct nlk_vocab_t *vocab = nlk_vocab_init();
 
@@ -384,7 +384,12 @@ nlk_vocab_create(const char *filepath, const uint64_t min_count,
     nlk_vocab_read_add(&vocab, filepath, verbose);
 
     /* reduce - also sorts and encodes */
-    nlk_vocab_reduce(&vocab, min_count);
+    if(replace) {
+        nlk_vocab_reduce_replace(&vocab, min_count);
+    } else {
+        nlk_vocab_reduce(&vocab, min_count);
+
+    }
 
     if(verbose) {
         nlk_tic_reset();
@@ -1348,7 +1353,6 @@ nlk_vocab_vocabularize(struct nlk_vocab_t **vocab,  char **paragraph,
 
 uint64_t
 nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
-                             const size_t *ids, const size_t n_ids,
                              const size_t total_lines, const int thread_id,
                              const int num_threads)
 {
@@ -1364,7 +1368,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
      */
     /* allocate memory for reading from the input file */
     char **text_line = nlk_text_line_create();
-    char buffer[NLK_BUFFER_SIZE];
+    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
 
     /* for converting to a vocabularized representation of text */
     struct nlk_vocab_t *vectorized[NLK_MAX_LINE_SIZE];
@@ -1389,13 +1393,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
     while(ret != EOF && cur_line < end_line) {
         /* read line */
         ret = nlk_read_line(fd, text_line, &par_id, buffer);
-        if(n_ids > 0 && ret != EOF) {
-            if(nlk_in(par_id, ids, n_ids) == false) {
-                cur_line++;
-                continue;
-            }
-        }
-            
+        
         /* vocabularize */
         line_len = nlk_vocab_vocabularize(vocab, text_line, NULL, 
                                           vectorized); 
@@ -1408,6 +1406,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
     /* end of file */
     close(fd);
     fd = 0;
+    free(buffer);
     nlk_text_line_free(text_line);
 
     return total_words;
@@ -1419,7 +1418,6 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
  */
 uint64_t
 nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
-                      const size_t *ids, const size_t n_ids,
                       const size_t total_lines)
 {
     size_t total_words = 0;
@@ -1429,9 +1427,9 @@ nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
      */
 #pragma omp parallel for reduction(+ : total_words)
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
-        total_words = nlk_vocab_count_words_worker(vocab, file_path, ids, 
-                                                   n_ids, total_lines, 
-                                                   thread_id, num_threads);
+        total_words = nlk_vocab_count_words_worker(vocab, file_path,
+                                                   total_lines, thread_id, 
+                                                   num_threads);
     }
     return total_words;
 }
@@ -1446,6 +1444,7 @@ nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
  */
 void
 nlk_vocab_read_vocabularize(int fd, struct nlk_vocab_t **vocab, 
+                            struct nlk_vocab_t *replacement,
                             char **text_line, struct nlk_line_t *v, char *buf)
 {
     int ret;
@@ -1460,7 +1459,7 @@ nlk_vocab_read_vocabularize(int fd, struct nlk_vocab_t **vocab,
     }
 
     /* vocabularize */
-    v->len = nlk_vocab_vocabularize(vocab, text_line, NULL, v->varray); 
+    v->len = nlk_vocab_vocabularize(vocab, text_line, replacement, v->varray); 
 
 
 #ifndef NCHECKS 

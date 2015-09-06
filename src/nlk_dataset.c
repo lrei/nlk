@@ -690,3 +690,17 @@ nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth,
 
     nlk_cm_free(cm, n_classes);
 }
+
+
+/**
+ * Read a Supervised Corpus in CONLL format
+ * The format consists space delimited columns and sentences separated by
+ * empty lines:
+ * s1_token_1 POS NER
+ * s1_token_2 POS NER
+ * s1_token_n POS NER
+ *
+ * s2_token_1 POS NER
+ *
+ * However either POS or NER can be absent
+ */

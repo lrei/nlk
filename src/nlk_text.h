@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
 
 #define NLK_MAX_WORD_SIZE    256
@@ -74,7 +75,9 @@ int     nlk_read_word(FILE *, char *, const size_t);
 
 /* lines */
 size_t  nlk_text_count_lines(const char *);
-void    nlk_text_goto_line(int, const size_t);
+off_t   nlk_text_goto_line(int, const size_t);
+void    nlk_text_goto_location(int, const off_t);
+
 /** @TODO: move to util: */
 size_t  nlk_text_get_split_start_line(size_t, unsigned int, unsigned int);
 size_t  nlk_text_get_split_end_line(size_t,  unsigned int, unsigned int);

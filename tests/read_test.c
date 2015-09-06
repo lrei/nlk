@@ -11,6 +11,8 @@ int tests_passed = 0;
 
 /**
  * Test reading lines
+ * @note: in this test line numbers refered to are 1-indexed instead of the
+ * traditional 0-index
  */
 static char *
 test_read_lines()
@@ -23,7 +25,7 @@ test_read_lines()
     int fd = nlk_open("data/micro.data.2.txt");
     char buffer[NLK_BUFFER_SIZE];
 
-    /* 1st line */
+    /* 1st line (1-index not 0-index) */
     ret = nlk_read_line(fd, text_line, &par_id, buffer);
     mu_assert("1-terminator", ret == '\n');
     mu_assert("1-paragrah_id", par_id == 100);
@@ -79,21 +81,80 @@ test_read_lines()
     return 0;
 }
 
-/** @TODO
+/**
  * Test count and goto lines
- *
+ * @note: this test requires that the read_line test succeeds
+ */
 static char *
 test_goto_lines()
 {
     size_t par_id = 0;
     int ret = 0;
+    size_t n_lines;
+    size_t line_start = 0;
+    size_t line_end = 0;
     
     char **text_line = nlk_text_line_create();
     
     int fd = nlk_open("data/micro.data.2.txt");
     char buffer[NLK_BUFFER_SIZE];
+
+    /* Count Lines */
+    n_lines = nlk_text_count_lines("data/micro.data.2.txt");
+    /*printf("n_lines = %zu", n_lines);*/
+    mu_assert("count lines", n_lines == 6);
+
+    /* Goto Line (requires that previous test succeeds) */
+    nlk_text_goto_line(fd, 3);
+    /** 4th line in 1-index */
+    ret = nlk_read_line(fd, text_line, &par_id, buffer);
+    mu_assert("4-terminator", ret == '\n');
+    mu_assert("4-paragrah_id", par_id == 42);
+    mu_assert("4-first word", strcmp("(", text_line[0]) == 0);
+    mu_assert("4-last word", strcmp("url", text_line[8]) == 0);
+    mu_assert("4-text_lines is null termed", text_line[9][0] == '\0');
+
+    nlk_text_goto_line(fd, 1);
+
+    /* 2nd line (1-index) */
+    ret = nlk_read_line(fd, text_line, &par_id, buffer);
+    mu_assert("2-terminator", ret == '\n');
+    mu_assert("2-paragrah_id", par_id == 222);
+    mu_assert("2-first word", strcmp("this", text_line[0]) == 0);
+    mu_assert("2-last word", strcmp(".", text_line[5]) == 0);
+    mu_assert("2-text_lines is null termed", text_line[6][0] == '\0');
+
+    nlk_text_goto_line(fd, 6);
+    /** 7th line: empty */
+    ret = nlk_read_line(fd, text_line, &par_id, buffer);
+    mu_assert("7-terminator", ret == EOF);
+    mu_assert("7-paragrah_id", par_id == (size_t)-1);
+    mu_assert("7-text_lines is null termed", text_line[0][0] == '\0');
+
+
+    /** check split into 3 parts 
+     * 0 -> [0, 1]; 1 -> [2, 3]; 2 -> [4, 5]
+     */
+    /* thread 0 */
+    line_start = nlk_text_get_split_start_line(n_lines, 3, 0);
+    line_end = nlk_text_get_split_end_line(n_lines, 3, 0);
+    mu_assert("thread 0 start", line_start == 0);
+    mu_assert("thread 0 end", line_end == 1);
+
+    /* thread 1 */
+    line_start = nlk_text_get_split_start_line(n_lines, 3, 1);
+    line_end = nlk_text_get_split_end_line(n_lines, 3, 1);
+    mu_assert("thread 1 start", line_start == 2);
+    mu_assert("thread 1 end", line_end == 3);
+
+    /* thread 2 */
+    line_start = nlk_text_get_split_start_line(n_lines, 3, 2);
+    line_end = nlk_text_get_split_end_line(n_lines, 3, 2);
+    mu_assert("thread 2 start", line_start == 4);
+    mu_assert("thread 2 end", line_end == 5);
+
+    return 0;
 }
-*/
 
 
 /**
@@ -102,6 +163,7 @@ test_goto_lines()
 static char *
 all_tests() {
     mu_run_test(test_read_lines);
+    mu_run_test(test_goto_lines);
     return 0;
 }
  

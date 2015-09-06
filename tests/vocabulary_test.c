@@ -64,7 +64,7 @@ test_vocab_create_large()
     int ret = 0;
     
     /* create */
-    created = nlk_vocab_create("../data/imdb-id.txt", 10, false);
+    created = nlk_vocab_create("../data/imdb-id.txt", 10, false, false);
 
     /* load, ensure sorted */
     imported = nlk_vocab_import("data/imdb.vocab.txt", 100);

@@ -119,6 +119,7 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
 
     corpus->len = total_lines;
     struct nlk_line_t *lines = corpus->lines;
+    struct nlk_vocab_t *replacement = nlk_vocab_find(vocab, NLK_UNK_SYMBOL);
 
     uint64_t word_count = 0;
     size_t line_counter = 0; 
@@ -177,7 +178,8 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
             } /* end of display */
 
             /* read */
-            nlk_vocab_read_vocabularize(fd, vocab, text_line, &vline, buffer);
+            nlk_vocab_read_vocabularize(fd, vocab, replacement, text_line, 
+                                        &vline, buffer);
          
             /* check for errors */
             if(vline.len == 0) {

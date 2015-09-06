@@ -14,7 +14,6 @@
 #include "nlk_math.h"
 #include "nlk_array.h"
 #include "nlk_vocabulary.h"
-#include "nlk_corpus.h"
 #include "nlk_text.h"
 #include "nlk_window.h"
 #include "nlk_neuralnet.h"
@@ -61,7 +60,8 @@ enum cmd_opts_t {
     CMD_OPTS_OUT_CLASS,     /**< output classification to this file */
     /* vocabulary */
     CMD_OPTS_SAVE_VOCAB,    /**< save vocab to file */
-    CMD_OPTS_MIN_COUNT,     /**< minimum word frequency */
+    CMD_OPTS_MIN_COUNT,     /**< minimum token frequency */
+    CMD_OPTS_REPLACEMENT,   /**< replace low freq tokens with special token */
     /* serialization/output */
     CMD_OPTS_SAVE_NET,      /**< save neural net to file */
     CMD_OPTS_LOAD_NET,      /**< load neural net from file */
@@ -126,7 +126,8 @@ Supervised Options:\n\
   --output-class [FILE]     output classification results to this file\n\
 \n\
 Vocabulary:\n\
-  --min-count  [INT]    minimum word count\n\
+  --min-count  [INT]    minimum token count\n\
+  --with-replacement    replace tokens below the minimum with special token \n\
   --save-vocab [FILE]   save the vocabulary to file\n\
 \n\
 Serialization/Export:\n\
@@ -204,7 +205,8 @@ main(int argc, char **argv)
      */
     struct nlk_vocab_t *vocab;          /**< the vocabulary structure */
     char *vocab_save_file       = NULL; /**< save vocab to this file */
-    struct nlk_corpus_t *corpus = NULL; /**< vocabularized train file */
+    int min_count               = 0;    /**< minimum word frequency (count) */
+    static int replace          = 0;    /**< replace low freq tokens */
 
     /** @subsection Model Options
      */
@@ -221,7 +223,6 @@ main(int argc, char **argv)
     int window                  = 8;    /**< window, words before and after */    
     int negative                = 0;    /**< number of negative examples */
     int iter                    = 20;   /**< number of iterations/epochs */
-    int min_count               = 0;    /**< minimum word frequency (count) */
     nlk_real learn_rate         = 0;    /**< learning rate (start) */
     nlk_real learn_rate_decay   = 0;    /**< learning rate decay */
     float sample_rate           = 1e-3; /**< random undersample of freq words */
@@ -271,6 +272,7 @@ main(int argc, char **argv)
         static struct option long_options[] = {
             /* These options set a flag. */
             {"concat",          no_argument,       &concat,         1  },
+            {"with-replacement",no_argument,       &replace,        1  },
             {"hs",              no_argument,       &hs,             1  },
             {"train",           no_argument,       &train,          1  },
             {"remove-pvs",      no_argument,       &remove_pvs,     1  },
@@ -527,10 +529,6 @@ main(int argc, char **argv)
             printf("%s\n", nn_load_file);
         }
 
-        /* load corpus */
-        if(corpus_file) {
-            corpus = nlk_corpus_read(corpus_file, &nn->vocab, verbose);
-        }
     } 
      /** @subsection Create the neural network
      */
@@ -540,18 +538,12 @@ main(int argc, char **argv)
             nlk_tic("creating vocabulary for ", false);
             printf("%s min_count = %d\n", corpus_file, min_count);
         }
-        vocab = nlk_vocab_create(corpus_file, min_count, verbose);
+        vocab = nlk_vocab_create(corpus_file, min_count, replace, verbose);
 
-        /* vocabularize the corpus */
-        if(verbose) {
-            nlk_tic("reading corpus", true);
-        }
-
-        corpus = nlk_corpus_read(corpus_file, &vocab, verbose);
-
-        if(verbose) {
-            nlk_tic("done reading corpus", true);
-        }
+        uint64_t total_lines = nlk_text_count_lines(corpus_file);
+        /* total vocabularized word count */
+        uint64_t total_words = nlk_vocab_count_words(&vocab, corpus_file,
+                                                     total_lines);
 
         /* training options */
         struct nlk_nn_train_t train_opts;
@@ -564,10 +556,11 @@ main(int argc, char **argv)
         train_opts.negative = negative;
         train_opts.iter = iter;
         train_opts.vector_size = vector_size;
-        train_opts.word_count = corpus->count;
+        train_opts.word_count = total_words;
+        train_opts.paragraph_count = total_lines;
 
         /* create network */
-        nn = nlk_w2v_create(train_opts, concat, vocab, corpus->len, verbose);
+        nn = nlk_w2v_create(train_opts, concat, vocab, verbose);
     } else {
         nn = NULL;
         nlk_log_message("No neural network created or loaded");
@@ -584,7 +577,7 @@ main(int argc, char **argv)
                     nn->train_opts.sample, nn->train_opts.window);
         }
 
-        nlk_w2v(nn, corpus, verbose);
+        nlk_w2v(nn, corpus_file, verbose);
 
         if(verbose) { 
             printf("\nTraining finished\n");

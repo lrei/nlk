@@ -76,7 +76,7 @@ REL_FLAGS += -DNCHECKS -Werror
 # Debug Flags
 #
 # add -DCHECK_NANS=1,2 to check for NaNs
-DEB_FLAGS = -ggdb3 -static-libgcc -DDEBUG
+DEB_FLAGS = -O0 -ggdb3 -static-libgcc -DDEBUG
 
 #
 # LDFlags

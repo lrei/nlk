@@ -319,6 +319,8 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
     fprintf(fp, "%u\n", nn->train_opts.vector_size); 
     /* 10 - word_count */
     fprintf(fp, "%"PRIu64"\n", nn->train_opts.word_count); 
+    /* 11 - paragraph_count */
+    fprintf(fp, "%"PRIu64"\n", nn->train_opts.paragraph_count); 
 
     /* write header: number of layers */
     fprintf(fp, "%zu\n", nn->n_layers);
@@ -461,6 +463,11 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     }
     /* 10 - word count */
     ret = fscanf(fp, "%"SCNu64"\n", &opts.word_count); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
+    /* 11 - paragraph count */
+    ret = fscanf(fp, "%"SCNu64"\n", &opts.paragraph_count); 
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }

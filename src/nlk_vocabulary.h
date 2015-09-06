@@ -93,9 +93,18 @@ struct nlk_vocab_t {
 };
 typedef struct nlk_vocab_t NLK_VOCAB;
 
+/** @struct nlk_vocab_opts_t
+ * Options for creating a vocabulary and vocabularizing lines
+ */
+struct nlk_vocab_opts_t {
+    bool    replace;
+    size_t  total_words;
+    size_t  total_paragraphs;
+};
 
 /** @struct nlk_vocab_line_t
  * A vocabularized line of text and associated options
+ * @TODO Move here from train_opts
  */
 struct nlk_line_t {
     size_t                line_id;          /**< line id read from file */
@@ -105,7 +114,7 @@ struct nlk_line_t {
 
 /* creation */
 struct nlk_vocab_t   *nlk_vocab_create(const char *, const uint64_t, 
-                                       const bool); 
+                                       const bool, const bool); 
 void                  nlk_vocab_extend(struct nlk_vocab_t **, char *); 
 void                  nlk_vocab_add_vocab(struct nlk_vocab_t **dest, 
                                           struct nlk_vocab_t **source);
@@ -139,7 +148,8 @@ void nlk_vocab_line_subsample(const struct nlk_line_t *,
 size_t  nlk_vocab_vocabularize(struct nlk_vocab_t **, char **,
                                struct nlk_vocab_t *, struct nlk_vocab_t **);
 void    nlk_vocab_read_vocabularize(int, struct nlk_vocab_t **, 
-                                    char **, struct nlk_line_t *, char *);
+                                    struct nlk_vocab_t *, char **, 
+                                    struct nlk_line_t *, char *);
 
 void         nlk_vocab_print_line(struct nlk_vocab_t **, size_t, bool);
 
@@ -155,7 +165,7 @@ size_t                nlk_vocab_last_index(struct nlk_vocab_t **);
 struct nlk_vocab_t   *nlk_vocab_get_start_symbol(struct nlk_vocab_t **);
 
 uint64_t nlk_vocab_count_words(struct nlk_vocab_t **, const char *, 
-                               const size_t *, const size_t, const size_t);
+                               const size_t);
 
 /* line */
 struct nlk_line_t  *nlk_line_create(const size_t);

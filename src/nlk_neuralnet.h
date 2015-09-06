@@ -66,16 +66,17 @@ typedef enum nlk_lm_t NLK_LM;
  * Training Parameters for algorithms
  */
 struct nlk_nn_train_t {
-    NLK_LM           model_type;    /**< the model type */
-    bool             paragraph;     /**< paragraph model */
-    unsigned int     window;        /**< the window size */
-    float            sample;        /**< the sampling rate */
-    nlk_real         learn_rate;    /**< the initial learn rate */
-    bool             hs;            /**< use hierarchical softmax */
-    unsigned int     negative;      /**< number of negative examples */
-    unsigned int     iter;          /**< number of iterations/epochs */
-    unsigned int     vector_size;   /**< word/par vector dimensionality */
-    uint64_t         word_count;    /**< total word occurances in corpus */
+    NLK_LM           model_type;        /**< the model type */
+    bool             paragraph;         /**< paragraph model */
+    unsigned int     window;            /**< the window size */
+    float            sample;            /**< the sampling rate */
+    nlk_real         learn_rate;        /**< the initial learn rate */
+    bool             hs;                /**< use hierarchical softmax */
+    unsigned int     negative;          /**< number of negative examples */
+    unsigned int     iter;              /**< number of iterations/epochs */
+    unsigned int     vector_size;       /**< word/par vector dimensionality */
+    uint64_t         word_count;        /**< total word occurances in corpus */
+    uint64_t         paragraph_count;   /**< total paragraphs in corpus */
 };
 typedef struct nlk_w2v_train_t NLK_W2V_TRAIN;
 
