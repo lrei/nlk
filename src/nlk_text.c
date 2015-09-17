@@ -481,6 +481,64 @@ nlk_text_count_lines(const char *filepath)
 
 
 /**
+ * Counts empty lines in a file
+ * Lines are terminated by NEWLINE
+ *
+ * @param filepath  path of the file to count lines for
+ * @return number of lines in file
+ */
+size_t
+nlk_text_count_empty_lines(const char *filepath)
+{
+    int fd;
+    size_t empty_lines = 0;
+    char buf[BUFFER_SIZE];
+    ssize_t bytes_read = 0;
+    bool state_empty = false;
+    char *p;
+    char *end;
+
+    /* open file */
+    if((fd = nlk_open(filepath)) < 0) {
+        return fd;
+    }
+
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    /* read file loop */
+    while((bytes_read = read(fd, buf, BUFFER_SIZE)) > 0) {
+        p = buf;
+        end = p + bytes_read;
+
+        for(; p != end; p++) {
+            /* 
+             * state_empty == true 
+             */
+            if(state_empty && !isspace(*p)) {
+                state_empty = false;
+            } else if(state_empty && *p == '\n') {
+                empty_lines += 1;
+            /* 
+             * state_empty == false
+             */
+            } else if(!state_empty && *p == '\n') {
+                state_empty = true;
+            }
+
+        } /* chunk end */
+    } /* file end */
+
+    /* handle error */ 
+    if(bytes_read < 0) {
+        NLK_ERROR(strerror(errno), NLK_FAILURE);
+    } 
+
+    close(fd);
+    return empty_lines;
+}
+
+
+/**
  * Set file position to the beginning of a given line
  *
  * @param fp    the file point
@@ -528,7 +586,7 @@ nlk_text_goto_line(int fd, const size_t line)
                     ++line_cur;
                     if(line_cur == line) { 
                         /**! FOUND IT */
-                        goto line_found;
+                        goto nlk_text_goto_line_found;
                     }
                 }
             }
@@ -542,7 +600,7 @@ nlk_text_goto_line(int fd, const size_t line)
                 ++line_cur;
                 if(line_cur == line) { 
                     /**! FOUND IT */
-                    goto line_found;
+                    goto nlk_text_goto_line_found;
                 }
             }
         } /* end of long lines */
@@ -567,7 +625,7 @@ nlk_text_goto_line(int fd, const size_t line)
     NLK_ERROR("line not in file", NLK_EBADLEN);
     /* unreachable */
 
-line_found:
+nlk_text_goto_line_found:
     /* (end - p) represents the bytes read after the line */
     loc = lseek(fd, 0, SEEK_CUR) - (end - p);
     lseek(fd, loc, SEEK_SET);

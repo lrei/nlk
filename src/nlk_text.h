@@ -75,6 +75,7 @@ int     nlk_read_word(FILE *, char *, const size_t);
 
 /* lines */
 size_t  nlk_text_count_lines(const char *);
+size_t  nlk_text_count_empty_lines(const char *);
 off_t   nlk_text_goto_line(int, const size_t);
 void    nlk_text_goto_location(int, const off_t);
 

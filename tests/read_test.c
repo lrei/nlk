@@ -158,12 +158,26 @@ test_goto_lines()
 
 
 /**
+ * Test count empty lines
+ */
+static char *
+test_count_empty_lines()
+{
+    size_t empty_lines = nlk_text_count_empty_lines("data/conll.mini.txt");
+    mu_assert("count empty lines", empty_lines == 12);
+
+    return 0;
+}
+
+
+/**
  * Function that runs all tests
  */
 static char *
 all_tests() {
     mu_run_test(test_read_lines);
     mu_run_test(test_goto_lines);
+    mu_run_test(test_count_empty_lines);
     return 0;
 }
  
@@ -172,9 +186,10 @@ main() {
     printf("---------------------------------------------------------\n");
     printf("Reading Tests\n");
     printf("---------------------------------------------------------\n");
+
     char *result = all_tests();
-    if (result != 0) {
-        printf("%s\n", result);
+    if(result != 0) {
+        printf("FAIL: %s\n", result);
     }
     else {
         printf("ALL TESTS PASSED\n");
