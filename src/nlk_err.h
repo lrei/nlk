@@ -143,7 +143,6 @@ nlk_error_handler_t *nlk_set_error_handler_off(void);
 /* if condition fails: display message and goto error
  *  example: check(a==1, "a is not 1 but %d", a) 
  *  @warn requires a error label
- *  @note meant to use in situations were NLK_ERROR is unnecessary
  */
 #define nlk_assert(A, M, ...) \
     if(!(A)) { \

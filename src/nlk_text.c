@@ -101,6 +101,68 @@ nlk_text_ascii_lower(register char *st)
     }
 }
 
+
+/**
+ * @brief Read word from a string
+ *
+ * @param s               the source string
+ * @param pos             the position in the string to start from
+ * @param end             the position at which the source string ends
+ * @param word            char pointer where the word will be stored
+ * @param max_word_size   maximum size of a word (including null terminator)
+ *
+ * @return position after reading the word
+ */
+size_t
+nlk_read_word_from_string(const char *s, const size_t pos, const size_t end, 
+                          char *word, const size_t max_word_size)
+{
+    size_t cur;
+    int ch = EOF;
+    size_t len = 0;
+
+    for(cur = pos; cur < end; cur++) {
+        ch = s[cur];
+
+        /* space chars */
+        if(isspace(ch)) {
+            /* 
+             * Because of line checks tests we need to ignore CRs.
+             * All other "space" chars are end of word chars 
+             */
+            if(ch == '\r') {
+                continue;
+            }
+
+            /* prevent empty words */
+            if(len == 0 && ch != '\n') {
+                continue;
+            }             
+
+            break; 
+            /* goto EOW */
+        }
+
+        /* just another non-space char */
+        word[len] = ch;
+        len++;
+
+        /* truncate at max_word_size */
+        if(len == max_word_size - 2) {
+            ch = NLK_ETRUNC;
+            break;  /* goto EOW */
+        }
+
+    }
+    /*
+     * END-OF-WORD (EOW):
+     */
+    word[len] = '\0';
+
+    return cur;
+}
+
+
 /** 
  * @brief Read a word from a file
  *
@@ -189,6 +251,27 @@ nlk_open(const char *filepath)
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 
     return fd;
+}
+
+/**
+ * Open a file for reading (FILE pointer version)
+ *
+ * @return the FILE pointer
+ */
+FILE *
+nlk_fopen(const char *filepath) {
+    FILE *in = fopen(filepath, "rb");
+    if (in == NULL) {
+        NLK_ERROR_NULL(strerror(errno), errno);
+        /* unreachable */
+    }
+    
+    int fd = fileno(in);
+    
+    /* access will be sequential */
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    return in;
 }
 
 

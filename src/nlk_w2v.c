@@ -697,9 +697,13 @@ nlk_w2v(struct nlk_neuralnet_t *nn, const char *train_file, const bool verbose)
     size_t line_end = 0;        /**< last line for thread */
     size_t line_cur = 0;        /**< line being read/processed by thread */
     off_t train_file_start = 0; /**< thread specific start */
-    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
     char **text_line = nlk_text_line_create();
 
+    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
+    if(buffer == NULL) {
+        NLK_ERROR_ABORT("not enough memory", NLK_ENOMEM);
+        /* UNREACHABLE */
+    }
 
     /** @subsection Progress
      */

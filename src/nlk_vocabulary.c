@@ -83,6 +83,7 @@ nlk_vocab_display_progress(const size_t line_counter, const size_t total_lines,
  * @param vocab     the vocabulary
  * @param word      the word to add
  * @param count     the count associated with the word
+ * @param type      the item's type
  *
  * @return the vocabulary item
  */
@@ -119,6 +120,40 @@ nlk_vocab_add_item(struct nlk_vocab_t **vocab, const char *word,
 
     return vocab_word;
 }
+
+
+/**
+ * Add or increment item to vocabulary
+ * @Note: This function is convenient but slower than necessary. It was
+ * implemented for adding labels in small labelled datasets
+ *
+ * @param vocab     the vocabulary
+ * @param word      the word (item)
+ * @param type      the item's type
+ *
+ * @return the vocabulary item corresponding to the word or NULL if not found
+ */
+struct nlk_vocab_t *
+nlk_vocab_add(struct nlk_vocab_t **vocab, char *word, 
+              const NLK_VOCAB_TYPE type)
+{
+    struct nlk_vocab_t *vocab_word = NULL;
+
+    if(*vocab != NULL) {
+        HASH_FIND_STR(*vocab, word, vocab_word);
+    }
+
+    if(vocab_word == NULL) { /* add */
+        vocab_word = nlk_vocab_add_item(vocab, word, 1, type);
+        vocab_word->index = nlk_vocab_last_index(vocab) + 1;
+    } else { /* increment */
+        vocab_word->count += 1;
+    }
+
+    
+    return vocab_word;
+}
+
 
 /** 
  * Returns an initialized vocabulary (i.e. with a start symbol)

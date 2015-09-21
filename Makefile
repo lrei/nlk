@@ -156,7 +156,7 @@ build-tests: $(TESTS)
 .PHONY: tests
 tests: 
 	cd $(TEST_DIR); \
-	sh runtests.sh
+	bash runtests.sh
 
 clean: 
 	rm -rf build $(TESTS)

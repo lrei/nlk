@@ -67,10 +67,13 @@ size_t  nlk_text_line_size(char **line);
 void    nlk_text_ascii_lower(char *st);
 
 /* read */
-int nlk_open(const char *);
-int     nlk_read_line(int, char **, size_t *, char *);
-void    nlk_text_line_read(char *, const ssize_t, char **);
-int     nlk_read_word(FILE *, char *, const size_t);
+int      nlk_open(const char *);
+FILE    *nlk_fopen(const char *);
+int      nlk_read_line(int, char **, size_t *, char *);
+void     nlk_text_line_read(char *, const ssize_t, char **);
+int      nlk_read_word(FILE *, char *, const size_t);
+size_t   nlk_read_word_from_string(const char *, const size_t, const size_t, 
+                                   char *, const size_t);
 
 
 /* lines */

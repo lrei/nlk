@@ -27,7 +27,10 @@
  * Dataset functions
  */
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <unistd.h>
 #include <inttypes.h>
 
 #include "nlk_err.h"
@@ -693,6 +696,73 @@ nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth,
 
 
 /**
+ * Count words per sentence in a conll format file
+ *
+ * @param corpus_path       the path to the file in CONLL format
+ * @param n_sentences       number of sentences in corpus (overwritten)
+ *
+ * @return array of sentence sizes (allocated)
+ */
+size_t *
+nlk_supervised_corpus_count_conll(char *corpus_path, size_t *n_sentences)
+{
+    size_t *sentence_sizes = NULL;
+    size_t sentence_index = 0;
+    bool empty = false;         /**< line is empty */
+    bool empty_prev = true;     /**< previous line was empty */
+
+    /** @section Allocations
+     */
+    /* file reading buffer */
+    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
+    if(buffer == NULL) {
+        NLK_ERROR_ABORT("not enough memory", NLK_ENOMEM);
+        /* UNREACHABLE */
+    }
+
+    /* allocate array */
+    *n_sentences = nlk_text_count_empty_lines(corpus_path);
+    sentence_sizes = (size_t *) calloc(sizeof(size_t), *n_sentences);
+    if(sentence_sizes == NULL) {
+        NLK_ERROR_NULL("unable to allocate memory for sentence", NLK_ENOMEM);
+    }
+    
+    /** @section count words in sentences
+     */
+    FILE *file = nlk_fopen(corpus_path);
+
+    /* Read lines loop */
+    while(fgets(buffer, NLK_BUFFER_SIZE - 1, file) != NULL) {
+        char c = buffer[0];
+
+        /* check if line is empty */
+        while(c != '\0' && c != '\n' && c != EOF) {
+            if(!isspace(c) && !iscntrl(c)) {
+                empty = false;
+                break;
+            } else {
+                empty = true;
+            }
+            c++;
+        }
+        /* if line is empty (but not the previous), move to next sentence */
+        if(empty && !empty_prev) {
+            sentence_index++;
+        } else if(!empty) { /* if line is not empty, increment word count */
+            sentence_sizes[sentence_index]++;
+        }
+
+        empty_prev = empty;
+    }
+
+    fclose(file);
+    free(buffer);
+
+    return sentence_sizes;
+}
+
+
+/**
  * Read a Supervised Corpus in CONLL format
  * The format consists space delimited columns and sentences separated by
  * empty lines:
@@ -706,10 +776,149 @@ nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth,
  *
  * @param corpus_path  the path file in conll format
  *
- * @return nlk_corpus_t
+ * @return nlk_supervised_corpus_t
+ */
+struct nlk_supervised_corpus_t *
+nlk_supervised_corpus_load_conll(char *corpus_path)
+{
+    size_t n_sentences;
+    struct nlk_supervised_corpus_t *corpus = NULL;
+    bool empty = false;
+    bool empty_prev = false;
+    struct nlk_vocab_t *label;
+
+    size_t si = 0;                  /**< sentence index */
+    size_t wi = 0;                  /**< word in sentence index */
+
+    /* open file */
+    FILE *file = nlk_fopen(corpus_path);
+
+    /**@section Create/Allocate
+     */
+    char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
+    nlk_assert_silent(buffer != NULL);
+
+    /* create corpus */
+    corpus = (struct nlk_supervised_corpus_t *) 
+                calloc(sizeof(struct nlk_supervised_corpus_t), 1);
+    nlk_assert_silent(corpus != NULL);
+
+    /* count words and sentences */
+    corpus->n_words = nlk_supervised_corpus_count_conll(corpus_path, 
+                                                        &n_sentences);
+    corpus->n_sentences = n_sentences;
+
+    /**@subsection Allocate space for words and labels 
+     */
+    corpus->classes = (size_t **) malloc(sizeof(size_t *) * n_sentences);
+    nlk_assert_silent(corpus->classes != NULL);
+
+
+    corpus->words = (char ***) malloc(sizeof(char **) * n_sentences);
+    nlk_assert_silent(corpus->words != NULL);
+
+
+    for(size_t ii = 0; ii < n_sentences; ii++) {
+        size_t sentence_words = corpus->n_words[ii];
+
+        corpus->words[ii] = (char **) malloc(sizeof(char *) * sentence_words);
+        nlk_assert_silent(corpus->words[ii] != NULL);
+
+        corpus->classes[ii] = (size_t *) 
+                                malloc(sizeof(size_t) * sentence_words);
+        nlk_assert_silent(corpus->classes[ii] != NULL);
+    }
+
+    char *label_string = (char *) malloc(sizeof(char) * NLK_MAX_WORD_SIZE);
+    nlk_assert_silent(label_string != NULL);
+    char *word = (char *) malloc(sizeof(char) * NLK_MAX_WORD_SIZE);
+    nlk_assert_silent(word != NULL);
+
+
+    /**@section Read File
+     */
+    while(fgets(buffer, NLK_BUFFER_SIZE - 1, file) != NULL) {
+        char c = buffer[0];
+        size_t next;                    /**< character in buffer index */
+        size_t end = strlen(buffer);    /**< end of buffer character index */
+
+        /* check if line is empty */
+        while(c != '\0' && c != EOF && c != '\n') {
+            if(!isspace(c) && !iscntrl(c)) {
+                empty = false;
+                break;
+            } else {
+                empty = true;
+            }
+            c++;
+        }
+        /* if line is empty (but not the previous), move to next sentence */
+        if(empty && !empty_prev) {
+            si++;
+            wi = 0;
+        } else if(!empty) { /* if line is not empty, read */
+            /* read word */
+            next = nlk_read_word_from_string(buffer, 0, end, 
+                                             word,
+                                             NLK_MAX_WORD_SIZE);
+            /* read label */
+            next = nlk_read_word_from_string(buffer, next, end, 
+                                             label_string,
+                                             NLK_MAX_WORD_SIZE);
+
+            /* get label */
+            label = nlk_vocab_add(&corpus->label_map, label_string, 
+                                  NLK_VOCAB_LABEL);
+
+            /* @subsection Add to corpus
+             */
+            /* add word */
+            size_t word_len = strlen(word);
+            corpus->words[si][wi] = (char *) 
+                                    malloc(sizeof(char) * word_len + 1);
+            nlk_assert_silent(corpus->words[si][wi] != NULL);
+            strcpy(corpus->words[si][wi], word);
+
+            /* add label */
+            corpus->classes[si][wi] = label->index;
+
+            wi++;
+        }
+
+        empty_prev = empty;
+
+    }
+
+    fclose(file);
+    free(buffer);
+    free(label_string);
+    free(word);
+
+
+    return corpus;
+
+error:
+    NLK_ERROR_NULL("Unable to allocate memory for corpus", NLK_ENOMEM);
+    /* UNREACHABLE */
+}
+
+
+/**
+ * Print a supervised corpus
+ *
+ * @param corpus    the supervised corpus to print
  */
 void
-nlk_dataset_load_conll()
+nlk_supervised_corpus_print(struct nlk_supervised_corpus_t *corpus)
 {
+    struct nlk_vocab_t *label;
 
+    for(size_t si = 0; si < corpus->n_sentences; si++) {
+        for(size_t wi = 0; wi < corpus->n_words[si]; wi++) {
+            label = nlk_vocab_at_index(&corpus->label_map, 
+                                       corpus->classes[si][wi]);
+            printf("%s\t%s\n", corpus->words[si][wi], label->word);
+        }
+        printf(" \t \n");
+    }
 }

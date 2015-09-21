@@ -58,15 +58,16 @@ struct nlk_dataset_t {
 };
 typedef struct nlk_dataset_t NLK_DATASET;
 
+
 /** @struct nlk_supervised_corpus_t
  * A supervised corpus mapping every word to a class
- * Each sentence 
  */
 struct nlk_supervised_corpus_t {
-    size_t                     n_sentences;     /**< number of sentences */
-    struct nlk_line_t        **sentences;       /**< the sencences */
-    struct nlk_dataset_t      *word_classes;    /**< classes for words */
-    char                     **class_id;        /**< class to number (id) */
+    char                              ***words;      /**< words array */
+    size_t                             **classes;    /**< label ids */
+    size_t                             *n_words;     /**< words per sent */
+    size_t                              n_sentences; /**< number of sents */
+    struct nlk_vocab_t                 *label_map;   /**< label -> class */
 };
 typedef struct nlk_supervised_corpus_t NLK_SUPERVISED_CORPUS;
 
@@ -84,9 +85,10 @@ void nlk_dataset_swap(struct nlk_dataset_t *, struct nlk_dataset_t *);
 
 
 /* load */
-void                     nlk_dataset_free(struct nlk_dataset_t *);
-struct nlk_dataset_t    *nlk_dataset_load(FILE *, const size_t);
-struct nlk_dataset_t    *nlk_dataset_load_path(const char *);
+void                             nlk_dataset_free(struct nlk_dataset_t *);
+struct nlk_dataset_t            *nlk_dataset_load(FILE *, const size_t);
+struct nlk_dataset_t            *nlk_dataset_load_path(const char *);
+struct nlk_supervised_corpus_t  *nlk_supervised_corpus_load_conll(char *);
 
 /* save */
 void nlk_dataset_save_map(FILE *, const size_t *, const unsigned int *,
@@ -115,7 +117,12 @@ void                     nlk_class_score_cm_print(const unsigned int *,
 /* misc */
 void                     nlk_dataset_shuffle(struct nlk_dataset_t *);
 struct nlk_dataset_t    *nlk_dataset_undersample(struct nlk_dataset_t *, bool);
-int                      nlk_dataset_print_class_dist(struct nlk_dataset_t *);
+size_t                  *nlk_supervised_corpus_count_conll(char *, size_t *);
+
+/* print */
+int     nlk_dataset_print_class_dist(struct nlk_dataset_t *);
+void    nlk_supervised_corpus_print(struct nlk_supervised_corpus_t *);
+
 
 __END_DECLS
 #endif /* __NLK_DATASET_H__ */

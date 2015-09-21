@@ -65,7 +65,8 @@ __BEGIN_DECLS
 enum nlk_vocab_type_t { 
     NLK_VOCAB_WORD      = 0, 
     NLK_VOCAB_SPECIAL   = 1,
-    NLK_VOCAB_CHAR      = 2
+    NLK_VOCAB_CHAR      = 2,
+    NLK_VOCAB_LABEL     = 3
 };
 typedef enum nlk_vocab_type_t NLK_VOCAB_TYPE;
 
@@ -118,6 +119,8 @@ struct nlk_vocab_t   *nlk_vocab_create(const char *, const uint64_t,
 void                  nlk_vocab_extend(struct nlk_vocab_t **, char *); 
 void                  nlk_vocab_add_vocab(struct nlk_vocab_t **dest, 
                                           struct nlk_vocab_t **source);
+struct nlk_vocab_t   *nlk_vocab_add(struct nlk_vocab_t **, char *,
+                                    const NLK_VOCAB_TYPE); 
 void                  nlk_vocab_free(struct nlk_vocab_t **);
 
 /* reduce */
