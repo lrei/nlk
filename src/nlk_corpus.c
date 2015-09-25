@@ -178,7 +178,7 @@ nlk_corpus_read(char *file_path, struct nlk_vocab_t **vocab,
             } /* end of display */
 
             /* read */
-            nlk_vocab_read_vocabularize(fd, vocab, replacement, text_line, 
+            nlk_vocab_read_vocabularize(fd, true, vocab, replacement, text_line, 
                                         &vline, buffer);
          
             /* check for errors */

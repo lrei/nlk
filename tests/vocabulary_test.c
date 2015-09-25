@@ -56,7 +56,7 @@ compare_vocab(struct nlk_vocab_t *created, struct nlk_vocab_t *loaded)
  * "Large" version
  */
 static char *
-test_vocab_create_large()
+test_vocab_create_large_id()
 {
     struct nlk_vocab_t *created;
     struct nlk_vocab_t *imported;
@@ -64,10 +64,10 @@ test_vocab_create_large()
     int ret = 0;
     
     /* create */
-    created = nlk_vocab_create("../data/imdb-id.txt", 10, false, false);
+    created = nlk_vocab_create("../data/imdb-id.txt", true, 10, false, false);
 
     /* load, ensure sorted */
-    imported = nlk_vocab_import("data/imdb.vocab.txt", 100);
+    imported = nlk_vocab_import("data/imdb.vocab.txt", 100, true);
     nlk_vocab_sort(&imported);
 
     /* save created since it might be necessary to debug */
@@ -107,6 +107,57 @@ test_vocab_create_large()
     return 0;
 }
 
+static char *
+test_vocab_create_large()
+{
+    struct nlk_vocab_t *created;
+    struct nlk_vocab_t *imported;
+    struct nlk_vocab_t *loaded;
+    int ret = 0;
+    
+    /* create */
+    created = nlk_vocab_create("../data/imdb.txt", false, 10, false, false);
+
+    /* load, ensure sorted */
+    imported = nlk_vocab_import("data/imdb.vocab.txt", 100, true);
+    nlk_vocab_sort(&imported);
+
+    /* save created since it might be necessary to debug */
+    nlk_vocab_export("tmp/imdb.vocab.created.txt", &created);
+
+    /* Compare */
+    ret = compare_vocab(created, imported);
+    mu_assert("Large Vocabulary: Created != Imported Size", ret != 1);
+    mu_assert("Large Vocabulary: Created != Imported Total", ret != 2); 
+    mu_assert("Large Vocabulary: Created != Imported word count", ret != 3);
+
+    nlk_vocab_free(&imported);
+
+    /* save binary */
+    FILE *vf;
+    vf = fopen("tmp/imdb.vocab.created.full.txt", "wb");
+    mu_assert("unable to open file for saving", vf != NULL);
+    nlk_vocab_save(&created, vf);
+    fclose(vf);
+
+    /* load binary */
+    vf = fopen("tmp/imdb.vocab.created.full.txt", "rb");
+    mu_assert("unable to open file", vf != NULL);
+    loaded = nlk_vocab_load(vf);
+    fclose(vf);
+    
+    /* compare */
+    ret = compare_vocab(created, loaded);
+    mu_assert("Large Vocabulary: Created != Loaded Size", ret != 1);
+    mu_assert("Large Vocabulary: Created != Loaded Total", ret != 2); 
+    mu_assert("Large Vocabulary: Created != Loaded word count", ret != 3);
+
+
+    /* free and return */
+    nlk_vocab_free(&loaded);
+    nlk_vocab_free(&created);
+    return 0;
+}
 
 /**
  * Function that runs all tests
@@ -114,6 +165,7 @@ test_vocab_create_large()
 static char *
 all_tests() {
     mu_run_test(test_vocab_create_large);
+    mu_run_test(test_vocab_create_large_id);
     return 0;
 }
  

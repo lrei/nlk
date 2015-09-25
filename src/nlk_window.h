@@ -68,6 +68,7 @@ struct nlk_context_opts_t {
     unsigned int  before;          /**< window before center */
     unsigned int  after;           /**< window after center */
     bool          b_equals_a;      /**< force before == after in rand */
+    bool          include_center;  /**< center word is in its own context */
     bool          paragraph;       /**< is a paragraph model */
     bool          prepad_paragraph;/**< just prepad paragraph once */
     bool          prepad;          /**< fixed size window: prepad */

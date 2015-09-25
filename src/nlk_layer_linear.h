@@ -64,7 +64,9 @@ typedef struct nlk_layer_linear_t NLK_LAYER_LINEAR;
 /* 
  *  Initialization for linear layers
  */
-void nlk_layer_linear_init_sigmoid(struct nlk_layer_linear_t *layer);
+void nlk_layer_linear_init_sigmoid(struct nlk_layer_linear_t *);
+void nlk_layer_linear_init_senna(struct nlk_layer_linear_t *);
+
 
 
 /*
@@ -84,8 +86,11 @@ void nlk_layer_linear_forward(const NLK_LAYER_LINEAR *, const NLK_ARRAY *,
 
 
 /* Linear Layer backward pass */
-void nlk_layer_linear_backprop(NLK_LAYER_LINEAR *, const NLK_ARRAY *, 
-                               const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_layer_linear_update_gradient(struct nlk_layer_linear_t *,
+                                      const NLK_ARRAY *, NLK_ARRAY *);
+void nlk_layer_linear_update_parameters(struct nlk_layer_linear_t *,
+                                        const NLK_ARRAY *, const NLK_ARRAY *);
+
 
 
 /* Free Linear Layer Memory */

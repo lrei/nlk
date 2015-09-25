@@ -64,10 +64,12 @@ typedef struct nlk_dataset_t NLK_DATASET;
  */
 struct nlk_supervised_corpus_t {
     char                              ***words;      /**< words array */
-    size_t                             **classes;    /**< label ids */
-    size_t                             *n_words;     /**< words per sent */
+    unsigned int                      **classes;     /**< label ids */
     size_t                              n_sentences; /**< number of sents */
     struct nlk_vocab_t                 *label_map;   /**< label -> class */
+    unsigned int                       *n_words;    /**< words per sentence */
+    size_t                              size;       /**< total words */
+    size_t                              n_classes;  /**< number of classes */
 };
 typedef struct nlk_supervised_corpus_t NLK_SUPERVISED_CORPUS;
 
@@ -88,7 +90,8 @@ void nlk_dataset_swap(struct nlk_dataset_t *, struct nlk_dataset_t *);
 void                             nlk_dataset_free(struct nlk_dataset_t *);
 struct nlk_dataset_t            *nlk_dataset_load(FILE *, const size_t);
 struct nlk_dataset_t            *nlk_dataset_load_path(const char *);
-struct nlk_supervised_corpus_t  *nlk_supervised_corpus_load_conll(char *);
+struct nlk_supervised_corpus_t  *nlk_supervised_corpus_load_conll(const char *,
+                                                    struct nlk_vocab_t *vocab);
 
 /* save */
 void nlk_dataset_save_map(FILE *, const size_t *, const unsigned int *,
@@ -100,11 +103,13 @@ void nlk_dataset_save_map_path(const char *, const size_t *,
 float                    nlk_class_score_accuracy(const unsigned int *, 
                                                   const unsigned int *, 
                                                   const size_t);
+
 float                    nlk_class_score_f1pr_class(const unsigned int *, 
                                                     const unsigned int *, 
                                                     const size_t, 
                                                     const unsigned int,
                                                     float *, float *);
+
 float                    nlk_class_score_semeval_senti_f1(const unsigned int *, 
                                                           const unsigned int *, 
                                                           const size_t,
@@ -114,10 +119,21 @@ float                    nlk_class_score_semeval_senti_f1(const unsigned int *,
 void                     nlk_class_score_cm_print(const unsigned int *, 
                                                   const unsigned int *, 
                                                   const size_t);
+
+float                   nlk_class_f1pr_score_micro(const unsigned int *, 
+                                                   const unsigned int *truth, 
+                                                   const size_t,
+                                                   const size_t,
+                                                   float *, float *);
+
 /* misc */
 void                     nlk_dataset_shuffle(struct nlk_dataset_t *);
 struct nlk_dataset_t    *nlk_dataset_undersample(struct nlk_dataset_t *, bool);
-size_t                  *nlk_supervised_corpus_count_conll(char *, size_t *);
+unsigned int            *nlk_supervised_corpus_count_conll(const char *, 
+                                                           size_t *);
+unsigned int             nlk_supervised_corpus_max_sentence_size(
+                            struct nlk_supervised_corpus_t *);
+
 
 /* print */
 int     nlk_dataset_print_class_dist(struct nlk_dataset_t *);

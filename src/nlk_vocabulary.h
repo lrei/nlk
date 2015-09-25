@@ -50,7 +50,7 @@
 __BEGIN_DECLS
 
 
-#define NLK_START_SYMBOL "</s>"
+#define NLK_START_SYMBOL "</s>"               /**< PADDING symbol */
 #define NLK_UNK_SYMBOL "<UNK>"
 #define NLK_MAX_CODE 40
 #define NLK_VOCAB_MAX_THREADS 512             /**< maximum number of threads */
@@ -114,9 +114,11 @@ struct nlk_line_t {
 };
 
 /* creation */
-struct nlk_vocab_t   *nlk_vocab_create(const char *, const uint64_t, 
-                                       const bool, const bool); 
-void                  nlk_vocab_extend(struct nlk_vocab_t **, char *); 
+struct nlk_vocab_t   *nlk_vocab_create(const char *,  const bool, 
+                                       const uint64_t, const bool, 
+                                       const bool); 
+void                  nlk_vocab_extend(struct nlk_vocab_t **, const char *,
+                                       const bool); 
 void                  nlk_vocab_add_vocab(struct nlk_vocab_t **dest, 
                                           struct nlk_vocab_t **source);
 struct nlk_vocab_t   *nlk_vocab_add(struct nlk_vocab_t **, char *,
@@ -139,7 +141,7 @@ void        nlk_vocab_encode_huffman(struct nlk_vocab_t **);
 
 /* save & load */
 int                   nlk_vocab_export(const char *, struct nlk_vocab_t **);
-struct nlk_vocab_t   *nlk_vocab_import(const char *, const size_t);
+struct nlk_vocab_t   *nlk_vocab_import(const char *, const size_t, const bool);
 void                  nlk_vocab_save(struct nlk_vocab_t **, FILE *);
 struct nlk_vocab_t   *nlk_vocab_load(FILE *);
 
@@ -150,7 +152,7 @@ void nlk_vocab_line_subsample(const struct nlk_line_t *,
 
 size_t  nlk_vocab_vocabularize(struct nlk_vocab_t **, char **,
                                struct nlk_vocab_t *, struct nlk_vocab_t **);
-void    nlk_vocab_read_vocabularize(int, struct nlk_vocab_t **, 
+void    nlk_vocab_read_vocabularize(int, const bool, struct nlk_vocab_t **, 
                                     struct nlk_vocab_t *, char **, 
                                     struct nlk_line_t *, char *);
 
@@ -168,7 +170,7 @@ size_t                nlk_vocab_last_index(struct nlk_vocab_t **);
 struct nlk_vocab_t   *nlk_vocab_get_start_symbol(struct nlk_vocab_t **);
 
 uint64_t nlk_vocab_count_words(struct nlk_vocab_t **, const char *, 
-                               const size_t);
+                               const bool, const size_t);
 
 /* line */
 struct nlk_line_t  *nlk_line_create(const size_t);

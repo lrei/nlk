@@ -47,10 +47,14 @@ __BEGIN_DECLS
 size_t   nlk_count_unique(const unsigned int *, const size_t);
 bool     nlk_in(const size_t, const size_t *, const size_t);
 size_t  *nlk_range(const size_t);
+void     nlk_shuffle_indices(size_t *, const size_t);
 size_t  *nlk_range_not_in(const size_t *, const size_t, const size_t, 
                           size_t *len_r);
 size_t  nlk_unique(const size_t *, const size_t, size_t *);
+void    nlk_flatten(unsigned int **, const size_t, const unsigned int *, 
+                    unsigned int *r);
 
+void    nlk_free_double(void **, const size_t);
 
 __END_DECLS
 #endif /* __NLK_UTIL_H__ */

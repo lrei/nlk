@@ -164,7 +164,10 @@ static char *
 test_count_empty_lines()
 {
     size_t empty_lines = nlk_text_count_empty_lines("data/conll.mini.txt");
-    mu_assert("count empty lines", empty_lines == 12);
+    if(empty_lines != 12) {
+        printf("empty lines = %zu != 14\n", empty_lines);
+    }
+    mu_assert("count empty lines", empty_lines == 14);
 
     return 0;
 }

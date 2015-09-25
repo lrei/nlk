@@ -32,6 +32,7 @@
 #include <stdlib.h>
 
 #include "nlk_err.h"
+#include "nlk_random.h"
 
 #include "nlk_util.h"
 
@@ -172,6 +173,31 @@ nlk_range(const size_t n)
     return range;
 }
 
+
+/**
+ * Shuffle an index array
+ */
+void
+nlk_shuffle_indices(size_t *indices, const size_t size)
+{
+    size_t tmp;
+    size_t idx;
+
+    for(size_t ii = 0; ii < size; ii++) {
+        /* store element at ii */
+        tmp = indices[ii];
+
+        /* get a random index */
+        idx = nlk_random_xs1024() % size;
+
+        /*  replace element at ii with element at idx */
+        indices[ii] = indices[idx];
+
+        /* replace element at idx with stored element */
+        indices[idx] = tmp;
+    }
+}
+
 /**
  * Generate all positive integers from in [0, n [ that are not in a
  */
@@ -200,4 +226,37 @@ nlk_range_not_in(const size_t *a, const size_t len_a, const size_t n,
     *len_r = len;
 
     return r;
+}
+
+
+/**
+ * Flatten an array of arrays
+ * @param o original array of arrays
+ * @param s first dimension size of o
+ * @param m sizes of second dimension of o
+ * @param r the resulting flattened array
+ */
+void
+nlk_flatten(unsigned int **o, const size_t s, const unsigned int *m, 
+            unsigned int *r)
+{
+    size_t idx = 0;
+    for(size_t ii = 0; ii < s; ii++) {
+        for(size_t jj = 0; jj < m[ii]; jj++) {
+            r[idx] = o[ii][jj];
+            idx++;
+        }
+    }
+}
+
+
+void
+nlk_free_double(void **a, const size_t s)
+{
+    for(size_t ii = 0; ii < s; ii++) {
+        free(a[ii]);
+        a[ii] = NULL;
+    }
+    free(a);
+    a = NULL;
 }

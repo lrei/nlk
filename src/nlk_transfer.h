@@ -62,6 +62,12 @@ void    nlk_log_softmax_forward(const NLK_ARRAY *input, NLK_ARRAY *output);
 void    nlk_log_softmax_backprop(const NLK_ARRAY *, const NLK_ARRAY *, 
                                  NLK_ARRAY *);
 
+/* hardtanh */
+void    nlk_hardtanh_forward(const NLK_ARRAY *, NLK_ARRAY *);
+void    nlk_hardtanh_backprop(const NLK_ARRAY *, const NLK_ARRAY *, 
+                              NLK_ARRAY *);
+
+
 /* rectified */
 void    nlk_rectifier_forward(const NLK_ARRAY *, NLK_ARRAY *);
 void    nlk_rectifier_backprop(const NLK_ARRAY *, const NLK_ARRAY *, 

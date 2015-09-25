@@ -24,7 +24,7 @@
 
 
 /** @file nlk_pv.c
- * Paragraph Vector Inference functions
+ * Paragraph Classification functions
  * @note: code relative to training a PV model is in nlk_w2v.c
  */
 
@@ -44,7 +44,6 @@
 #include "nlk_dataset.h"
 #include "nlk_util.h"
 #include "nlk_text.h"
-#include "nlk_corpus.h"
 #include "nlk_vocabulary.h"
 #include "nlk_w2v.h"
 #include "nlk_pv.h"
@@ -201,14 +200,15 @@ nlk_pv_class_train(struct nlk_neuralnet_t *nn, struct nlk_dataset_t *dset,
             /* Backprop step 1: Negative Log Likelihood */
             nlk_nll_backprop(out, dset->classes[tid], grad_out);
 
-            /* learning rate */
+            /* apply learning rate */
             nlk_array_scale(learn_rate, grad_out);
 
             /* Backprop step 2: softmax transfer */
             nlk_log_softmax_backprop(out, grad_out, grad_sm_in); 
 
-            /* Backprop step3: linear layer */
-            nlk_layer_linear_backprop(linear, pv, grad_sm_in, grad_in);
+            /* Backprop step3: linear layer
+             * no need to update gradient at input, just update parameters: */
+            nlk_layer_linear_update_parameters(linear, pv, grad_sm_in);
 
         } /* end of paragraphs */
 

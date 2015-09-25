@@ -1588,6 +1588,30 @@ nlk_array_rescale_max_minus(NLK_ARRAY *array)
 
 
 /**
+ * Hardtanh function 
+ *      x_i = -1    if x_i < -1
+ *      x_i = 1     if x_i > 1
+ *      x_i = x_i   otherwise
+ *
+ * @param array the array to apply the hardtanh function to (overwritten)
+ */
+void
+nlk_array_hardtanh(NLK_ARRAY *array)
+{
+    size_t idx = array->len;
+
+    do {
+        idx--;
+        if(array->data[idx] < -1) {
+            array->data[idx] = -1;
+        } else if(array->data[idx] > 1) {
+            array->data[idx] = 1;
+        }
+    } while(idx > 0);
+}
+
+
+/**
  * Rectifier function: x_i = x_i if x > 0, else 0
  *
  * @param the array to rectify

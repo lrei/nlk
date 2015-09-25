@@ -278,15 +278,21 @@ nlk_fopen(const char *filepath) {
 /**
  * Copies a buffer into a char ** with tokenized words
  * Called only from nlk_read_line
+ * @param number will store the line number if not NULL
  */
 inline static int
 nlk_text_make_words(char *buf, const ssize_t len, char **line, size_t *number)
 {
     register int idx = 0;
+    register int widx = 0;
     register char *dest = &line[0][0];
     register char *s = buf;
     register char *p = buf;
     const char *end = &buf[len];
+
+    if(number != NULL) { 
+        widx = -1; 
+    }
 
     /* ignore whitespaces before the line id (number) - i am a merciful god */
     while(p != end && isspace(*p)) { p++; }
@@ -299,7 +305,7 @@ nlk_text_make_words(char *buf, const ssize_t len, char **line, size_t *number)
      * dest will point line[idx-1] after the first "word"
      * and thus point to the right array in **line
      */
-    while(p != end && idx <= NLK_MAX_LINE_SIZE) {
+    while(p != end && widx < NLK_MAX_LINE_SIZE) {
 
         while( ! isspace(*p) && p != end) { 
             p++; 
@@ -327,7 +333,7 @@ nlk_text_make_words(char *buf, const ssize_t len, char **line, size_t *number)
         /** @subsection Handle The Line Number (id)
          * first "word" => the line number 
          */
-        if(idx == 0) { 
+        if(idx == 0 && number != NULL) { 
             char *endptr;
             errno = 0;
             unsigned long long int val = strtoull(line[0], &endptr, 10);
@@ -357,13 +363,14 @@ nlk_text_make_words(char *buf, const ssize_t len, char **line, size_t *number)
 
         /**@subsection Go to next word
          */
-        idx++;
-        dest = &line[idx-1][0];
+        idx++; widx++;
+        dest = &line[widx][0];
+        dest = &line[widx][0];
         *dest = '\0';   /* null terminate it in case it is the last */ 
 
     } /* end of buffer */
 
-    if(idx < NLK_MAX_LINE_SIZE) {
+    if(widx < NLK_MAX_LINE_SIZE - 1) {
         return 0;
     }
 
@@ -389,7 +396,9 @@ nlk_read_line(int fd, char **line, size_t *number, char *buf)
     int      term       = NLK_FAILURE;
 
     /* inititialize some vars to hadle empty lines */
-    *number = (size_t) -1;
+    if(number != NULL) {
+        *number = (size_t) -1;
+    }
     line[0][0] = '\0';
 
 
@@ -597,7 +606,7 @@ nlk_text_count_empty_lines(const char *filepath)
             /* 
              * state_empty == true 
              */
-            if(state_empty && !isspace(*p)) {
+            if(state_empty && !isspace(*p) && !iscntrl(*p)) {
                 state_empty = false;
             } else if(state_empty && *p == '\n') {
                 empty_lines += 1;

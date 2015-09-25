@@ -99,17 +99,22 @@ test_conll_count()
     printf("Testing CONLL counts\n");
 
 
-    size_t *counts = nlk_supervised_corpus_count_conll("data/conll.mini.txt", 
-                                                      &n_sentences);
+    unsigned int *counts;
+    counts = nlk_supervised_corpus_count_conll("data/conll.mini.txt", 
+                                               &n_sentences);
+    if(n_sentences != 12) {
+        printf("%zu\n", n_sentences);
+
+    }
     mu_assert("bad number of sentences", n_sentences == 12);
 
     if(counts[0] != 27) {
-        printf("counts[0] = %zu\n", counts[0]);
+        printf("counts[0] = %u\n", counts[0]);
     }
     mu_assert("bad number of words for sentence 0", counts[0] == 27);
 
    if(counts[1] != 12) {
-        printf("counts[1] = %zu\n", counts[0]);
+        printf("counts[1] = %u\n", counts[0]);
     }
     mu_assert("bad number of words for sentence 1", counts[1] == 12);
 
@@ -136,7 +141,7 @@ test_conll_load()
 
     printf("Testing CONLL loading\n");
 
-    corpus = nlk_supervised_corpus_load_conll("data/conll.mini.txt");
+    corpus = nlk_supervised_corpus_load_conll("data/conll.mini.txt", NULL);
     mu_assert("corpus not loaded", corpus != NULL);
     mu_assert("bad number of sentences", corpus->n_sentences == 12);
 
@@ -150,6 +155,10 @@ test_conll_load()
 
     ret = strcmp(corpus->words[0][1], "It");
     mu_assert("bad word s=0, w=1", ret == 0);
+
+
+    ret = strcmp(corpus->words[0][3], "the");
+    mu_assert("bad word s=0, w=4", ret == 0);
 
     ret = strcmp(corpus->words[1][0], "From");
     mu_assert("bad word s=1, w=0", ret == 0);

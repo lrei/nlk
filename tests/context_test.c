@@ -53,7 +53,7 @@ test_context_pvdbow()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE, true);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 
@@ -151,7 +151,7 @@ test_context_pvdm()
 
     /* load vocab */
     struct nlk_vocab_t *vocab;
-    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE);
+    vocab = nlk_vocab_import("data/cat.vocab", NLK_MAX_WORD_SIZE, true);
     nlk_vocab_sort(&vocab);
     nlk_vocab_encode_huffman(&vocab);
 

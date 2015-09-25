@@ -257,6 +257,7 @@ size_t      nlk_array_max_i(const NLK_ARRAY *);
 nlk_real    nlk_array_max(const NLK_ARRAY *);
 nlk_real    nlk_array_rescale_max_minus(NLK_ARRAY *array);
 
+void    nlk_array_hardtanh(NLK_ARRAY *);
 void    nlk_array_rectify(NLK_ARRAY *);
 
 

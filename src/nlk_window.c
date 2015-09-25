@@ -76,17 +76,26 @@ static void
 nlk_context_for_pos(struct nlk_vocab_t **varray, const size_t paragraph_id,
                     const bool paragraph, const unsigned int center_pos,
                     unsigned int window_pos, const unsigned int window_end,
-                    const bool prepad_paragraph, unsigned int prepad_n, 
-                    unsigned int postpad_n, const size_t pad_symbol, 
-                    struct nlk_context_t *context)
+                    const bool include_center, const bool prepad_paragraph, 
+                    unsigned int prepad_n, unsigned int postpad_n, 
+                    const size_t pad_symbol, struct nlk_context_t *context)
 {
     unsigned int window_idx = 0;
 
     /* the target i.e. word to be predicted is the center of the window */
     context->target = varray[center_pos];
 
-    /* the context size is the window except the target unless padding */
-    context->size = (window_end - window_pos) - 1;
+    /* the context size is the window unless we have to pad it 
+     * Commonly, when generating a context for window classification task,
+     * we include the center word (word being classified). But not when 
+     * training language models.
+     */
+    if(!include_center) {
+        /* except the target */
+        context->size = (window_end - window_pos) - 1;
+    } else { 
+        context->size = (window_end - window_pos);
+    }
 
     /* if before < window and prepad_paragraph (PVDBOW) */
     if(prepad_paragraph) {
@@ -108,7 +117,7 @@ nlk_context_for_pos(struct nlk_vocab_t **varray, const size_t paragraph_id,
 
     /* remaining context items are the window items except for the target */
     for(; window_pos < window_end; window_pos++) {
-        if(window_pos == center_pos) {
+        if(window_pos == center_pos && !include_center) {
             continue;
         }
         context->window[window_idx] = varray[window_pos]->index;
@@ -204,6 +213,10 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
             window_end = line_length;
             if(opts->postpad) {
                 postpad = center_pos + after - line_length;
+                if(opts->include_center) {
+                    postpad += 1;
+
+                }
             }
         } else {
             /* right side of *line* is longer or equal to the window size */
@@ -214,15 +227,9 @@ nlk_context_window(struct nlk_vocab_t **varray, const size_t line_length,
 
         /* create the context for this window */
         nlk_context_for_pos(varray, paragraph_id, opts->paragraph, center_pos, 
-                            window_pos, window_end, prepad_paragraph, prepad,
-                            postpad, opts->start, contexts[ctx_idx]);
-
-#ifndef NCHECKS
-        if(contexts[ctx_idx]->size > opts->before + opts->after + 1) {
-            NLK_ERROR("Context size too large for allocated memory.", 
-                      NLK_EBADLEN);
-        }
-#endif
+                            window_pos, window_end, opts->include_center, 
+                            prepad_paragraph, prepad, postpad, opts->start, 
+                            contexts[ctx_idx]);
 
         ctx_idx++;
     }

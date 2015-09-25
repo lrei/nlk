@@ -176,7 +176,7 @@ nlk_vocab_init()
 
 static int
 nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
-                   const bool verbose) 
+                   const bool line_has_id, const bool verbose) 
 {
     /** @section Shared Initializations
      */
@@ -273,7 +273,12 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
             }
 
             /* read from file */
-            ret = nlk_read_line(fd, text_line, &par_id, buffer);
+            if(line_has_id) {
+                ret = nlk_read_line(fd, text_line, &par_id, buffer);
+            } else {
+                ret = nlk_read_line(fd, text_line, NULL, buffer);
+                par_id = cur_line;
+            }
            
             line_counter++;
             cur_line++;
@@ -389,7 +394,9 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * Build a vocabulary from a file
  *
  * @param filepath        the path of the file to read from
+ * @param par_id          true if each line starts with an id
  * @param min_count       minimum word frequency (count)
+ * @param replace         replace tokens below min_count
  * @param verbose         display progress
  *
  * @return a pointer to the first item in the vocabulary use &vocab to pass it
@@ -405,7 +412,8 @@ nlk_vocab_add_vocab(struct nlk_vocab_t **dest, struct nlk_vocab_t **source)
  * @endnote
  */
 struct nlk_vocab_t *
-nlk_vocab_create(const char *filepath, const uint64_t min_count, 
+nlk_vocab_create(const char *filepath, const bool par_id, 
+                 const uint64_t min_count, 
                  const bool replace, const bool verbose) {
 
     struct nlk_vocab_t *vocab = nlk_vocab_init();
@@ -416,7 +424,7 @@ nlk_vocab_create(const char *filepath, const uint64_t min_count,
     }
 
     /* create */
-    nlk_vocab_read_add(&vocab, filepath, verbose);
+    nlk_vocab_read_add(&vocab, filepath, par_id, verbose);
 
     /* reduce - also sorts and encodes */
     if(replace) {
@@ -439,9 +447,10 @@ nlk_vocab_create(const char *filepath, const uint64_t min_count,
  * Extend a vocabulary
  */
 void
-nlk_vocab_extend(struct nlk_vocab_t **vocab, char *filepath) {
+nlk_vocab_extend(struct nlk_vocab_t **vocab, const char *filepath, 
+                 const bool line_id) {
 
-    nlk_vocab_read_add(vocab, filepath, false);
+    nlk_vocab_read_add(vocab, filepath, line_id, false);
 }
 
 /** @fn void nlk_vocab_free(struct nlk_vocab_t *vocab)
@@ -924,22 +933,23 @@ nlk_vocab_export(const char *filepath, struct nlk_vocab_t **vocab)
 }
 
 /**
- * Load the (simple) vocabulary structure from disk, saved via *nlk_save_vocab*
+ * Load the (simple) vocabulary structure from disk
+ * E.g. saved via *nlk_save_vocab*
  *
  * @param filepath          the path of the file to which will be read
  * @param max_word_size     maximum string size
- * @param vocab             the vocabulary structure
+ * @param counts            contains counts 
  *
- * @note
- * Vocabulary is sorted and huffman encoded
- * @endnote
- *
+ * @return the loaded vocabulary
  */
 struct nlk_vocab_t *
-nlk_vocab_import(const char *filepath, const size_t max_word_size)
+nlk_vocab_import(const char *filepath, const size_t max_word_size, 
+                 const bool counts)
 {
     struct nlk_vocab_t *vocab = nlk_vocab_init();
+    struct nlk_vocab_t *vocab_item = NULL;
     struct nlk_vocab_t *start;
+    size_t index = 0;
 
     uint64_t count = 0;
     char *word = (char *) calloc(max_word_size, sizeof(char));
@@ -952,20 +962,31 @@ nlk_vocab_import(const char *filepath, const size_t max_word_size)
     HASH_FIND_STR(vocab, NLK_START_SYMBOL, start);
 
     nlk_read_word(in, word, max_word_size);
-    if(fscanf(in, "%"SCNu64"\n", &count) != 1) {
-        NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+    if(counts) {
+        if(fscanf(in, "%"SCNu64"\n", &count) != 1) {
+            NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+        }
+        start->count += count;
     }
-    start->count += count;
 
 
     while(!feof(in)) {
         if(nlk_read_word(in, word, max_word_size) == EOF) {
             break;
         }
-        if(fscanf(in, "%"SCNu64"\n", &count) != 1) {
-            NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+        if(counts) {
+            if(fscanf(in, "%"SCNu64"\n", &count) != 1) {
+                NLK_ERROR_NULL("Parsing error", NLK_FAILURE);
+            }
         }
-        nlk_vocab_add_item(&vocab, word, count, NLK_VOCAB_WORD);
+
+        if(strcmp(word, NLK_START_SYMBOL) == 0) {
+            start->index = index;
+        }
+
+        vocab_item = nlk_vocab_add_item(&vocab, word, count, NLK_VOCAB_WORD);
+        vocab_item->index = index;
+        index++;
     }
 
     /* free/close */
@@ -975,8 +996,10 @@ nlk_vocab_import(const char *filepath, const size_t max_word_size)
     in = NULL;
 
     /* sort and encode */
-    nlk_vocab_sort(&vocab);
-    nlk_vocab_encode_huffman(&vocab);
+    if(counts) {
+        nlk_vocab_sort(&vocab);
+        nlk_vocab_encode_huffman(&vocab);
+    }
 
     return vocab;
 }
@@ -1388,19 +1411,26 @@ nlk_vocab_vocabularize(struct nlk_vocab_t **vocab,  char **paragraph,
 
 uint64_t
 nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
-                             const size_t total_lines, const int thread_id,
-                             const int num_threads)
+                             const bool line_ids, const size_t total_lines, 
+                             const int thread_id, const int num_threads)
 {
     uint64_t total_words = 0;
     size_t cur_line;
     size_t end_line;
     size_t line_len;
     size_t par_id;
+    size_t *par_id_ptr = NULL;
     int ret = 0;
      
 
     /**@section Init
      */
+    if(line_ids) {
+        par_id_ptr = &par_id;
+    } else {
+        par_id_ptr = NULL;
+
+    }
     /* allocate memory for reading from the input file */
     char **text_line = nlk_text_line_create();
     char *buffer = malloc(sizeof(char) * NLK_BUFFER_SIZE);
@@ -1427,7 +1457,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
      */
     while(ret != EOF && cur_line < end_line) {
         /* read line */
-        ret = nlk_read_line(fd, text_line, &par_id, buffer);
+        ret = nlk_read_line(fd, text_line, par_id_ptr, buffer);
         
         /* vocabularize */
         line_len = nlk_vocab_vocabularize(vocab, text_line, NULL, 
@@ -1453,7 +1483,7 @@ nlk_vocab_count_words_worker(struct nlk_vocab_t **vocab, const char *file_path,
  */
 uint64_t
 nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
-                      const size_t total_lines)
+                      const bool line_ids, const size_t total_lines)
 {
     size_t total_words = 0;
     int num_threads = omp_get_num_threads();
@@ -1463,8 +1493,8 @@ nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
 #pragma omp parallel for reduction(+ : total_words)
     for(int thread_id = 0; thread_id < num_threads; thread_id++) {
         total_words = nlk_vocab_count_words_worker(vocab, file_path,
-                                                   total_lines, thread_id, 
-                                                   num_threads);
+                                                   line_ids, total_lines, 
+                                                   thread_id, num_threads);
     }
     return total_words;
 }
@@ -1478,14 +1508,19 @@ nlk_vocab_count_words(struct nlk_vocab_t **vocab, const char *file_path,
  * @param v         vocalularized line
  */
 void
-nlk_vocab_read_vocabularize(int fd, struct nlk_vocab_t **vocab, 
+nlk_vocab_read_vocabularize(int fd, const bool line_ids,
+                            struct nlk_vocab_t **vocab, 
                             struct nlk_vocab_t *replacement,
                             char **text_line, struct nlk_line_t *v, char *buf)
 {
     int ret;
+    size_t *line_id = NULL;
+    if(line_ids) {
+        line_id = &v->line_id;
+    }
 
     /* read text line */
-    ret = nlk_read_line(fd, text_line, &v->line_id, buf);
+    ret = nlk_read_line(fd, text_line, line_id, buf);
 
     /* unexpected end of file (empty line) */
     if(ret == EOF && text_line[0][0] == '\0' ) {

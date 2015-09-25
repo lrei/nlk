@@ -48,7 +48,8 @@ __BEGIN_DECLS
 
 
 /** @enum NLK_LM_TYPE
- * The type of the language model
+ * A predefined model "type"
+ * @TODO change this to nlk_model_t
  */
 enum nlk_lm_t { 
     NLK_MODEL_NULL  = 0,
@@ -59,6 +60,7 @@ enum nlk_lm_t {
     NLK_PVDM_CONCAT = 31,  /**< PVDM concat() instead of avg() */
     NLK_PVDM_SUM    = 32,  /**< PVDM sum() instead of avg() NOT IMPLEMENTED */
     NLK_PVDBOW      = 40,  /**< PVDBOW */
+    NLK_SENNA       = 500, /**< SENNA */
 };
 typedef enum nlk_lm_t NLK_LM;
 
@@ -77,6 +79,7 @@ struct nlk_nn_train_t {
     unsigned int     vector_size;       /**< word/par vector dimensionality */
     uint64_t         word_count;        /**< total word occurances in corpus */
     uint64_t         paragraph_count;   /**< total paragraphs in corpus */
+    bool             line_ids;          /**< file has line (par) ids */
 };
 typedef struct nlk_w2v_train_t NLK_W2V_TRAIN;
 

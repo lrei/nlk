@@ -58,6 +58,8 @@ nlk_neuralnet_is_paragraph_model(const NLK_LM model_type)
             return false;
         case NLK_SKIPGRAM:
             return false;
+        case NLK_SENNA:
+              return false;
         case NLK_MODEL_NULL:
             return false;
         default:
@@ -321,6 +323,8 @@ nlk_neuralnet_save(struct nlk_neuralnet_t *nn, FILE *fp)
     fprintf(fp, "%"PRIu64"\n", nn->train_opts.word_count); 
     /* 11 - paragraph_count */
     fprintf(fp, "%"PRIu64"\n", nn->train_opts.paragraph_count); 
+    /* 12 - line_ids? */
+    fprintf(fp, "%d\n", nn->train_opts.line_ids); 
 
     /* write header: number of layers */
     fprintf(fp, "%zu\n", nn->n_layers);
@@ -471,6 +475,12 @@ nlk_neuralnet_load(FILE *fp, bool verbose)
     if(ret <= 0) {
         goto nlk_neuralnet_load_err_head;
     }
+    /* 12 - line (paragraph) ids in file */
+    ret = fscanf(fp, "%d\n", &tmp); 
+    if(ret <= 0) {
+        goto nlk_neuralnet_load_err_head;
+    }
+    opts.line_ids = tmp;
 
     /**
      * @section create neural network and load weights
@@ -631,6 +641,8 @@ nlk_lm_model(const char *model_name, const bool concat)
         }
     } else if(strcasecmp(model_name, "pvdbow") == 0) {
         lm_type = NLK_PVDBOW;
+    } else if(strcasecmp(model_name, "senna") == 0) {
+        lm_type = NLK_SENNA;
     } else {
         NLK_ERROR_ABORT("Invalid model type.", NLK_EINVAL);
     }
@@ -665,6 +677,8 @@ nlk_lm_learn_rate(NLK_LM lm_type)
             /* fall through */
         case NLK_SKIPGRAM:
             return 0.05;
+        case NLK_SENNA:
+            return 0.01;
         case NLK_MODEL_NULL:
             return 0.01;
         default:
@@ -687,6 +701,7 @@ nlk_lm_context_opts(NLK_LM model, unsigned int window,
     opts->postpad = false;
     opts->paragraph = false;
     opts->prepad_paragraph = false;
+    opts->include_center = false;
 
     /* random_window in range before=[1, before], after=[1, after] */
     opts->random_windows = true;
@@ -711,8 +726,13 @@ nlk_lm_context_opts(NLK_LM model, unsigned int window,
             break;
         case NLK_CBOW:
         case NLK_SKIPGRAM:
-            opts->paragraph = false;
             /* options for CBOW/SKIPGRAM are already set */
+            break;
+        case NLK_SENNA:
+            opts->random_windows = false;
+            opts->prepad = true;
+            opts->postpad = true;
+            opts->include_center = true;
             break;
         case NLK_MODEL_NULL:
         default:
@@ -723,6 +743,9 @@ nlk_lm_context_opts(NLK_LM model, unsigned int window,
 
     opts->max_size = window * 2;
     if(opts->paragraph) {
+        opts->max_size += 1;
+    }
+    if(opts->include_center) {
         opts->max_size += 1;
     }
 

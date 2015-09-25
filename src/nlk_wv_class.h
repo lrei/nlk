@@ -23,13 +23,13 @@
  *****************************************************************************/
 
 
-/** @file nlk_pv_class.h
- * PV classifier definitions
+/** @file nlk_wv_class.h
+ * Word Vector classifier definitions
  */
 
 
-#ifndef __NLK_PV_CLASS_H__
-#define __NLK_PV_CLASS_H__
+#ifndef __NLK_WV_CLASS_H__
+#define __NLK_WV_CLASS_H__
 
 
 #undef __BEGIN_DECLS
@@ -43,25 +43,20 @@
 #endif
 __BEGIN_DECLS
 
+void    nlk_wv_class_senna_train(struct nlk_neuralnet_t *, 
+                                 struct nlk_supervised_corpus_t *,
+                                 int);
 
-unsigned int *nlk_pv_classify(struct nlk_neuralnet_t *, 
-                              struct nlk_layer_lookup_t *, size_t *, size_t,
-                              const bool);
+struct nlk_neuralnet_t  *nlk_wv_class_create_senna(struct nlk_nn_train_t,
+                                                   struct nlk_vocab_t *,
+                                                   struct nlk_layer_lookup_t *, 
+                                                   const size_t, 
+                                                   const bool);
 
-float nlk_pv_classifier(struct nlk_neuralnet_t *, struct nlk_dataset_t *,
-                        const unsigned int, nlk_real, 
-                        const nlk_real, const bool);
+float   nlk_wv_class_senna_test(struct nlk_neuralnet_t *,
+                                struct nlk_supervised_corpus_t *, const int);
 
-
-float nlk_pv_classify_test(struct nlk_neuralnet_t *, const char *, const bool);
-
-
-
-
-float nlk_pv_classifier2(struct nlk_neuralnet_t *, struct nlk_corpus_t *,
-                   struct nlk_dataset_t *, const unsigned int, nlk_real,
-                   const nlk_real, const bool);
 
 
 __END_DECLS
-#endif /* __NLK_PV_CLASS_H__ */
+#endif /* __NLK_WV_CLASS_H__ */

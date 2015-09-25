@@ -201,6 +201,38 @@ nlk_log_softmax_backprop(const NLK_ARRAY *output, const NLK_ARRAY *grad_out,
     NLK_ARRAY_CHECK_NAN(grad_in, "NaN in gradient at input (result)");
 }
 
+/**
+ * HardTanh - Forward
+ */
+void
+nlk_hardtanh_forward(const NLK_ARRAY *input, NLK_ARRAY *output)
+{
+    nlk_array_copy(output, input);
+    nlk_array_hardtanh(output);
+}
+
+
+/**
+ * HardTanh - Backprop
+ *
+ * @param input     the input to the forward function
+ */
+void
+nlk_hardtanh_backprop(const NLK_ARRAY *input, const NLK_ARRAY *grad_out, 
+                       NLK_ARRAY *grad_in)
+{
+    size_t idx = input->len;
+
+    do {
+        idx--;
+        if(input->data[idx] < -1 || input->data[idx] > 1) {
+            grad_in->data[idx] = 0;
+        } else {
+            grad_in->data[idx] = grad_out->data[idx];
+        }
+    } while(idx > 0);
+}
+
 
 /**
  * Rectifier - Rectified Linear Unit (ReLu) -  Forward

@@ -102,6 +102,7 @@ nlk_layer_linear_create_from_arrays(NLK_ARRAY *weights, NLK_ARRAY *bias)
     return layer;
 }
 
+
 /** 
  * Initializes the linear layer weights using the "Xavier Initialization"
  *
@@ -130,6 +131,45 @@ nlk_layer_linear_init_sigmoid(struct nlk_layer_linear_t *layer)
         nlk_array_zero(layer->bias);
     }
 }
+
+
+/** 
+ * Initializes the linear layer weights using the "Collobert Initialization"
+ * used in SENNA.
+ *
+ * Initialization is done by drawing from a centered uniform distribution 
+ * with variance equal to inverse of the square root of the fan-in
+ *
+ *
+ * This strategy follows:
+ *
+ *  Collobert et al
+ *  Natural Language Processing (Almost) from Scratch
+ *  JMLR 2011
+ * 
+ * The bias array is simply zeroed.
+ *
+ * @param layer     the Linear Layer to initialize
+ *
+ * @return no return, the linearlayer's weight matrix will be overwritten
+ */
+void
+nlk_layer_linear_init_senna(struct nlk_layer_linear_t *layer)
+{
+
+    nlk_real u = 0.5 * sqrtf(12 * (1 / sqrtf(layer->weights->rows)));
+
+    /* init weights*/
+    nlk_array_init_uniform(layer->weights, -u, u);
+
+    /* init bias */
+    if(layer->bias != NULL) {
+        nlk_array_zero(layer->bias);
+    }
+}
+
+
+
 
 /**  
  * Linear Layer forward pass f(x) = W.x + b 
@@ -170,34 +210,45 @@ nlk_layer_linear_forward(const NLK_LAYER_LINEAR *layer, const NLK_ARRAY *input,
     NLK_ARRAY_CHECK_NAN(output, "output has NaNs");
 }
 
-/** 
- * Linear Layer backward pass 
+
+/**
+ * Layer Linear update gradient at input (1st step of backpropagation)
  *      gradient_input = weights' * gradient_output 
- *      weights += gradient_output * input'
- *      bias += gradient_output
- *
- * @param layer     the linear layer
- * @param input     the input vector (corresponding to this gradient/output)
- * @param grad_out  gradient at output layer
- *
- * @return no return, layer->grad_in, layer->weights and layer->bias are 
- *         updated
  */
-void 
-nlk_layer_linear_backprop(NLK_LAYER_LINEAR *layer, const NLK_ARRAY *input, 
-                          const NLK_ARRAY *grad_out, NLK_ARRAY *grad_in)
+void nlk_layer_linear_update_gradient(struct nlk_layer_linear_t *layer,
+                                      const NLK_ARRAY *grad_out,
+                                      NLK_ARRAY *grad_in)
 {
-    /* gradient (at input)  */
     nlk_array_zero(grad_in);
+
+    /* gradient (at input)  */
     nlk_matrix_vector_multiply_add(layer->weights, NLK_TRANSPOSE, 
                                    grad_out, grad_in);
+}
+
+
+/** 
+ * Linear Layer update parameters (2nd step of backpropagation)
+ *      weights += (gradient_output * learn_rate) * input'
+ *      bias += (gradient_output * learn_rate)
+ *
+ * @param layer         the linear layer
+ * @param input         the input vector (corresponding to this grad/output)
+ * @param grad_weight  gradient at output layer * learning rate
+ */
+void 
+nlk_layer_linear_update_parameters(struct nlk_layer_linear_t *layer, 
+                                   const NLK_ARRAY *input, 
+                                   const NLK_ARRAY *grad_weight)
+{
     /* update weights */
-    nlk_vector_transposed_multiply_add(grad_out, input, layer->weights);
+    nlk_vector_transposed_multiply_add(grad_weight, input, layer->weights);
     /* update bias */
     if(layer->bias != NULL) {
-        nlk_array_add(grad_out, layer->bias);  
+        nlk_array_add(grad_weight, layer->bias);  
     }
 }
+
 
 /**
  * Free Linear Layer memory 

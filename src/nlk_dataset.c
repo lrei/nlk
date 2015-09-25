@@ -597,6 +597,67 @@ nlk_class_score_semeval_senti_f1(const unsigned int *pred,
     return (f1_pos + f1_neg) / 2.0;
 }
 
+
+/**
+ * F1 Score (Multiclass Micro)
+ * Calculates f1, precision, recall - micro averaged
+ * where f1 = 2 * (precion + recall) / (precision * recall)
+ *
+ * Precision is the ratio tp / (tp + fp) 
+ * Recall is the ratio tp / (tp + fn)
+ *
+ * tp is the number of true positives
+ * fp the number of false positives.
+ * fn the number of false negatives.
+ *
+ * @param pred        array of predictions
+ * @param truth       array containing the ground truth
+ * @param n           the number of test cases (size of pred/truth arrays)
+ * @param n_classes   the number of classes (0 to n)
+ * @param precion     the calculated precision (result)
+ * @param recall      the calculated recall (result)
+ *
+ * @return the f1 score
+ */
+float
+nlk_class_f1pr_score_micro(const unsigned int *pred, 
+                           const unsigned int *truth, 
+                           const size_t n,
+                           const size_t n_classes,
+                           float *precision, float *recall)
+{
+    size_t tp = 0;  /**< # of true positives */
+    size_t fp = 0;  /**< # of false positives */
+    size_t fn = 0;  /**< # of false negatives */
+
+    /* calculate tp, fp and tn globally for each class */
+    for(size_t class_val = 0; class_val < n_classes; class_val++) {
+        for(size_t ii = 0; ii < n; ii++) {
+            /* determine true positives and false negatives */
+            if(truth[ii] == class_val) {
+                if(truth[ii] == pred[ii]) {
+                    tp++;
+                } else {
+                    fn++;
+                }
+            }
+            /* determine false positives */
+            if(pred[ii] == class_val && truth[ii] != class_val) {
+                fp++;
+            }
+        } /* end of class_i */
+    } /* end of all classes */
+
+    /** @section Calculate Precision, Recall, F1
+     */
+
+    *precision = tp / ((double) (tp + fp));
+    *recall = tp / ((double) (tp + fn));
+
+    return (2.0 * *precision * *recall) / (*precision + *recall);
+}
+
+
 /**
  * Create a Confusion Matrix
  */
@@ -703,13 +764,14 @@ nlk_class_score_cm_print(const unsigned int *pred, const unsigned int *truth,
  *
  * @return array of sentence sizes (allocated)
  */
-size_t *
-nlk_supervised_corpus_count_conll(char *corpus_path, size_t *n_sentences)
+unsigned int *
+nlk_supervised_corpus_count_conll(const char *corpus_path, size_t *n_sentences)
 {
-    size_t *sentence_sizes = NULL;
-    size_t sentence_index = 0;
-    bool empty = false;         /**< line is empty */
+    unsigned int *sentence_sizes = NULL;
+    unsigned int sentence_index = 0;
+    bool empty = true;          /**< line is empty */
     bool empty_prev = true;     /**< previous line was empty */
+    bool first_line = true;
 
     /** @section Allocations
      */
@@ -722,7 +784,8 @@ nlk_supervised_corpus_count_conll(char *corpus_path, size_t *n_sentences)
 
     /* allocate array */
     *n_sentences = nlk_text_count_empty_lines(corpus_path);
-    sentence_sizes = (size_t *) calloc(sizeof(size_t), *n_sentences);
+    sentence_sizes = (unsigned int *) calloc(sizeof(unsigned int),
+                                             *n_sentences);
     if(sentence_sizes == NULL) {
         NLK_ERROR_NULL("unable to allocate memory for sentence", NLK_ENOMEM);
     }
@@ -734,26 +797,34 @@ nlk_supervised_corpus_count_conll(char *corpus_path, size_t *n_sentences)
     /* Read lines loop */
     while(fgets(buffer, NLK_BUFFER_SIZE - 1, file) != NULL) {
         char c = buffer[0];
+        empty = true;
 
         /* check if line is empty */
         while(c != '\0' && c != '\n' && c != EOF) {
             if(!isspace(c) && !iscntrl(c)) {
                 empty = false;
                 break;
-            } else {
-                empty = true;
             }
             c++;
         }
-        /* if line is empty (but not the previous), move to next sentence */
-        if(empty && !empty_prev) {
-            sentence_index++;
-        } else if(!empty) { /* if line is not empty, increment word count */
-            sentence_sizes[sentence_index]++;
+        if(!empty) { /* if line is not empty, increment word count */
+            if(empty_prev && first_line) {
+                first_line = false;
+                sentence_sizes[sentence_index]++;
+            } else if(empty_prev) { /* not the first line */
+                    sentence_index++;
+                    sentence_sizes[sentence_index]++;
+            } else { /* previous not empty */
+                sentence_sizes[sentence_index]++;
+            }
         }
-
         empty_prev = empty;
     }
+
+    sentence_index++;
+    realloc(sentence_sizes, sizeof(unsigned int) * sentence_index);
+    *n_sentences = sentence_index;
+
 
     fclose(file);
     free(buffer);
@@ -779,12 +850,13 @@ nlk_supervised_corpus_count_conll(char *corpus_path, size_t *n_sentences)
  * @return nlk_supervised_corpus_t
  */
 struct nlk_supervised_corpus_t *
-nlk_supervised_corpus_load_conll(char *corpus_path)
+nlk_supervised_corpus_load_conll(const char *corpus_path,
+                                struct nlk_vocab_t *label_map)
 {
     size_t n_sentences;
     struct nlk_supervised_corpus_t *corpus = NULL;
-    bool empty = false;
-    bool empty_prev = false;
+    bool empty = true;
+    bool empty_prev = true;
     struct nlk_vocab_t *label;
 
     size_t si = 0;                  /**< sentence index */
@@ -802,30 +874,37 @@ nlk_supervised_corpus_load_conll(char *corpus_path)
     corpus = (struct nlk_supervised_corpus_t *) 
                 calloc(sizeof(struct nlk_supervised_corpus_t), 1);
     nlk_assert_silent(corpus != NULL);
+    corpus->label_map = label_map;
 
     /* count words and sentences */
-    corpus->n_words = nlk_supervised_corpus_count_conll(corpus_path, 
-                                                        &n_sentences);
+    unsigned int *n_words = nlk_supervised_corpus_count_conll(corpus_path, 
+                                                              &n_sentences);
     corpus->n_sentences = n_sentences;
+    corpus->n_words = n_words;
+    corpus->size = 0;
+    for(size_t ii = 0; ii < n_sentences; ii++) {
+        corpus->size += n_words[ii];
+    }
 
     /**@subsection Allocate space for words and labels 
      */
-    corpus->classes = (size_t **) malloc(sizeof(size_t *) * n_sentences);
+    corpus->classes = (unsigned int **) malloc(sizeof(unsigned int *) 
+                                               * n_sentences);
     nlk_assert_silent(corpus->classes != NULL);
 
 
-    corpus->words = (char ***) malloc(sizeof(char **) * n_sentences);
+    corpus->words = (char ***) malloc(sizeof(char **) * (n_sentences + 1));
     nlk_assert_silent(corpus->words != NULL);
 
 
     for(size_t ii = 0; ii < n_sentences; ii++) {
-        size_t sentence_words = corpus->n_words[ii];
+        size_t sentence_words = n_words[ii] + 1;    /* +1 for null term */
 
-        corpus->words[ii] = (char **) malloc(sizeof(char *) * sentence_words);
+        corpus->words[ii] = (char **) calloc(sizeof(char *), sentence_words);
         nlk_assert_silent(corpus->words[ii] != NULL);
 
-        corpus->classes[ii] = (size_t *) 
-                                malloc(sizeof(size_t) * sentence_words);
+        corpus->classes[ii] = (unsigned int *) 
+                                calloc(sizeof(unsigned int), sentence_words);
         nlk_assert_silent(corpus->classes[ii] != NULL);
     }
 
@@ -841,19 +920,22 @@ nlk_supervised_corpus_load_conll(char *corpus_path)
         char c = buffer[0];
         size_t next;                    /**< character in buffer index */
         size_t end = strlen(buffer);    /**< end of buffer character index */
+        empty = true;
 
         /* check if line is empty */
         while(c != '\0' && c != EOF && c != '\n') {
             if(!isspace(c) && !iscntrl(c)) {
                 empty = false;
                 break;
-            } else {
-                empty = true;
             }
             c++;
         }
         /* if line is empty (but not the previous), move to next sentence */
         if(empty && !empty_prev) {
+            /* Null terminate */
+            corpus->words[si][wi] = (char *) 
+                                    malloc(sizeof(char));
+            corpus->words[si][wi][0] = '\0';
             si++;
             wi = 0;
         } else if(!empty) { /* if line is not empty, read */
@@ -873,9 +955,9 @@ nlk_supervised_corpus_load_conll(char *corpus_path)
             /* @subsection Add to corpus
              */
             /* add word */
-            size_t word_len = strlen(word);
+            size_t word_len = strlen(word) + 1; /* +1 null terminator */
             corpus->words[si][wi] = (char *) 
-                                    malloc(sizeof(char) * word_len + 1);
+                                    malloc(sizeof(char) * word_len);
             nlk_assert_silent(corpus->words[si][wi] != NULL);
             strcpy(corpus->words[si][wi], word);
 
@@ -888,6 +970,8 @@ nlk_supervised_corpus_load_conll(char *corpus_path)
         empty_prev = empty;
 
     }
+
+    corpus->n_classes = nlk_vocab_size(&corpus->label_map);
 
     fclose(file);
     free(buffer);
@@ -904,6 +988,25 @@ error:
 
 
 /**
+ * Max sentence size (in words) in the supervised corpus
+ *
+ */
+unsigned int
+nlk_supervised_corpus_max_sentence_size(struct nlk_supervised_corpus_t *corpus)
+{
+    unsigned int max = 0;
+
+    for(unsigned int si = 0; si < corpus->n_sentences; si++) {
+        if(corpus->n_words[si] > max) {
+            max = corpus->n_words[si];
+        }
+    }
+
+    return max;
+}
+
+
+/**
  * Print a supervised corpus
  *
  * @param corpus    the supervised corpus to print
@@ -914,11 +1017,11 @@ nlk_supervised_corpus_print(struct nlk_supervised_corpus_t *corpus)
     struct nlk_vocab_t *label;
 
     for(size_t si = 0; si < corpus->n_sentences; si++) {
-        for(size_t wi = 0; wi < corpus->n_words[si]; wi++) {
+        for(size_t wi = 0; corpus->words[si][wi][0] != '\0'; wi++) {
             label = nlk_vocab_at_index(&corpus->label_map, 
                                        corpus->classes[si][wi]);
             printf("%s\t%s\n", corpus->words[si][wi], label->word);
         }
-        printf(" \t \n");
+        printf("\n");
     }
 }
