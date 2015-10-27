@@ -70,27 +70,35 @@ enum nlk_vocab_type_t {
 };
 typedef enum nlk_vocab_type_t NLK_VOCAB_TYPE;
 
+/** @struct nlk_code_t
+ * Structure that holds huffman coding
+ */
+struct nlk_vocab_code_t {
+    uint8_t     length;  /**< length of *code array */
+    uint8_t     code[NLK_MAX_CODE];    /**< huffman code */
+    uint32_t    point[NLK_MAX_CODE];   /**< HS Softmax node "address" */
+};
+
 
 /** @struct nlk_vocab_t
- * Vocabulary structure - a hashmap from words to their huffman code and count
+ * Vocabulary structure - a hashmap from words to their index, count 
+ * and code.
  *
  * @note
- * Each struct nlk_vocab_t is a vocabulary item (e.g. a word). However this uses 
- * uthash to create a hashtable, and thus a single **nlk_vocab pointer 
- * points to the entire vocabulary (e.g. all words) stored in a hastable 
- * with a (possibly sorted) doubly linked list and a bloom filter for quick
- * misses.
+ * Each struct nlk_vocab_t is a vocabulary item (e.g. a word). 
+ * However this uses uthash to create a hashtable, 
+ * and thus a single **nlk_vocab pointer points to the entire vocabulary 
+ * (e.g. all words) stored in a hastable with a (possibly sorted) 
+ * doubly linked list and a bloom filter for quick misses.
  * @endnote
  */
 struct nlk_vocab_t {
-    char                 *word;                  /**< the word string (key) */
-    enum nlk_vocab_type_t type;                  /**< vocab item type */
-    size_t                index;                 /**< sorted index position */
-    uint64_t              count;                 /**< word count */
-    size_t                code_length;           /**< length of *code array */
-    uint8_t               code[NLK_MAX_CODE];    /**< huffman code */
-    size_t                point[NLK_MAX_CODE];   /**< HS Softmax nodes */
-    UT_hash_handle        hh;                    /**< handle for hash table */
+    char                    *word;      /**< the word string (key) */
+    enum nlk_vocab_type_t    type;      /**< vocab item type */
+    size_t                   index;     /**< sorted index position */
+    uint64_t                 count;     /**< word count */
+    struct nlk_vocab_code_t *hc;        /**< huffman code */
+    UT_hash_handle           hh;        /**< handle for hash table */
 };
 typedef struct nlk_vocab_t NLK_VOCAB;
 

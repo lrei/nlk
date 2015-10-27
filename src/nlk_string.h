@@ -23,13 +23,16 @@
  *****************************************************************************/
 
 
-/** @file nlk_wv_class.h
- * Word Vector classifier definitions
+/** @file nlk_string.h
+ * Unicode String Manipulation
  */
 
+#ifndef __NLK_STRING_H__
+#define __NLK_STRING_H__
 
-#ifndef __NLK_WV_CLASS_H__
-#define __NLK_WV_CLASS_H__
+
+#include <utf8proc.h>
+#include <inttypes.h>
 
 
 #undef __BEGIN_DECLS
@@ -43,24 +46,11 @@
 #endif
 __BEGIN_DECLS
 
-void    nlk_wv_class_senna_train(struct nlk_neuralnet_t *, 
-                                 struct nlk_supervised_corpus_t *,
-                                 int);
 
-struct nlk_neuralnet_t  *nlk_wv_class_create_senna(struct nlk_nn_train_t,
-                                                   struct nlk_vocab_t *,
-                                                   struct nlk_layer_lookup_t *, 
-                                                   const size_t, 
-                                                   const bool);
-
-float   nlk_wv_class_senna_test_eval(struct nlk_neuralnet_t *,
-                                     struct nlk_supervised_corpus_t *, 
-                                     const int);
-void    nlk_wv_class_senna_test_out(struct nlk_neuralnet_t *,
-                                    struct nlk_supervised_corpus_t *, FILE *);
-
-
-
+ssize_t nlk_string_lower(const char *, const ssize_t, char *);
+ssize_t nlk_string_upper(const char *, const ssize_t, char *);
+ssize_t nlk_string_get_char(const char *, size_t, char *);
+bool    nlk_string_is_locale_utf8();
 
 __END_DECLS
-#endif /* __NLK_WV_CLASS_H__ */
+#endif /* __NLK_STRING_H__ */

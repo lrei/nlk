@@ -65,7 +65,7 @@ nlk_wv_class_create_senna(struct nlk_nn_train_t train_opts,
 
     struct nlk_context_opts_t ctx_opts;
 
-    size_t hidden_size = 300; /* @TODO make option */
+    size_t hidden_size = train_opts.vector_size;
 
     /* create structure */
     nn = nlk_neuralnet_create(2);
@@ -444,10 +444,47 @@ error:
 
 
 /**
- *
+ * Convenience function - outputs to file: 
+ * [word]\t[TRUE_CLASS]\t[PRED_CLASS]\n
+ */
+void
+nlk_wv_class_senna_test_out(struct nlk_neuralnet_t *nn,
+                            struct nlk_supervised_corpus_t *test,
+                            FILE *output)
+{
+    unsigned int **pred;
+    if(test == NULL) {
+        NLK_ERROR_VOID("invalid test set", NLK_FAILURE);
+        /* unreachable */
+    }
+
+    pred = nlk_wv_class_senna_classify(nn, test, false);
+
+    /* write */
+    for(size_t si = 0; si < test->n_sentences; si++) {
+        for(size_t wi = 0; wi < test->n_words[si]; wi++) {
+            char *pred_label = nlk_vocab_at_index(&test->label_map,
+                                                  pred[si][wi])->word; 
+            char *true_label = nlk_vocab_at_index(&test->label_map,
+                                                  test->classes[si][wi])->word;
+            char *word = test->words[si][wi];
+            fprintf(output, "%s %s %s\n", word, true_label, pred_label); 
+        }
+        fprintf(output, "\n");
+    }
+    fflush(output);
+
+
+    /*nlk_free_double((void **)pred, test->size);*/
+
+}
+
+
+/**
+ * A convenience function for evaluating results
  */
 float
-nlk_wv_class_senna_test(struct nlk_neuralnet_t *nn,
+nlk_wv_class_senna_test_eval(struct nlk_neuralnet_t *nn,
                         struct nlk_supervised_corpus_t *test,
                         const int verbose)
 {
@@ -479,10 +516,10 @@ nlk_wv_class_senna_test(struct nlk_neuralnet_t *nn,
                                     &prec, &rec);
     if(verbose) {
         printf("\nTEST SCORE:\n"
-               "accuracy =\t%.3f\n"
-               "precision =\t%.3f\n"
-               "recall =\t%.3f\n"
-               "f1 = %.3f\n\n", 
+               "accuracy =\t%.4f\n"
+               "precision =\t%.4f\n"
+               "recall =\t%.4f\n"
+               "f1 = %.4f\n\n", 
                ac, prec, rec, f1);
     }
 

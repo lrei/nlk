@@ -629,6 +629,7 @@ nlk_class_f1pr_score_micro(const unsigned int *pred,
     size_t tp = 0;  /**< # of true positives */
     size_t fp = 0;  /**< # of false positives */
     size_t fn = 0;  /**< # of false negatives */
+    float div = 0;
 
     /* calculate tp, fp and tn globally for each class */
     for(size_t class_val = 0; class_val < n_classes; class_val++) {
@@ -650,9 +651,23 @@ nlk_class_f1pr_score_micro(const unsigned int *pred,
 
     /** @section Calculate Precision, Recall, F1
      */
+    div = tp + fp;
+    if(div == 0) {
+        *precision = 0;
+    } else {
+        *precision = tp / div;
+    }
 
-    *precision = tp / ((double) (tp + fp));
-    *recall = tp / ((double) (tp + fn));
+    div = tp + fn;
+    if(div == 0) {
+        *recall = 0;
+    } else {
+        *recall = tp / div;
+    }
+
+    if(*precision == 0 || *recall == 0) {
+        return 0.0;
+    }
 
     return (2.0 * *precision * *recall) / (*precision + *recall);
 }

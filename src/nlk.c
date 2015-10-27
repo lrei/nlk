@@ -1,5 +1,6 @@
 
 #include <stdbool.h>
+#include <locale.h>
 #include <omp.h>
 
 #include "nlk_err.h"
@@ -52,6 +53,7 @@ nlk_format(const char *format_name)
 void
 nlk_init()
 {
+    setlocale (LC_ALL, "");
     nlk_random_init_xs1024(nlk_random_seed());
     nlk_table_sigmoid_create();
     nlk_tic_reset();

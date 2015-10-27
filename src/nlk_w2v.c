@@ -202,7 +202,7 @@ nlk_w2v_hs(struct nlk_neuralnet_t *nn, const NLK_ARRAY *lk1_out,
     nlk_real out;
     nlk_real lk2_out;
     nlk_real grad_out;
-    size_t point;
+    uint32_t point;
     uint8_t code;
 
     /** @section Hierarchical Softmax Forward
@@ -212,9 +212,9 @@ nlk_w2v_hs(struct nlk_neuralnet_t *nn, const NLK_ARRAY *lk1_out,
      */
 
     /* for each point of center word */
-    for(size_t pp = 0; pp < center_word->code_length; pp++) {
-        point = center_word->point[pp];
-        code = center_word->code[pp];
+    for(size_t pp = 0; pp < center_word->hc->length; pp++) {
+        point = center_word->hc->point[pp];
+        code = center_word->hc->code[pp];
 
         /* forward with lookup for point pp */
         nlk_layer_lookup_forward(nn->hs, lk1_out, point, &lk2_out);

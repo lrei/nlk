@@ -113,7 +113,7 @@ nlk_vocab_add_item(struct nlk_vocab_t **vocab, const char *word,
     /* set index and count */
     vocab_word->index = 0;
     vocab_word->count = count;
-    vocab_word->code_length = 0;
+    vocab_word->hc = NULL;
     vocab_word->type = type;
 
     HASH_ADD_STR(*vocab, word, vocab_word); /* hash by word */
@@ -150,7 +150,6 @@ nlk_vocab_add(struct nlk_vocab_t **vocab, char *word,
         vocab_word->count += 1;
     }
 
-    
     return vocab_word;
 }
 
@@ -186,9 +185,6 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
     clock_t start = clock();
 
     /* open file */
-    if(verbose) {
-        nlk_tic("vocabulary: counting lines\n", true);
-    }
     total_lines = nlk_text_count_lines(filepath);
     
     /* Limit the number of threads */
@@ -338,6 +334,10 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
 
     /** @section Parallel reduce of vocabularies
      */
+    if(num_threads > 1 && verbose) {
+        printf("\n");
+        nlk_tic("vocabulary: merging parallel vocabularies", true);
+    }
     int vs = num_threads / 2;
     while(vs > 1) {
 #pragma omp parallel for
@@ -356,8 +356,8 @@ nlk_vocab_read_add(struct nlk_vocab_t **vocabulary, const char *filepath,
         nlk_vocab_free(&vocabs[0]);
     }
 
-    if(verbose) {
-        printf("\n");
+    if(num_threads > 1 && verbose) {
+        nlk_tic("vocabulary: merging finished.", true);
     }
 
     return NLK_SUCCESS;
@@ -426,17 +426,22 @@ nlk_vocab_create(const char *filepath, const bool par_id,
     /* create */
     nlk_vocab_read_add(&vocab, filepath, par_id, verbose);
 
-    /* reduce - also sorts and encodes */
+    /* reduce to min_count - also sorts and encodes */
     if(replace) {
+        if(verbose) {
+            nlk_tic("vocabulary: replacing < min_count and sorting", true);
+        }
         nlk_vocab_reduce_replace(&vocab, min_count);
     } else {
+         if(verbose) {
+            nlk_tic("vocabulary: removing < min_count and sorting", true);
+        }
         nlk_vocab_reduce(&vocab, min_count);
-
     }
 
     if(verbose) {
         nlk_tic_reset();
-        printf("\nVocabulary words: %zu (total count: %"PRIu64")\n", 
+        printf("vocabulary: words: %zu (total count: %"PRIu64")\n", 
                 nlk_vocab_size(&vocab), nlk_vocab_total(&vocab));
     }
 
@@ -564,7 +569,6 @@ nlk_vocab_total(struct nlk_vocab_t **vocab)
  * @note
  * Sort is called to update the position index which after the reduce call
  * has "holes".
- * New huffman coding is calculated
  * @endnote
  */
 void
@@ -593,8 +597,6 @@ nlk_vocab_reduce(struct nlk_vocab_t **vocab, const uint64_t min_count)
     /* call sort to update the index */
     nlk_vocab_sort(vocab);
 
-    /* encode */
-    nlk_vocab_encode_huffman(vocab);
 }
 
 /**
@@ -711,6 +713,55 @@ void nlk_vocab_sort(struct nlk_vocab_t **vocab)
     }
 }
 
+
+/**
+ * Creates (alloc) a code structure for holding huffman coding data
+ */
+struct nlk_vocab_code_t *
+nlk_vocab_code_create(uint8_t code_length)
+{
+    struct nlk_vocab_code_t *hc = NULL;
+
+    hc = (struct nlk_vocab_code_t *) malloc(sizeof(struct nlk_vocab_code_t));
+    nlk_assert(hc != NULL, "failed to allocate memory for code struct");
+
+    hc->length = code_length;
+
+    /*
+    hc->code = (uint8_t *) malloc(sizeof(uint8_t) * code_length);
+    nlk_assert(hc->code != NULL, "failed to allocate memory for code array");
+
+    hc->point = (uint32_t *) malloc(sizeof(uint32_t) * code_length);
+    nlk_assert(hc->point != NULL, "failed to allocate memory for code point");
+    */
+
+    return hc;
+
+error:
+    NLK_ERROR_ABORT("", NLK_ENOMEM);
+}
+
+
+void
+nlk_vocab_code_free(struct nlk_vocab_code_t *hc)
+{
+    if(hc != NULL) {
+        /*
+        if(hc->code != NULL) {
+            free(hc->code);
+            hc->code = NULL;
+        }
+        if(hc->point != NULL) {
+            free(hc->point);
+            hc->point = NULL;
+        }
+        */
+        free(hc);
+        hc = NULL;
+    }
+}
+
+
 /**
  * Create Huffman binary tree for hierarchical softmax (HS).
  * Adds *code* (huffman encoded representation) and HS *point* fields to 
@@ -718,8 +769,12 @@ void nlk_vocab_sort(struct nlk_vocab_t **vocab)
  * 
  * @params vocab    the vocabulary
  *
+ * @warning
+ * Requires vocabulary to be sorted.
+ * @endwarning
+ *
  * @note
- * thanks to word2vec: https://code.google.com/p/word2vec/
+ * implementation owes thanks to word2vec https://code.google.com/p/word2vec/
  * See 
  * "Hierarchical probabilistic neural network language model"
  * Frederic Morin & Yoshua Bengio, AISTATS 2005 
@@ -740,7 +795,7 @@ void nlk_vocab_sort(struct nlk_vocab_t **vocab)
 void
 nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
 {
-    size_t            vsize;                /* the vocabulary size */ 
+    uint32_t          vsize;                /* the vocabulary size */ 
     size_t            nn;                   /* for indexing over nodes */
     size_t            min1;                 /*  the minimum index */
     size_t            min2;                 /* the second minimum index */
@@ -753,9 +808,6 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
     size_t                     ii;
     struct nlk_vocab_t        *vi;          /* vocabulary iterator */
 
-    /* sort the vocabulary */
-    nlk_vocab_sort(vocab);
-
     /**
      * The vocabulary is sorted so we can use the fast version O(n) of the 
      * huffman tree building algorithm.
@@ -763,8 +815,8 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
      */
     vsize = nlk_vocab_words_size(vocab);
     uint64_t *count = (uint64_t *) calloc(vsize * 2 + 1, sizeof(uint64_t));
-    uint8_t *binary = (uint8_t *)  calloc(vsize * 2 + 1, sizeof(uint64_t));
-    size_t *parent = (size_t *)    calloc(vsize * 2 + 1, sizeof(size_t));
+    uint8_t *binary = (uint8_t *)  calloc(vsize * 2 + 1, sizeof(uint8_t));
+    uint32_t *parent = (uint32_t *)    calloc(vsize * 2 + 1, sizeof(uint32_t));
     if(count == NULL || binary == NULL || parent == NULL) {
         NLK_ERROR_VOID("failed to allocate memory for huffman tree", 
                        NLK_ENOMEM);
@@ -857,11 +909,11 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
             code_length++;
         }
         /* assign code and point to vocabulary item in correct order */
-        vi->code_length = code_length;
-        vi->point[0] = vsize - 2;
+        vi->hc = nlk_vocab_code_create(code_length);
+        vi->hc->point[0] = vsize - 2;
         for(ii = 0; ii < code_length; ii++) {
-            vi->code[code_length - ii - 1] = code[ii];
-            vi->point[code_length - ii] = point[ii] - vsize;
+            vi->hc->code[code_length - ii - 1] = code[ii];
+            vi->hc->point[code_length - ii] = point[ii] - vsize;
         }
         nn++;
     }
@@ -880,12 +932,16 @@ nlk_vocab_encode_huffman(struct nlk_vocab_t **vocab)
 size_t 
 vocab_max_code_length(struct nlk_vocab_t **vocab)
 {
-    struct nlk_vocab_t *vi;
+    struct nlk_vocab_t *vi = *vocab;
     size_t code_length = 0;
 
+    if(vi->hc == NULL) {
+        return 0;
+    }
+
     for(vi = *vocab; vi != NULL; vi = vi->hh.next) {
-        if(vi->code_length > code_length) {
-            code_length = vi->code_length;
+        if(vi->hc->length > code_length) {
+            code_length = vi->hc->length;
         }
     }
     return code_length;
@@ -995,10 +1051,9 @@ nlk_vocab_import(const char *filepath, const size_t max_word_size,
     fclose(in);
     in = NULL;
 
-    /* sort and encode */
+    /* sort */
     if(counts) {
         nlk_vocab_sort(&vocab);
-        nlk_vocab_encode_huffman(&vocab);
     }
 
     return vocab;
@@ -1008,22 +1063,27 @@ void
 nlk_vocab_save_item(struct nlk_vocab_t *vi, FILE *file)
 {
     size_t ii = 0;
+    uint8_t code_length = 0;
 
-    fprintf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
-             vi->word, vi->type, vi->index, vi->count, vi->code_length);
+    if(vi->hc != NULL) {
+        code_length = vi->hc->length;
+    }
+        
+    fprintf(file, "%s\t%d\t%zu\t%"PRIu64"\t%"PRIu8"\t", 
+             vi->word, vi->type, vi->index, vi->count, code_length);
 
-    if(vi->code_length != 0) {
+    if(code_length != 0) {
         /* code */
-        for(ii = 0; ii < vi->code_length - 1; ii++) {
-            fprintf(file, "%"PRIu8" ", vi->code[ii]);
+        for(ii = 0; ii < (uint8_t) (code_length - 1); ii++) {
+            fprintf(file, "%"PRIu8" ", vi->hc->code[ii]);
         }
-        fprintf(file, "%"PRIu8"\t", vi->code[vi->code_length - 1]);
+        fprintf(file, "%"PRIu8"\t", vi->hc->code[code_length - 1]);
 
         /* point */
-        for(ii = 0; ii < vi->code_length - 1; ii++) {
-            fprintf(file, "%zu ", vi->point[ii]);
+        for(ii = 0; ii < (uint8_t) (code_length - 1); ii++) {
+            fprintf(file, "%"PRIu32" ", vi->hc->point[ii]);
         }
-        fprintf(file, "%zu\n", vi->point[vi->code_length - 1]);
+        fprintf(file, "%"PRIu32"\n", vi->hc->point[code_length - 1]);
     } else {
         fprintf(file, "\n");
     }
@@ -1081,7 +1141,7 @@ nlk_vocab_load(FILE *file)
     int type = 0;
     size_t index = 0;
     uint64_t count = 0;
-    size_t code_length = 0;
+    uint8_t code_length = 0;
 
     /* load header */
     ret = fscanf(file, "%zu\n", &vocab_size);
@@ -1095,7 +1155,7 @@ nlk_vocab_load(FILE *file)
     }
 
     for(vv = 0; vv < vocab_size; vv++) {
-        ret = fscanf(file, "%s\t%d\t%zu\t%"PRIu64"\t%zu\t", 
+        ret = fscanf(file, "%s\t%d\t%zu\t%"SCNu64"\t%"SCNu8"\t", 
                      word, &type, &index, &count, &code_length);
         nlk_assert(ret > 0, "invalid word");
         vocab_word = nlk_vocab_add_item(&vocab, word, count, type);
@@ -1105,22 +1165,25 @@ nlk_vocab_load(FILE *file)
         }
 
         if(code_length != 0) {
-            vocab_word->code_length = code_length;
+            vocab_word->hc = nlk_vocab_code_create(code_length);
+            vocab_word->hc->length = code_length;
 
             /* code */
-            for(ii = 0; ii < code_length - 1; ii++) {
-                ret = fscanf(file, "%"SCNu8" ", &vocab_word->code[ii]);
+            for(ii = 0; ii < (uint8_t)(code_length - 1); ii++) {
+                ret = fscanf(file, "%"SCNu8" ", &vocab_word->hc->code[ii]);
                 nlk_assert(ret > 0, "invalid code");
             }
-            ret = fscanf(file, "%"SCNu8"\t", &vocab_word->code[code_length - 1]);
+            ret = fscanf(file, "%"SCNu8"\t", 
+                         &vocab_word->hc->code[code_length - 1]);
             nlk_assert(ret > 0, "invalid code");
 
             /* point */
-            for(ii = 0; ii < code_length - 1; ii++) {
-                ret = fscanf(file, "%zu ", &vocab_word->point[ii]);
+            for(ii = 0; ii < (uint8_t)(code_length - 1); ii++) {
+                ret = fscanf(file, "%"SCNu32" ", &vocab_word->hc->point[ii]);
                 nlk_assert(ret > 0, "invalid point");
             }
-            ret = fscanf(file, "%zu\n", &vocab_word->point[code_length - 1]);
+            ret = fscanf(file, "%"SCNu32"\n",
+                         &vocab_word->hc->point[code_length - 1]);
             nlk_assert(ret > 0, "invalid point");
 
 

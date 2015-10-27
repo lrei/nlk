@@ -54,9 +54,12 @@ enum cmd_opts_t {
     CMD_OPTS_VECTOR_SIZE,   /**< word/pv size */
     CMD_OPTS_WINDOW,        /**< context window  size = [window, window]*/
     CMD_OPTS_SAMPLE,        /**< undersample rate for words */
-    /* supervised train options */
+    /* supervised sentence labelling options */
     CMD_OPTS_TRAIN_SENT,    /**< CONLL format file */
+    CMD_OPTS_EVAL_SENT,     /**< CONLL format file */
     CMD_OPTS_TEST_SENT,     /**< CONLL format file */
+    CMD_OPTS_OUT_SENT,     /**< CONLL format file */
+    /* supervised document classification options */
     CMD_OPTS_CLASS,         /**< file specifying an id-class mapping */
     CMD_OPTS_CLASS_TEST,    /**< first id used as test */
     CMD_OPTS_CLASS_FILE,    /**< first id used as test */
@@ -124,13 +127,17 @@ Training/Classification:\n\
   --window [INT]            the size of the context window\n\
   --sample [FLOAT]          the word undersampling rate\n\
 \n\
-Supervised Options:\n\
-  --train-sent-word [FILE]  train classifier with CONLL format file\n\
-  --test-sent-word [FILE]   test classifier with CONLL format file\n\
+Supervised Sentence-Word Classification Options:\n\
+  --train-sent-word [FILE]      train classifier with CONLL format file\n\
+  --test-sent-word [FILE]       evaluate classifier with CONLL format file\n\
+  --classify-sent-word [FILE]   classify a file in CONLL format w/o labels\n\
+  --output-sent-word [FILE]     output the results (classes) to this file\n\
+\n\
+Supervised Document Classification Options:\n\
   --classes [FILE]          train classifier with this id-class map file\n\
   --test [FILE]             test classifier with this id-class map file\n\
   --test-file [FILE]        test classifier with this file [NOT]\n\
-  --test-classes [FILE]     test classifier with this id-class map file [NOT]\n\
+  --test-classes [FILE]     test classifier with this id-class map file[NI!]\n\
   --classify [FILE]         classify this file\n\
   --output-class [FILE]     output classification results to this file\n\
 \n\
@@ -242,10 +249,15 @@ main(int argc, char **argv)
     nlk_real learn_rate_decay   = 0;    /**< learning rate decay */
     float sample_rate           = 1e-3; /**< random undersample of freq words */
 
-    /** @subsection classification
+    /** @subsection sentence labelling
      */
     char *train_sent_file       = NULL; /**< train word classifier */
     char *test_sent_file        = NULL; /**< test word classifier */
+    char *out_sent_file         = NULL; /**< output file for word classifier */
+    char *eval_sent_file        = NULL; /**< eval word classifier */
+
+    /** @subsection document classification
+     */
     char *class_train_file      = NULL; /**< train class map file */
     char *class_test_file       = NULL; /**< test class map file */
     char *classify_file         = NULL; /**< a file to classify */
@@ -312,9 +324,12 @@ main(int argc, char **argv)
             {"size",            required_argument, 0, CMD_OPTS_VECTOR_SIZE   },
             {"window",          required_argument, 0, CMD_OPTS_WINDOW        },
             {"sample",          required_argument, 0, CMD_OPTS_SAMPLE        },
-            /* supervised */
+            /* supervised sentence labelling */
             {"train-sent-word", required_argument, 0, CMD_OPTS_TRAIN_SENT    },
             {"test-sent-word",  required_argument, 0, CMD_OPTS_TEST_SENT     },
+            {"output-sent-word",required_argument, 0, CMD_OPTS_OUT_SENT     },
+            {"eval-sent-word",  required_argument, 0, CMD_OPTS_EVAL_SENT     },
+            /* supervised document classification */
             {"classes",         required_argument, 0, CMD_OPTS_CLASS         },
             {"test",            required_argument, 0, CMD_OPTS_CLASS_TEST    },
             {"output-classes",  required_argument, 0, CMD_OPTS_OUT_CLASS     },
@@ -336,7 +351,7 @@ main(int argc, char **argv)
             /* PV generation (inferance/test) */
             {"gen-pvs",         required_argument, 0, CMD_OPTS_GEN_PVS       },
             {"gen-output",      required_argument, 0, CMD_OPTS_GEN_SAVE      },
-            /* evaluation */
+            /* intrinsic evaluation */
             {"questions",  required_argument, 0, CMD_OPTS_EVAL_QUESTIONS     },
             {"paraphrases",required_argument, 0, CMD_OPTS_EVAL_PARAPHRASES   },
             {"eval-pvs",   required_argument, 0, CMD_OPTS_EVAL_PVS           },
@@ -391,7 +406,7 @@ main(int argc, char **argv)
             case CMD_OPTS_SAMPLE:
                 sample_rate = atof(optarg);
                 break;
-            /* supervised */
+            /* supervised document classification */
             case CMD_OPTS_CLASS:
                 class_train_file = optarg;
                 break;
@@ -404,11 +419,18 @@ main(int argc, char **argv)
             case CMD_OPTS_OUT_CLASS:
                 class_out_file = optarg;
                 break;
+            /* sentence labelling */
             case CMD_OPTS_TRAIN_SENT:
                 train_sent_file = optarg;
                 break;
             case CMD_OPTS_TEST_SENT:
                 test_sent_file = optarg;
+                break;
+             case CMD_OPTS_EVAL_SENT:
+                eval_sent_file = optarg;
+                break;
+             case CMD_OPTS_OUT_SENT:
+                out_sent_file = optarg;
                 break;
             /* vocabulary */
             case CMD_OPTS_SAVE_VOCAB:
@@ -515,7 +537,7 @@ main(int argc, char **argv)
     /** @section Init and general defaults
      */
     /* Global Init */
-    nlk_init(); /* initializes random number generator and sigmoid table */
+    nlk_init(); /* initialize random number generator, sigmoid table, locale */
     nlk_set_num_threads(num_threads);
     if(verbose) {
         printf("num threads: %d\n", nlk_get_num_threads());
@@ -582,12 +604,51 @@ main(int argc, char **argv)
         }
         vocab = nlk_vocab_create(corpus_file, line_ids, min_count, replace, 
                                  verbose);
+        if(verbose) {
+            nlk_tic("vocabulary created", true);
+        }
+
+        if(hs) {
+            nlk_vocab_encode_huffman(&vocab);
+            if(verbose) {
+                nlk_tic("vocary huffman encoding done", true);
+            }
+        }
 
         uint64_t total_lines = nlk_text_count_lines(corpus_file);
-        /* total vocabularized word count */
+        if(verbose) {
+            nlk_tic("lines = ", false);
+            printf("%"PRIu64"\n", total_lines);
+            fflush(stdout);
+        }
+        /* total vocabularized word count 
+         * @TODO this could be a performance problem, i think it exists
+         * because of the vocabulary could've been created with a diff
+         * file/corpus and loaded - but im not sure. certainly not sure
+         * if it needs to be.
+         */
         uint64_t total_words = nlk_vocab_count_words(&vocab, corpus_file,
                                                      line_ids,
                                                      total_lines);
+        if(verbose) {
+            nlk_tic("total words = ", false);
+            printf("%"PRIu64"\n", total_words);
+            fflush(stdout);
+        }
+        /* vocab size */
+        if(verbose) {
+            size_t vocab_size = nlk_vocab_size(&vocab);
+            nlk_tic("vocabulary size = ", false);
+            double gb = sizeof(nlk_real) * vocab_size * 1e-9 * vector_size;
+            printf("%zu (requires: %.2fGB given %zu vector size)\n", 
+                    vocab_size, gb, vector_size);
+            fflush(stdout);
+        }
+
+        if(hs) {
+            nlk_vocab_encode_huffman(&vocab);
+        }
+        
 
         /* training options */
         struct nlk_nn_train_t train_opts;
@@ -700,12 +761,34 @@ main(int argc, char **argv)
         /* train */
         nlk_wv_class_senna_train(nn, corpus, verbose);
 
-        if(test_sent_file) {
+        /* eval */
+        if(eval_sent_file != NULL) {
+            if(verbose) {
+                printf("evaluating: %s\n", eval_sent_file);
+            }
             struct nlk_supervised_corpus_t *test_corpus = NULL;
-            test_corpus = nlk_supervised_corpus_load_conll(test_sent_file,
+            test_corpus = nlk_supervised_corpus_load_conll(eval_sent_file,
                                                            corpus->label_map);
  
-            nlk_wv_class_senna_test(nn, test_corpus, verbose);
+            nlk_wv_class_senna_test_eval(nn, test_corpus, verbose);
+            /* write */
+            if(out_sent_file != NULL) {
+                if(verbose) {
+                    printf("writting to file: %s\n", out_sent_file);
+                }
+                errno = 0;
+                FILE *fout = fopen(out_sent_file, "w");
+                if(fout == NULL) {
+                    printf("bad file: %s\n", out_sent_file);
+                    exit(1);
+                }
+                nlk_wv_class_senna_test_out(nn, test_corpus, fout);
+                fclose(fout);
+            }
+
+        }
+        if(test_sent_file != NULL) {
+            printf("not implemented\n");
         }
     }
 

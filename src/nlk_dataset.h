@@ -67,9 +67,9 @@ struct nlk_supervised_corpus_t {
     unsigned int                      **classes;     /**< label ids */
     size_t                              n_sentences; /**< number of sents */
     struct nlk_vocab_t                 *label_map;   /**< label -> class */
-    unsigned int                       *n_words;    /**< words per sentence */
-    size_t                              size;       /**< total words */
-    size_t                              n_classes;  /**< number of classes */
+    unsigned int                       *n_words;     /**< words per sentence */
+    size_t                              size;        /**< total words */
+    size_t                              n_classes;   /**< number of classes */
 };
 typedef struct nlk_supervised_corpus_t NLK_SUPERVISED_CORPUS;
 

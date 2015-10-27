@@ -16,7 +16,6 @@ CC = gcc
 #
 # Linux
 ifeq ($(OSNAME), Linux)
-EXTRALIB += -lm 
 EXTRALIB += -lopenblas
 BLAS_INCLUDE = /opt/OpenBLAS/include/
 BLAS_LIB = /opt/OpenBLAS/lib
@@ -29,7 +28,6 @@ endif
 ifeq ($(OSNAME),Darwin)
 CFLAGS += -D__MACH__
 CC = /usr/local/Cellar/gcc/5.2.0/bin/gcc-5
-EXTRALIB += -lm 
 CFLAGS += -msse4.2 -flax-vector-conversions
 #EXTRALIB += -lopenblas
 #BLAS_LIB  = /usr/local/opt/openblas/lib
@@ -54,6 +52,18 @@ endif
 #
 # General Options
 #
+
+# Common External libraries
+
+# - Math -
+EXTRALIB += -lm 
+
+# - UTF8PROC -
+EXTRALIB += -lutf8proc
+UTF8PROC_INCLUDE = /usr/local/include
+UTF8PROC_LIB = /usr/local/lib/
+INCLUDE_DIRS += $(UTF8PROC_INCLUDE)
+LIBRARY_DIRS += $(UTF8PROC_LIB)
 
 # Common Flags
 CFLAGS += -Wall -Wextra -Wno-unused-result
